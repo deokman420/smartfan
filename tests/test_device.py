@@ -216,13 +216,26 @@ check("MAX_RUN above MIN_RUN", mx > mn, "%d > %d" % (mx, mn))
 # with no MQTT link, and the HA suite then fails on damage this one caused.
 print()
 print("leaving safe mode and restarting ...")
-try:
-    set_safe_mode(False)
-except Exception:
-    pass
 
-out = mp("import os; print('SAFE' if %r in os.listdir() else 'CLEAR')" % SAFE_FILE)
-check("safe mode flag removed", "CLEAR" in out)
+# Verify BEFORE the final reset, never after. Every mpremote exec stops
+# main.py, so a check placed after the restart kills the controller it just
+# started -- and then reports PASS for having done so. This suite left the
+# device dead at the REPL after every run until that was noticed from the
+# outside: no LEDs lit, entities unavailable, filesystem perfectly fine.
+CLEAR_AND_CHECK = """
+import os
+try:
+    os.remove({f!r})
+except OSError:
+    pass
+print('SAFE' if {f!r} in os.listdir() else 'CLEAR')
+""".format(f=SAFE_FILE)
+
+out = mp(CLEAR_AND_CHECK)
+check("safe mode flag removed", "CLEAR" in out, out.strip().splitlines()[-1:] or "")
+
+reset()                       # last word to the device: run normally
+time.sleep(6)
 check("controller restarted", True)
 
 # --- summary --------------------------------------------------------------
