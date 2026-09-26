@@ -83,6 +83,10 @@ relearn the baseline.
   hard stop.
 - A stall fault latches, counts to 3, and backs off 5 minutes between retries —
   it does not clear just because the humidity sensor is healthy.
+- Hitting `MAX_RUN_S` **latches**. Without that the cap protects nothing: idle
+  re-reads the same humidity, finds it still above the trigger, and starts
+  another full run seconds later. The latch clears when the room actually
+  dries, when the light comes back on, or on a boost or relearn.
 
 ## Getting it running
 
@@ -124,6 +128,26 @@ reliably saw the light go out, so the fan ran indefinitely.
 
 **A threshold has to clear the quiet band, not sit in it.** Calibrate where it
 will live, with the fixture it will actually see.
+
+## What a real shower looks like
+
+Measured in the room, 40 mm fan:
+
+| | |
+|---|---|
+| Baseline | 53.1 % |
+| Peak | **91.6 % RH, +38.5 % above baseline**, four minutes in |
+| Fast phase | −5 %/min while airborne steam clears |
+| Slow phase | −1 %/min, then −0.5 %/min as surfaces evaporate |
+| Plateau | **68–69 %, about +15 %**, and it stops falling |
+
+The plateau is the finding. This fan removes moisture at roughly the rate wet
+surfaces release it — it holds the line but cannot win, so `RH_FALL_OFF` of
+3 % is unreachable and `MAX_RUN_S` becomes the only thing that ends a run.
+
+That is not a tuning problem. A 0.25 W, 40 mm fan stirs air; it does not
+extract it. The number to design phase 3 against: **pull the room from 91 %
+back under 56 % within 30 minutes.**
 
 ## Commissioned values
 

@@ -183,6 +183,7 @@ class Controller:
         self.fault_kind = None     # 'sensor' or 'fan'
         self.fault_until = None    # earliest retry for a fan fault
         self.fan_faults = 0        # consecutive stalls
+        self.maxed = False         # hit MAX_RUN_S with the trigger still true
 
         self.link = None
         self.telem = None
@@ -357,8 +358,19 @@ class Controller:
                     a = cfg.BASELINE_A
                     self.baseline = (1 - a) * self.baseline + a * self.rh
 
+            # A new occupancy event clears the latch: someone is back in the
+            # room, which is a fresh reason to run regardless of what the
+            # last event managed.
             if self.light_on:
+                self.maxed = False
                 self.set_state(RUN, "light on")
+            elif self.maxed:
+                # Still latched. Release once the humidity has actually come
+                # down -- the same condition that would have ended the run
+                # properly. Until then, running again would achieve nothing
+                # the last thirty minutes did not.
+                if self.excess_rh <= self.st.RH_FALL_OFF:
+                    self.maxed = False
             elif self.excess_rh >= self.st.RH_RISE_ON:
                 self.set_state(RUN, "humidity +%.1f%%" % self.excess_rh)
             return
@@ -368,7 +380,17 @@ class Controller:
         if self.rpm >= cfg.MIN_RPM:
             self.fan_faults = 0          # a healthy run resets the tally
         if ran >= self.st.MAX_RUN_S:
-            self.set_state(IDLE, "max run time")
+            # Latch. Without this the cap protects nothing: IDLE immediately
+            # re-reads the same humidity, finds it still above RH_RISE_ON,
+            # and starts another full-length run two seconds later -- for
+            # ever, on any room the fan cannot dry. Measured doing exactly
+            # that: RUN 23:17:26 -> IDLE -> RUN 23:17:28.
+            #
+            # Hitting the cap means "I have done what I can for this event",
+            # not "brief pause".
+            self.maxed = True
+            self.set_state(IDLE, "max run time - latched until the room "
+                                 "dries or the light comes back on")
             return
         if ran < self.st.MIN_RUN_S:
             return
@@ -472,6 +494,7 @@ class Controller:
             return
 
         if cmd == "boost":
+            self.maxed = False
             self.boost_until = time.ticks_add(time.ticks_ms(),
                                               self.st.BOOST_S * 1000)
             self.set_state(BOOST, "boost via mqtt")
@@ -480,6 +503,7 @@ class Controller:
                 self.boost_until = None
                 self.set_state(IDLE, "boost cancelled via mqtt")
         elif cmd == "relearn":
+            self.maxed = False
             self.baseline = self.rh
             self.set_state(LEARN, "relearn via mqtt")
             self.entered_at = time.ticks_ms() - 59000
