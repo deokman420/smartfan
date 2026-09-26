@@ -111,8 +111,12 @@ other half:
 mpremote connect COM5 exec "import calibrate; calibrate.light()"
 ```
 
-It prints suggested thresholds. Put them in `config.py`. Until that's done the
-fan responds to humidity but not reliably to the light.
+It prints suggested thresholds. Put them in `config.py`.
+
+The values in `config.py` now (`LIGHT_ON` 11500, `LIGHT_OFF` 6000) are **bench
+measurements**, set at one third and two thirds of an observed 960–16,400
+span. They work, but a bathroom fixture seen from a ceiling mount reads
+nothing like a desk at ambient. Re-run this in the final position.
 
 ## Commissioned values
 
@@ -124,6 +128,13 @@ Measured on the built hardware:
 | DHT22 | 25.0 °C, 52.3 %RH, 3/3 reads |
 | Stall margin | 5.1× over `MIN_RPM` |
 | Fan pin at boot | 0 — the base pulldown holds it off before code runs |
+| Light, covered | 430–640 raw, across 37 consecutive samples |
+| Light, ambient | 16,400–18,900 raw |
+| Autonomous run | dark → LEARN → IDLE → light → RUN → fan at 4,013 rpm |
+
+The last row is the whole thing working unattended: it learned a baseline in
+the dark, idled, saw the light come on, started the fan, and the tachometer
+confirmed it. No button, no command.
 
 ## Roadmap
 

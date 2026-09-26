@@ -17,8 +17,16 @@ PIN_LED_RUN = 20   # red
 # Raw ADC, 0-65535. Bright reads high. Run calibrate.py in the actual
 # bathroom, with the fixture on and off, and put your numbers here.
 # Keep a wide gap so a flickering LED bulb cannot chatter the state.
-LIGHT_ON  = 30000
-LIGHT_OFF = 20000
+# Measured on the bench 2026-09-26: covered 560-960, ambient 16400-17400.
+# Set at one third and two thirds of that span, which leaves ~5000 counts of
+# margin either side and a 5000-count dead band -- wide enough that a
+# flickering LED bulb cannot chatter the fan.
+#
+# THESE ARE BENCH VALUES. A bathroom fixture seen from a ceiling mount will
+# read nothing like a desk at ambient. Re-run calibrate.light() in the final
+# position before this is installed.
+LIGHT_ON  = 11500
+LIGHT_OFF = 6000
 
 # --- Humidity control -----------------------------------------------
 # Thresholds are relative to a learned baseline, not absolute, so the
