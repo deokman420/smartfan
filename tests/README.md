@@ -39,6 +39,22 @@ fan, that the countdown and cancel appear only while boosting, and that nothing
 scrolls sideways at 400 px. Screenshots land in `tests/screenshots/`
 (gitignored) for eyeballing after a change.
 
+## Never verify after the final reset
+
+`test_device.py` ends by leaving safe mode and restarting the controller.
+Every `mpremote exec` **stops `main.py`** — so a check placed *after* that
+restart kills the controller it just started, and then reports `PASS` for
+having done so.
+
+This suite left the device dead at the REPL after every run until it was
+spotted from the outside: no LEDs lit, entities unavailable in Home
+Assistant, filesystem perfectly clean, USB reachable. Nothing in the 33
+passing checks pointed at it, because the damage happened after the last
+assertion.
+
+**The reset must be the last thing the suite says to the device.** Clear and
+verify the flag in one `exec` beforehand, then restart and leave it alone.
+
 ## Two things that will catch you
 
 **Home Assistant renders into shadow DOM.** `body.innerText` is empty.
