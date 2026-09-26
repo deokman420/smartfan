@@ -35,6 +35,10 @@ _SENSORS = (
     ("runtime",     "Runtime today",     "run_min",  "min",     None,          "total_increasing", "mdi:timer-outline"),
     ("rssi",        "WiFi signal",       "rssi",     "dBm",     "signal_strength", "measurement",   None),
     ("boost_left",  "Boost remaining",   "boost_left", "min",   "duration",    None,               "mdi:timer-sand"),
+    ("uptime",      "Uptime",            "up_min",   "min",     "duration",    None,               "mdi:clock-outline"),
+    ("reconnects",  "Link reconnects",   "reconn",   None,      None,          "total_increasing", "mdi:lan-connect"),
+    ("last_outage", "Last outage",       "outage_s", "s",       "duration",    None,               "mdi:lan-disconnect"),
+    ("boot_reason", "Last boot reason",  "boot",     None,      None,          None,               "mdi:restart"),
 )
 
 # Buttons: key -> (label, payload sent on press, icon)
@@ -155,6 +159,9 @@ class Telemetry:
                 cfgd["state_class"] = sclass
             if icon:
                 cfgd["icon"] = icon
+            if key in ("rssi", "uptime", "reconnects", "last_outage",
+                       "boot_reason"):
+                cfgd["entity_category"] = "diagnostic"
             ok &= self.link.publish(
                 "homeassistant/sensor/%s/%s/config" % (self.cfg.DEVICE_ID, key),
                 json.dumps(cfgd), retain=True)
@@ -225,7 +232,10 @@ class Telemetry:
             "run_min":  self._runtime_min(),
             "boost_left": _boost_left_min(c),
             "rssi":     rssi,
-            "up_s":     time.ticks_ms() // 1000,
+            "up_min":   round(time.ticks_ms() / 60000.0, 1),
+            "reconn":   self.link.connects,
+            "outage_s": self.link.outage_s,
+            "boot":     getattr(c, "boot_reason", "unknown"),
         }
 
     @staticmethod

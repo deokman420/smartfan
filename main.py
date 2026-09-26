@@ -15,7 +15,7 @@ States:
 """
 
 import time
-from machine import Pin, ADC
+from machine import Pin, ADC, WDT, reset_cause
 import dht
 
 import config as cfg
@@ -38,6 +38,67 @@ LEARN, IDLE, RUN, BOOST, FAULT = "LEARN", "IDLE", "RUN", "BOOST", "FAULT"
 
 def ms_since(t):
     return time.ticks_diff(time.ticks_ms(), t)
+
+
+def _boot_reason():
+    """Why we started, read from the port's own constants.
+
+    A hardcoded table is wrong here: on RP2350 WDT_RESET is 3, which a
+    generic mapping happily labels "hard reset" and so hides the single
+    most important thing the diagnostic exists to report.
+
+    The port cannot fully separate the two, because machine.reset() is
+    itself implemented via the watchdog. In the field that ambiguity does
+    not matter -- nothing calls machine.reset() in normal operation, so a
+    cause of WDT_RESET means the control loop stopped feeding.
+    """
+    try:
+        import machine
+        c = reset_cause()
+        if c == getattr(machine, "PWRON_RESET", 1):
+            return "power-on"
+        if c == getattr(machine, "WDT_RESET", 3):
+            return "watchdog or reset"
+        return "cause %s" % c
+    except Exception:
+        return "unknown"
+
+
+def safe_mode_requested():
+    """True if safe mode was asked for, by button or by flag file.
+
+    Two routes on purpose:
+
+    BUTTON -- hold PIN_BUTTON through power-up. No extra hardware, no jumper
+    to locate on a ladder. Sampled over 400 ms because a single read could
+    catch a contact bounce and strand the controller at the REPL.
+
+    FILE -- create the file named by SAFE_MODE_FILE. The button cannot be
+    automated, and once the watchdog is armed any REPL session longer than
+    its timeout gets reset out from under you. Tooling needs a way in that
+    does not involve a finger.
+    """
+    if not cfg.SAFE_MODE_ENABLED:
+        return False
+
+    try:
+        import os
+        if cfg.SAFE_MODE_FILE in os.listdir():
+            print("safe mode: %s present" % cfg.SAFE_MODE_FILE)
+            return True
+    except Exception:
+        pass
+
+    pin = Pin(cfg.PIN_BUTTON, Pin.IN, Pin.PULL_UP)
+    held = 0
+    for _ in range(20):
+        if pin.value() == 0:
+            held += 1
+        time.sleep_ms(20)
+    if held >= 18:
+        print("safe mode: button held at boot")
+        return True
+    return False
 
 
 class Tach:
@@ -121,6 +182,8 @@ class Controller:
         self.link = None
         self.telem = None
         self._push = False         # force a publish after a command lands
+        self.wdt = None
+        self.boot_reason = _boot_reason()
         if _NET:
             try:
                 cmd_topic = "fan/%s/cmd" % cfg.ROOM
@@ -407,7 +470,9 @@ class Controller:
 
     def run(self):
         print("fan controller starting; learning baseline for 60 s")
+        print("boot: %s" % self.boot_reason)
         next_sample = time.ticks_ms()
+        started = time.ticks_ms()
 
         while True:
             press = self.button.poll()
@@ -445,6 +510,18 @@ class Controller:
             # and it simply holds there.
             self.drive_outputs()
 
+            # The single feed point. Deliberately after the outputs are
+            # driven, so a loop that reaches here has done a full useful
+            # pass -- not merely survived one.
+            if self.wdt:
+                self.wdt.feed()
+            elif cfg.WDT_TIMEOUT_MS and ms_since(started) > 3000:
+                # Armed only after a few clean passes. Enabling it on the
+                # first line would make any startup hiccup a reboot loop,
+                # and a watchdog cannot be switched off once started.
+                self.wdt = WDT(timeout=cfg.WDT_TIMEOUT_MS)
+                print("wdt: armed at %d ms" % cfg.WDT_TIMEOUT_MS)
+
             if self.link:
                 was = self.link.online
                 try:
@@ -467,9 +544,25 @@ class Controller:
 
 
 if __name__ == "__main__":
-    controller = Controller()
-    try:
-        controller.run()
-    finally:
-        # Never leave the fan energised if the loop dies or is stopped.
+    if safe_mode_requested():
+        # No loop, no watchdog, fan off. The board sits at the REPL so a bad
+        # config can be fixed without a ladder.
         Pin(cfg.PIN_FAN, Pin.OUT, value=0)
+        g = Pin(cfg.PIN_LED_OK, Pin.OUT)
+        r = Pin(cfg.PIN_LED_RUN, Pin.OUT)
+        for _ in range(6):
+            g.value(1); r.value(1); time.sleep_ms(80)
+            g.value(0); r.value(0); time.sleep_ms(80)
+        print()
+        print("=" * 52)
+        print(" SAFE MODE")
+        print(" main loop not started, watchdog not armed, fan off")
+        print(" release the button, or remove %s, then reset" % cfg.SAFE_MODE_FILE)
+        print("=" * 52)
+    else:
+        controller = Controller()
+        try:
+            controller.run()
+        finally:
+            # Never leave the fan energised if the loop dies or is stopped.
+            Pin(cfg.PIN_FAN, Pin.OUT, value=0)

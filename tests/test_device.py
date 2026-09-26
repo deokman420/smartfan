@@ -31,7 +31,37 @@ def check(name, ok, detail=""):
     return ok
 
 
+SAFE_FILE = "safemode"
+
+
+def reset():
+    subprocess.run([sys.executable, "-m", "mpremote", "connect", PORT, "exec",
+                    "import machine; machine.reset()"],
+                   capture_output=True, timeout=30)
+
+
+def set_safe_mode(on):
+    """Enter or leave safe mode via the flag file, then reboot into it.
+
+    Required, not optional. main.py arms an 8 s watchdog that cannot be
+    stopped once running, so any exec block below that outlasts it gets
+    reset mid-measurement -- which is exactly what happened the first time
+    these tests met the watchdog. Safe mode skips both the loop and the WDT.
+    """
+    if on:
+        code = "open(%r,'w').close(); print('safe')" % SAFE_FILE
+    else:
+        code = ("import os\ntry:\n    os.remove(%r)\nexcept OSError:\n"
+                "    pass\nprint('normal')" % SAFE_FILE)
+    subprocess.run([sys.executable, "-m", "mpremote", "connect", PORT,
+                    "exec", code], capture_output=True, timeout=30)
+    reset()
+    time.sleep(4)
+
+
 print("device regression on %s\n" % PORT)
+print("entering safe mode (the watchdog would reset us mid-test) ...")
+set_safe_mode(True)
 
 # --- firmware and filesystem ---------------------------------------------
 out = mp("""
@@ -158,18 +188,17 @@ mn, mx = (int(x) for x in c.get("RUN", [0, 0]))
 check("MAX_RUN above MIN_RUN", mx > mn, "%d > %d" % (mx, mn))
 
 # --- teardown -------------------------------------------------------------
-# Every mpremote exec above stopped main.py, which drops the MQTT link and
-# makes every Home Assistant entity unavailable. Put the controller back
-# before leaving, or the HA suite fails on damage this one caused.
+# Leave safe mode and restart. Skipping this strands the board at the REPL
+# with no MQTT link, and the HA suite then fails on damage this one caused.
 print()
-print("restarting the controller ...")
+print("leaving safe mode and restarting ...")
 try:
-    subprocess.run([sys.executable, "-m", "mpremote", "connect", PORT, "exec",
-                    "import machine; machine.reset()"],
-                   capture_output=True, timeout=30)
+    set_safe_mode(False)
 except Exception:
     pass
-time.sleep(3)
+
+out = mp("import os; print('SAFE' if %r in os.listdir() else 'CLEAR')" % SAFE_FILE)
+check("safe mode flag removed", "CLEAR" in out)
 check("controller restarted", True)
 
 # --- summary --------------------------------------------------------------

@@ -156,16 +156,41 @@ Worth doing *after* a week of real data. The point of the read-only phase was
 to replace guessed defaults with observed ones — writing that capability
 before the data exists just makes it easier to tune to the wrong numbers.
 
-### 2c — Robustness
+### 2c — Robustness. Done.
 
-- Watchdog timer, fed only by the control loop, never by the network code
-- Exponential backoff on reconnect — no tight retry loop hammering a dead AP
-- `ringbuf.py` buffering samples while offline, flushed on reconnect
-- **Safe-mode pin** — hold a GPIO low at boot to skip `main.py` and reach the
-  REPL. `thb1s-bridge` uses GP14 for this. With autorun plus WiFi, a bad config
-  can otherwise lock you out of a device in a ceiling.
+**Watchdog**, 8 s, fed at exactly one place: after the outputs are driven, so
+a loop reaching the feed has completed a useful pass rather than merely
+survived one. Nothing in `net.py` or `telemetry.py` may feed it, or it stops
+proving the thing it exists to prove. Armed 3 s after boot, because enabling
+it on the first line would turn any startup hiccup into a reboot loop and a
+watchdog cannot be switched off once started.
 
-Safe mode is not optional once this thing is mounted.
+Proven by hanging the loop deliberately: the board reset and recovered on its
+own with no intervention.
+
+**Safe mode**, by two routes. Hold the existing button through power-up — no
+extra hardware, no jumper to find on a ladder. Or create a `safemode` file,
+because the button cannot be automated and, once the watchdog is armed, any
+REPL session outlasting 8 s is reset out from under you. The test suite found
+that the hard way: it dropped from 26/26 to 16/26 the moment the watchdog
+landed, and now enters safe mode first.
+
+**Backoff** was already in `net.py` from 2a.
+
+**Link health** rather than buffering — reconnect count, last outage duration,
+uptime and boot reason, all as HA diagnostic entities.
+
+`ringbuf.py` is deliberately **not** used. It was written for the HTTP ingest
+API, where every reading carries its own NTP timestamp and so backfills into
+the right place in history. MQTT state topics have no timestamp; Home
+Assistant stamps them on receipt. Replaying an hour of buffered samples would
+jam sixty readings into one second and corrupt the history worse than the gap
+did. An honest hole beats fabricated continuity.
+
+A note on `reset_cause()`: a hardcoded table is wrong on this port. RP2350
+defines `WDT_RESET = 3`, which a generic mapping labels "hard reset" — hiding
+the one thing the diagnostic exists to report. It now reads `machine`'s own
+constants.
 
 ### 2d — Dashboard. Done.
 

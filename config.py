@@ -49,6 +49,31 @@ SPINUP_S = 3     # ignore the tach while the fan gets going
 FAULT_RETRY_S  = 300   # wait this long before retrying a stalled fan
 MAX_FAN_FAULTS = 3     # consecutive stalls before latching for good
 
+# --- Robustness -------------------------------------------------------
+# The watchdog is fed ONLY by the control loop. If the loop stops -- a hung
+# network stack, a wedged driver, a bug -- the board resets rather than
+# leaving a fan stuck on or a bathroom unventilated. Nothing in net.py or
+# telemetry.py may feed it, or it stops proving the thing it exists to prove.
+#
+# 8000 ms against a 20 ms loop is a factor of 400. The only operation that
+# blocks for long is the MQTT socket connect, bounded at 4 s, and MQTT_HOST
+# is an IP literal so there is no DNS lookup to stall on.
+WDT_TIMEOUT_MS = 8000
+
+# Hold the existing button down through power-up to skip main.py and land at
+# the REPL. No extra hardware: it reuses PIN_BUTTON.
+#
+# This is not optional once the controller is mounted. With autorun plus
+# WiFi, a bad config or a boot loop otherwise means fetching a ladder.
+SAFE_MODE_ENABLED = True
+
+# Second route into safe mode, for tooling. The button cannot be automated,
+# and once the watchdog is armed any REPL session outlasting its timeout is
+# reset out from under you -- which makes the test suite, and any remote
+# debugging, impossible without this.
+#   mpremote connect COM5 fs touch :safemode   (then reset)
+SAFE_MODE_FILE = "safemode"
+
 # --- Identity ---------------------------------------------------------
 # Topics and unique_ids assume there will eventually be more than one of
 # these. Getting the shape right now costs nothing; retrofitting it later

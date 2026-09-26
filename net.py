@@ -62,6 +62,8 @@ class Link:
         self.connects = 0                 # surfaced as telemetry: link churn
         self.failures = 0
         self.last_error = ""
+        self._down_since = _now()         # offline until proven otherwise
+        self.outage_s = 0                 # length of the most recent outage
 
     # -- state ---------------------------------------------------------------
 
@@ -80,6 +82,8 @@ class Link:
         """Tear down and schedule a retry with exponential backoff."""
         self.failures += 1
         self.last_error = why
+        if self._down_since is None:
+            self._down_since = _now()
         if self.client:
             self.client.close()
             self.client = None
@@ -183,6 +187,9 @@ class Link:
 
         self.client = c
         self.connects += 1
+        if self._down_since is not None:
+            self.outage_s = _since(self._down_since) // 1000
+            self._down_since = None
         self._backoff = _BACKOFF_START_S
         self._last_ping = _now()
         self._goto(ONLINE)
