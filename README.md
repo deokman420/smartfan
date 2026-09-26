@@ -125,6 +125,7 @@ Measured on the built hardware:
 - **Phase 1** — local control. ✅ Done.
 - **Phase 2** — WiFi, MQTT, Home Assistant discovery, remote configuration,
   logged history. Credentials go in `secrets.py`, which is gitignored.
+  Plan: [`docs/phase-2-plan.md`](docs/phase-2-plan.md).
 - **Phase 3** — mains relay for a real ceiling extractor, in a proper enclosure.
 - **Phase 4** — multi-room.
 
