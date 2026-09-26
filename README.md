@@ -113,10 +113,17 @@ mpremote connect COM5 exec "import calibrate; calibrate.light()"
 
 It prints suggested thresholds. Put them in `config.py`.
 
-The values in `config.py` now (`LIGHT_ON` 11500, `LIGHT_OFF` 6000) are **bench
-measurements**, set at one third and two thirds of an observed 960–16,400
-span. They work, but a bathroom fixture seen from a ceiling mount reads
-nothing like a desk at ambient. Re-run this in the final position.
+The values in `config.py` are now **measured in the bathroom**, in the
+mounting position: dark 4,800–6,225, lit 30,000–32,500, giving `LIGHT_OFF`
+14,000 and `LIGHT_ON` 22,000.
+
+The bench values they replaced (6,000 / 11,500) looked fine and were wrong in
+a way that only shows up in the room: a bathroom is never truly dark, and
+`LIGHT_OFF` at 6,000 sat *inside* the dark-state noise. The controller never
+reliably saw the light go out, so the fan ran indefinitely.
+
+**A threshold has to clear the quiet band, not sit in it.** Calibrate where it
+will live, with the fixture it will actually see.
 
 ## Commissioned values
 
@@ -128,8 +135,8 @@ Measured on the built hardware:
 | DHT22 | 25.0 °C, 52.3 %RH, 3/3 reads |
 | Stall margin | 5.1× over `MIN_RPM` |
 | Fan pin at boot | 0 — the base pulldown holds it off before code runs |
-| Light, covered | 430–640 raw, across 37 consecutive samples |
-| Light, ambient | 16,400–18,900 raw |
+| Light, bathroom dark | 4,800–6,225 raw |
+| Light, bathroom lit | 30,000–32,500 raw |
 | Autonomous run | dark → LEARN → IDLE → light → RUN → fan at 4,013 rpm |
 
 The last row is the whole thing working unattended: it learned a baseline in

@@ -168,6 +168,8 @@ class Controller:
         self.state = LEARN
         self.entered_at = time.ticks_ms()
         self.fan_on_at = None
+        self.fan_off_at = time.ticks_ms()
+        self.rpm_idle = 0          # tach while commanded OFF; should be zero
         self.boost_until = None
         self.light_on = False
         self.dark_since = None
@@ -266,12 +268,16 @@ class Controller:
             return
         self.fan.value(1 if on else 0)
         self.fan_on_at = time.ticks_ms() if on else None
+        self.fan_off_at = None if on else time.ticks_ms()
         self.tach.rpm()          # discard the stale window
         if self.telem:
             self.telem.note_fan(on)
 
     def fan_seconds(self):
         return 0 if self.fan_on_at is None else ms_since(self.fan_on_at) / 1000.0
+
+    def fan_off_seconds(self):
+        return 0 if self.fan_off_at is None else ms_since(self.fan_off_at) / 1000.0
 
     # -- the decision -------------------------------------------------
 
@@ -312,6 +318,14 @@ class Controller:
                 if self.dht_fails == 0:
                     self.fault_kind = None
                     self.set_state(IDLE, "sensor recovered")
+                return
+
+            if self.fault_kind == "stuck":
+                # Clears itself the moment the fan actually stops, so fixing
+                # the wiring needs no button press and no reboot.
+                if self.rpm_idle < cfg.MIN_RPM:
+                    self.fault_kind = None
+                    self.set_state(IDLE, "fan stopped, stuck fault cleared")
                 return
 
             if self.fault_kind == "fan":
@@ -376,6 +390,21 @@ class Controller:
             self.set_fan(False)
             self.set_state(FAULT, self.fault_reason)
             return
+        # Still turning long after being told to stop: the switch is not in
+        # control. Latching, because it cannot be fixed from here -- the fan
+        # has a path to ground that does not go through the transistor, and
+        # no amount of driving GP17 low will change that.
+        if (not self.fan.value() and self.rpm_idle >= cfg.MIN_RPM
+                and self.fan_off_seconds() > cfg.STUCK_S):
+            if self.fault_kind != "stuck":
+                self.fault_kind = "stuck"
+                self.fault_reason = (
+                    "fan still running %d rpm %ds after being switched off "
+                    "- check the fan's black lead is in row 38, not a rail"
+                    % (self.rpm_idle, int(self.fan_off_seconds())))
+                self.set_state(FAULT, self.fault_reason)
+            return
+
         if self.fan.value() and self.fan_seconds() > cfg.SPINUP_S:
             if self.rpm < cfg.MIN_RPM:
                 self.fan_faults += 1
@@ -525,16 +554,18 @@ class Controller:
                                              cfg.SAMPLE_S * 1000)
                 raw_light = self.read_light()
                 self.read_climate()
-                self.rpm = self.tach.rpm() if self.fan.value() else 0
+                # Sample the tach whichever way the fan is commanded. Reading
+                # it only while driven is what made a stuck-on fan invisible.
+                measured = self.tach.rpm()
+                driven = bool(self.fan.value())
+                self.rpm = measured if driven else 0
+                self.rpm_idle = 0 if driven else measured
 
                 if self.state == LEARN and self.baseline is None and self.rh:
                     self.baseline = self.rh
 
                 self.check_fan_health()
                 self.decide()
-                if cfg.LOG:
-                    self.log(raw_light)
-
                 sampled = True
 
             # Outputs first, then the network. If a connect attempt blocks for
@@ -546,6 +577,12 @@ class Controller:
             # state change and the pin change landed in different messages,
             # so Home Assistant briefly showed "RUN" with the fan still off.
             # Never allowed to affect control: telemetry cannot raise here.
+            if sampled:
+                # Log after the outputs too, for the same reason: printing
+                # before them showed lines like "IDLE ... fan=1", which reads
+                # as a fault and is only a one-tick lag.
+                if cfg.LOG:
+                    self.log(raw_light)
             if sampled and self.telem:
                 sampled = False
                 try:
@@ -554,6 +591,7 @@ class Controller:
                     self._push = False
                 except Exception as e:
                     print("telemetry: %s" % e)
+            sampled = False
 
             # The single feed point. Deliberately after the outputs are
             # driven, so a loop that reaches here has done a full useful

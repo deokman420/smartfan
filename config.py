@@ -17,16 +17,16 @@ PIN_LED_RUN = 20   # red
 # Raw ADC, 0-65535. Bright reads high. Run calibrate.py in the actual
 # bathroom, with the fixture on and off, and put your numbers here.
 # Keep a wide gap so a flickering LED bulb cannot chatter the state.
-# Measured on the bench 2026-09-26: covered 560-960, ambient 16400-17400.
-# Set at one third and two thirds of that span, which leaves ~5000 counts of
-# margin either side and a 5000-count dead band -- wide enough that a
-# flickering LED bulb cannot chatter the fan.
+# Measured in the bathroom 2026-09-26, sensor in its mounting position:
+#   light off  4800-6225   (window, door gap -- never truly dark)
+#   light on  30000-32500
 #
-# THESE ARE BENCH VALUES. A bathroom fixture seen from a ceiling mount will
-# read nothing like a desk at ambient. Re-run calibrate.light() in the final
-# position before this is installed.
-LIGHT_ON  = 11500
-LIGHT_OFF = 6000
+# Set at one third and two thirds of that span. The previous value of 6000
+# sat INSIDE the dark-state noise, so the controller never reliably saw the
+# light go out and the fan ran indefinitely. A threshold has to clear the
+# quiet band, not sit in it.
+LIGHT_ON  = 22000
+LIGHT_OFF = 14000
 
 # --- Humidity control -----------------------------------------------
 # Thresholds are relative to a learned baseline, not absolute, so the
@@ -51,6 +51,16 @@ MIN_RPM  = 800   # below this while commanded on -> stall fault.
                  # the only thing that notices a fan that has died in the
                  # ceiling. Set to 0 to disable.
 SPINUP_S = 3     # ignore the tach while the fan gets going
+
+# A fan still turning well after it was told to stop is not a slow coast --
+# it means the switch is not in control of it. The usual cause is the fan's
+# ground lead landing somewhere other than the collector, which bypasses the
+# transistor entirely. Without this the controller cannot see that at all:
+# the tach is otherwise only sampled while the fan is driven, so a fan stuck
+# running is invisible to it and simply runs forever.
+#
+# An NF-A4x10 coasts for about 2-3 s, so 12 s is well clear of a normal stop.
+STUCK_S = 12
 
 # A stalled fan must not clear itself just because the humidity sensor is
 # healthy. Back off, retry a few times, then latch and wait for a human.

@@ -22,7 +22,7 @@ import time
 
 from settings import SPECS, MODES
 
-FW_VERSION = "2b.2"
+FW_VERSION = "2c.1"
 
 # Sensors: key -> (label, json field, unit, device_class, state_class, icon)
 _SENSORS = (
@@ -257,7 +257,10 @@ class Telemetry:
             "light_pc": round(min(100.0, raw_light * 100.0 / 65535), 1),
             "light_on": bool(c.light_on),
             "fan_on":   bool(c.fan.value()),
-            "rpm":      c.rpm,
+            # What the fan is actually doing, not what it was told. A fan
+            # turning while commanded off must read non-zero, or the one
+            # number that would reveal a bypassed switch stays hidden.
+            "rpm":      c.rpm or getattr(c, "rpm_idle", 0),
             "fault":    c.state == "FAULT",
             "reason":   c.fault_reason or None,
             "run_min":  self._runtime_min(),
