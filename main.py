@@ -20,6 +20,7 @@ import dht
 
 import config as cfg
 from settings import Settings
+import ota
 
 # The network layer is strictly additive. No secrets.py, or any failure while
 # bringing it up, leaves a controller that still runs the fan exactly as it
@@ -184,6 +185,8 @@ class Controller:
         self.fault_until = None    # earliest retry for a fan fault
         self.fan_faults = 0        # consecutive stalls
         self.maxed = False         # hit MAX_RUN_S with the trigger still true
+        self.updater = None        # set while an OTA is in progress
+        self.ota_state = "idle"
 
         self.link = None
         self.telem = None
@@ -488,6 +491,19 @@ class Controller:
                 print("set: rejected %s=%r (%s)" % (name, cmd, result))
             return
 
+        if cmd.startswith("update"):
+            if self.updater is not None:
+                print("ota: already running")
+                return
+            parts = raw.split(None, 1)
+            if len(parts) < 2:
+                print("ota: need a base url, e.g. 'update http://192.168.0.9:8000'")
+                return
+            self.updater = ota.Updater(parts[1].strip(), log=print)
+            self.ota_state = "starting"
+            self._push = True
+            return
+
         if cmd == "reset-settings":
             self.st.reset()
             self._push = True
@@ -567,6 +583,10 @@ class Controller:
         started = time.ticks_ms()
         sampled = False
         raw_light = 0
+        self._ota_pending = ota.pending()
+        if self._ota_pending:
+            print("ota: update on trial, committing after %ds healthy"
+                  % ota.COMMIT_S)
 
         while True:
             press = self.button.poll()
@@ -628,6 +648,36 @@ class Controller:
                 # and a watchdog cannot be switched off once started.
                 self.wdt = WDT(timeout=cfg.WDT_TIMEOUT_MS)
                 print("wdt: armed at %d ms" % cfg.WDT_TIMEOUT_MS)
+
+            # One OTA step per pass. A download that hangs stops the loop and
+            # the watchdog resets us, which for an update is the right
+            # outcome -- the staged files are discarded and the old code
+            # boots again untouched.
+            if self.updater is not None:
+                self.updater.step()
+                self.ota_state = self.updater.status
+                if self.updater.done:
+                    ok = self.updater.ok
+                    reset_needed = ok and "installed" in self.updater.status
+                    self.updater = None
+                    self._push = True
+                    if reset_needed:
+                        self.set_fan(False)
+                        self.drive_outputs()
+                        time.sleep_ms(400)      # let the last publish leave
+                        import machine
+                        machine.reset()
+
+            # An update is only kept once the new code has run healthily for
+            # a while. Until then boot.py is still holding a rollback ready.
+            if (self._ota_pending and ms_since(started) > ota.COMMIT_S * 1000
+                    and self.state != FAULT):
+                try:
+                    ota.commit()
+                except Exception as e:
+                    print("ota: commit failed (%s)" % e)
+                self._ota_pending = False
+                self._push = True
 
             if self.link:
                 was = self.link.online

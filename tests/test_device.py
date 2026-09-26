@@ -170,6 +170,30 @@ check("fan on in RUN", st.get("RUN") == 1)
 check("fan on in BOOST", st.get("BOOST") == 1)
 check("fan off in FAULT", st.get("FAULT") == 0)
 
+# --- OTA recovery path ----------------------------------------------------
+out = mp("""
+import os
+print('FILES', ','.join(sorted(os.listdir())))
+import ota
+print('PROT', ','.join(ota.PROTECTED))
+print('TRIES', ota.MAX_TRIES)
+print('COMMIT', ota.COMMIT_S)
+""")
+o = {l.split()[0]: l.split()[1] if len(l.split()) > 1 else ""
+     for l in out.splitlines() if l.split()}
+have = set(o.get("FILES", "").split(","))
+check("boot.py present", "boot.py" in have)
+check("ota.py present", "ota.py" in have)
+# boot.py rescues a failed update. If OTA could replace it, a broken update
+# could take the recovery path down with it.
+prot = o.get("PROT", "")
+check("boot.py protected from OTA", "boot.py" in prot, prot)
+check("secrets.py protected from OTA", "secrets.py" in prot)
+check("no OTA leftovers", not [f for f in have
+                              if f.endswith((".bak", ".new")) or f == "ota_pending"],
+      ", ".join(f for f in have if f.endswith((".bak", ".new"))) or "")
+check("rollback after <= 2 tries", o.get("TRIES") == "2", o.get("TRIES", "?"))
+
 # --- config sanity --------------------------------------------------------
 out = mp("""
 import config as cfg

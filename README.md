@@ -49,6 +49,8 @@ tach is the only thing that notices a fan that has died in a ceiling.
 | `main.py` | The controller. Autoruns at power-up. |
 | `config.py` | Every tunable: pins, thresholds, timings. Versioned. |
 | `calibrate.py` | Bench helpers — `light()`, `sensor()`, `fan()`, `leds()`. |
+| `ota.py` | Over-the-air updates with automatic rollback. |
+| `boot.py` | Runs before `main.py`. The recovery path — never updated over the air. |
 | `net.py` | WiFi + MQTT supervision, polled from the loop. Never blocks it. |
 | `telemetry.py` | Home Assistant discovery and state publishing. |
 | `mqtt.py` | MQTT 3.1.1 client. Publish-only until phase 2b. |
@@ -214,6 +216,47 @@ homeassistant/<kind>/<device_id>/<key>/config  discovery       (retained)
 `ROOM`, `ROOM_NAME` and `DEVICE_ID` in `config.py` make this multi-room from
 the start. Retrofitting that later means renaming every entity in Home
 Assistant and losing its history.
+
+## Updating over the air
+
+```bash
+python tools/ota_publish.py --dry-run    # what would change
+python tools/ota_publish.py              # serve, and tell the device to pull
+```
+
+Builds a manifest, serves this directory over HTTP, and publishes
+`update <url>` to the device. It downloads each changed file, verifies its
+sha256, and installs **only once every file has verified** — a half-applied
+update is never a state the device can reach.
+
+### It cannot brick the device
+
+That is the whole design, and it is tested by deliberately pushing a
+`main.py` that cannot be imported:
+
+```
+ota: installed 1 file(s), resetting
+[board resets]   [board resets]   [board resets]
+fan controller starting; learning baseline for 60 s
+telemetry: announced 30 entities
+```
+
+Three resets, then healthy code running again — unattended.
+
+The failure that needs catching is `main.py` raising at import: MicroPython
+then drops to the REPL and sits there, unreachable over the network, with no
+second boot to trigger anything. So `boot.py` arms a watchdog whenever an
+update is pending. Healthy code takes over feeding it; broken code does not,
+the board resets, and after two failed attempts `boot.py` restores the
+`.bak` files and reboots into the old build.
+
+An update is only *kept* once the new code has run for 60 seconds without
+faulting. Until then the rollback is still armed.
+
+**`boot.py` and `ota.py` are never sent over the air.** They are the recovery
+path, and a recovery path you can break remotely is not one. Flash those over
+USB. `secrets.py` and `settings.json` are excluded too — they belong to the
+device, not the build.
 
 ## A note on the transistor
 
