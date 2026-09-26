@@ -1,0 +1,22 @@
+# Credentials live here, never in config.py.
+# config.py holds tuning parameters and IS versioned -- thresholds and
+# timings are worth tracking. WiFi and broker details are not.
+secrets.py
+
+# MicroPython
+__pycache__/
+*.mpy
+
+# Firmware images and flash dumps (large, and re-downloadable)
+*.uf2
+*.bin
+
+# Tooling artefacts
+.playwright-mcp/
+*.png
+!docs/*.png
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini

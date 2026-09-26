@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Diagnostic tool for the Pico 2 W bathroom fan controller: decodes serial log lines, walks a fault tree, and lists expected voltages at every test point.">
+<link rel="icon" href="data:,">
+<title>Fan Controller Diagnostics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: dark;
+  --bg:        #0d1114;
+  --surface:   #141a1f;
+  --raised:    #1b2329;
+  --line:      #2a343c;
+  --line-soft: #202a31;
+
+  --ink:       #e4ebf0;
+  --ink-mid:   #9fb0bc;
+  --ink-dim:   #7c8d99;
+
+  --accent:    #d9bd96;
+  --accent-dk: #ae815b;
+
+  --ok:     #5fb37a;
+  --warn:   #e0a33c;
+  --bad:    #e35f62;
+  --info:   #6fa8d6;
+
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 30px 70px; }
+
+header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 26px; }
+.eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--accent-dk); margin: 0 0 9px;
+}
+.eyebrow b { color: var(--accent); font-weight: 500; }
+h1 {
+  font-family: var(--cond); font-weight: 700;
+  font-size: clamp(28px, 5vw, 42px); line-height: 1.05;
+  letter-spacing: -.015em; margin: 0 0 10px; text-wrap: balance;
+}
+.standfirst { margin: 0; max-width: 64ch; color: var(--ink-mid); }
+
+h2.sec {
+  font-family: var(--cond); font-size: 20px; letter-spacing: -.005em;
+  margin: 42px 0 4px;
+}
+h2.sec:first-of-type { margin-top: 0; }
+p.lede { margin: 0 0 16px; color: var(--ink-mid); max-width: 66ch; font-size: 14px; }
+
+/* ---------- decoder ---------- */
+
+.decoder { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+@media (max-width: 860px) { .decoder { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; padding: 16px 18px;
+}
+.card > h3 {
+  font-family: var(--cond); font-size: 12px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-dim); margin: 0 0 12px;
+}
+textarea {
+  width: 100%; min-height: 128px; resize: vertical;
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 7px;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.6;
+  padding: 11px 12px;
+}
+textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.row { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 11px; }
+button {
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .05em;
+  text-transform: uppercase; cursor: pointer;
+  border-radius: 99px; padding: 7px 15px;
+  background: var(--accent); color: #17120c; border: 1px solid var(--accent);
+  font-weight: 600;
+}
+button.ghost { background: transparent; color: var(--ink-dim); border-color: var(--line); }
+button.ghost:hover { color: var(--ink); border-color: var(--ink-dim); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+th {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-dim); font-weight: 500;
+}
+td.k { font-family: var(--mono); color: var(--ink-mid); white-space: nowrap; }
+td.v { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.n { color: var(--ink-mid); font-size: 13px; }
+
+.pill {
+  display: inline-block; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .07em; text-transform: uppercase; font-weight: 600;
+  padding: 2px 8px; border-radius: 99px; border: 1px solid;
+}
+.pill.ok   { color: var(--ok);   border-color: var(--ok);   background: rgba(95,179,122,.1); }
+.pill.warn { color: var(--warn); border-color: var(--warn); background: rgba(224,163,60,.1); }
+.pill.bad  { color: var(--bad);  border-color: var(--bad);  background: rgba(227,95,98,.1); }
+.pill.info { color: var(--info); border-color: var(--info); background: rgba(111,168,214,.1); }
+
+.verdict {
+  margin-top: 14px; padding: 13px 15px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--raised);
+  font-size: 13.5px;
+}
+.verdict h4 { font-family: var(--cond); font-size: 14px; margin: 0 0 5px; }
+.verdict p { margin: 0 0 6px; color: var(--ink-mid); }
+.verdict p:last-child { margin-bottom: 0; }
+.verdict.bad  { border-left: 3px solid var(--bad); }
+.verdict.ok   { border-left: 3px solid var(--ok); }
+.verdict.warn { border-left: 3px solid var(--warn); }
+.empty { color: var(--ink-dim); font-size: 13.5px; font-style: italic; }
+
+/* ---------- fault tree ---------- */
+
+.tree { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; }
+.q { font-family: var(--cond); font-size: 19px; margin: 0 0 4px; }
+.qsub { margin: 0 0 16px; color: var(--ink-mid); font-size: 13.5px; max-width: 62ch; }
+.opts { display: grid; gap: 9px; max-width: 640px; }
+.opt {
+  text-align: left; text-transform: none; letter-spacing: 0;
+  font-family: var(--body); font-size: 14.5px; font-weight: 500;
+  background: var(--raised); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 9px;
+  padding: 12px 15px; cursor: pointer;
+}
+.opt:hover { border-color: var(--accent-dk); background: #222b33; }
+.opt span { display: block; font-size: 12.5px; color: var(--ink-dim); font-weight: 400; margin-top: 3px; }
+
+.answer { border-left: 3px solid var(--accent); padding-left: 16px; }
+.answer h3 { font-family: var(--cond); font-size: 20px; margin: 0 0 8px; }
+.answer ol, .answer ul { margin: 10px 0 0; padding-left: 19px; color: var(--ink-mid); font-size: 14px; }
+.answer li { margin-bottom: 8px; }
+.answer code, .card code, td code, .verdict code {
+  font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line-soft);
+  border-radius: 3px; padding: 1px 5px; white-space: nowrap;
+}
+.crumbs {
+  font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+  margin-bottom: 14px; display: flex; gap: 7px; flex-wrap: wrap; align-items: center;
+}
+.crumbs b { color: var(--accent); font-weight: 500; }
+
+.leds { display: inline-flex; gap: 5px; vertical-align: middle; margin-right: 9px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: #243039; border: 1px solid var(--line); }
+.dot.g { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 6px rgba(95,179,122,.5); }
+.dot.r { background: var(--bad); border-color: var(--bad); box-shadow: 0 0 6px rgba(227,95,98,.5); }
+.dot.blink { animation: bl 1s steps(1,end) infinite; }
+@keyframes bl { 50% { opacity: .15; box-shadow: none; } }
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap: 16px; }
+.tablewrap { overflow-x: auto; }
+footer {
+  margin-top: 46px; padding-top: 16px; border-top: 1px solid var(--line);
+  font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+  display: flex; flex-wrap: wrap; gap: 6px 20px;
+}
+@media (prefers-reduced-motion: reduce) { * { animation-duration: .001ms !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Pico 2 W fan controller &middot; <b>Phase 1</b> &middot; Fault finding</p>
+  <h1>Fan Controller Diagnostics</h1>
+  <p class="standfirst">Paste a line of serial output and it gets decoded field by field against the thresholds in <code>config.py</code>. Below that, a fault tree that starts from what the LEDs are doing, and the voltage you should measure at every test point.</p>
+</header>
+
+<h2 class="sec">Decode a log line</h2>
+<p class="lede">Copy any line from Thonny's shell or <code>mpremote connect COM5</code> and paste it here. Multiple lines are fine &mdash; the most recent one is decoded and the rest are scanned for state changes.</p>
+
+<div class="decoder">
+  <div class="card">
+    <h3>Serial output</h3>
+    <label for="logInput" class="empty" style="display:block;margin-bottom:8px">Lines beginning with a state name, or <code>state:</code> transitions.</label>
+    <textarea id="logInput" spellcheck="false" placeholder="FAULT rh=53.2% t=23.8C dp=13.7 base=52.9 exc=+0.3 light=40537(ON) fan=0 rpm=0 fan stalled (0 rpm), stall 1/3"></textarea>
+    <div class="row">
+      <button id="decodeBtn" type="button">Decode</button>
+      <button class="ghost" id="sampleBtn" type="button">Load the captured fault</button>
+      <button class="ghost" id="clearBtn" type="button">Clear</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Reading</h3>
+    <div id="decodeOut"><p class="empty">Nothing decoded yet.</p></div>
+  </div>
+</div>
+
+<h2 class="sec">Fault tree</h2>
+<p class="lede">Start from what you can see on the board. Every path ends in something specific to check, not general advice.</p>
+<div class="tree">
+  <div class="crumbs" id="crumbs"></div>
+  <div id="treeOut"></div>
+</div>
+
+<h2 class="sec">Technique</h2>
+<p class="lede">Two moves that turn an argument into an answer. Both work by removing a variable rather than reasoning about it.</p>
+<div class="grid2">
+  <div class="card">
+    <h3>Bisect the circuit</h3>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-mid)">Move the fan&rsquo;s black lead from <code>38 e</code> straight to the left &minus; rail. That cuts the circuit in half at the switch. Spins &rarr; supply, fan and leads are all good, so the fault is downstream in the drive. Dead &rarr; the fault is upstream. One wire, and half the candidates disappear.</p>
+  </div>
+  <div class="card">
+    <h3>Remove the suspect part</h3>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-mid)">If a component is suspected of conducting when it should not, take it out and leave the holes empty. Behaviour unchanged &rarr; the part was never carrying the current and something else is. This beats reorienting or swapping it, which leaves you guessing whether the new placement is also wrong.</p>
+  </div>
+</div>
+
+<h2 class="sec">Test points</h2>
+<p class="lede">Black probe on any ground. Measure with the fan commanded on &mdash; hold it there with <code>mpremote connect COM5 exec "from machine import Pin; Pin(17,Pin.OUT).value(1)"</code>, which latches GP17 high and leaves it there.</p>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Point</th><th>Where</th><th>Fan ON</th><th>Fan OFF</th><th>What a wrong reading means</th></tr></thead>
+  <tbody>
+    <tr><td class="k">5 V rail</td><td class="v">left + rail</td><td class="v">5.0 V</td><td class="v">5.0 V</td><td class="n">0 V means step 4 &mdash; VBUS (pin 40, row 1 right) never reached the rail.</td></tr>
+    <tr><td class="k">3.3 V rail</td><td class="v">right + rail</td><td class="v">3.3 V</td><td class="v">3.3 V</td><td class="n">Above 3.4 V means 5 V has got onto the sensor rail. Unplug immediately.</td></tr>
+    <tr><td class="k">GP17 drive</td><td class="v">row 19 j</td><td class="v">3.3 V</td><td class="v">0 V</td><td class="n">Stuck at 0 with the fan commanded on means the pin is not the one you think, or the wire is off.</td></tr>
+    <tr><td class="k">Base</td><td class="v">row 37</td><td class="v">0.7&ndash;0.8 V</td><td class="v">0 V</td><td class="n">Near 0 V when driven: no base current. The 1 k&Omega; and 100 k&Omega; are swapped, or step 27 is not landing.</td></tr>
+    <tr><td class="k">Collector</td><td class="v">row 38</td><td class="v"><b>0.1&ndash;0.3 V</b></td><td class="v">5.0 V</td><td class="n">Anything above ~0.5 V with the fan on is partial saturation &mdash; the fan turns but the tach cannot be read.</td></tr>
+    <tr><td class="k">Emitter</td><td class="v">row 36</td><td class="v">0 V</td><td class="v">0 V</td><td class="n">Any voltage here means the emitter is not actually grounded (step 26).</td></tr>
+    <tr><td class="k">Tach</td><td class="v">row 17 i</td><td class="v">pulsing</td><td class="v">3.3 V</td><td class="n">Flat 3.3 V with the fan turning is the collector sitting too high, not a tach wiring fault.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 class="sec">Signatures</h2>
+<p class="lede">Combinations that point at one cause. All of these were seen on this build.</p>
+<div class="grid2">
+  <div class="card">
+    <h3>Behaviour is inverted &mdash; on when told off</h3>
+    <p style="margin:0 0 8px;font-size:13.5px">Fan runs while the base is low and stops when the base is driven high. No orientation of an NPN does this, so flipping the part will change the voltages without ever changing the behaviour. <b>The part is a PNP.</b> S8050 (NPN) and S8550 (PNP) are the complementary pair in identical TO-92 packages with near-identical markings, and kits mix them.</p>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-mid)"><b>Confirm it in 30 s.</b> Out of circuit, diode mode, legs 1-2-3 with 2 in the middle. <b>Red on 2</b> reading ~0.7 to both outer legs = NPN, what you want. <b>Black on 2</b> reading ~0.7 to both = PNP, wrong part. All OL = dead. Do this the <i>first</i> time behaviour inverts, not the eighth.</p>
+  </div>
+  <div class="card">
+    <h3>Fan runs at boot, and never stops</h3>
+    <p style="margin:0 0 8px;font-size:13.5px">If it is turning while the log says <code>fan=0</code>, the transistor is not in the path at all. Two things hold it off independently &mdash; the 100 k&Omega; pulldown from the instant power arrives, and <code>Pin(17, Pin.OUT, value=0)</code> on the first line of <code>main.py</code>. Spinning through both means the fan has a ground that bypasses the switch.</p>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-mid)"><b>Row 38 should hold exactly two things</b> &mdash; the fan&rsquo;s black lead and the diode&rsquo;s anode. Any other wire from row 38 to the &minus; rail shorts the transistor out. Most often it is step 26: the emitter ground belongs in <code>36 a</code>, and one row off it grounds the collector. Then step 29 (<code>37 a</code>), then the black lead itself. Only if all three are right is the S8050 shorted.</p>
+  </div>
+  <div class="card">
+    <h3>Fan turns &middot; rpm reads 0</h3>
+    <p style="margin:0 0 8px;font-size:13.5px">The transistor is conducting but not <em>saturating</em>. The fan gets ~3 V so it spins; the collector sits near 2 V; the tach is open-collector referenced to <em>that</em> node, so its low is 2 V and the Pico reads it as high.</p>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-mid)"><b>Check:</b> 1 k&Omega; is the base resistor (<code>34 b</code>&rarr;<code>37 b</code>), 100 k&Omega; is the pulldown (<code>37 a</code>&rarr;rail). Swapped gives 25 &micro;A of drive instead of 2.6 mA. Their bands differ only in the fourth position &mdash; brown for 1 k, orange for 100 k.</p>
+  </div>
+  <div class="card">
+    <h3>Fan completely still</h3>
+    <p style="margin:0 0 8px;font-size:13.5px">Either the transistor never turns on, or nothing downstream has power.</p>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-mid)"><b>Halve it:</b> pull the fan's black lead from <code>38 e</code> and put it straight into the left &minus; rail. Spins &rarr; rail, fan and leads are fine, so the fault is the switch or its drive. Still dead &rarr; step 4, the red lead, or the fan.</p>
+  </div>
+  <div class="card">
+    <h3>LEDs alternate, fan pulses on and off</h3>
+    <p style="margin:0 0 8px;font-size:13.5px">A stall fault that keeps clearing itself and retrying, roughly every six seconds.</p>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-mid)"><b>Fixed in firmware.</b> Faults used to clear whenever the DHT22 was healthy, including fan faults. Now a stall latches, counts to 3, and backs off 5 minutes between retries. If you still see fast cycling, the board is running an old <code>main.py</code>.</p>
+  </div>
+  <div class="card">
+    <h3>Everything reads 0 rpm, even spinning</h3>
+    <p style="margin:0 0 8px;font-size:13.5px">The tach counter throwing inside its interrupt handler.</p>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-mid)"><b>Fixed in firmware.</b> An old <code>calibrate.py</code> counted with <code>list.__setitem__</code>, which CPython allows and MicroPython does not. It stayed silent while stopped and threw once per pulse when spinning. Re-upload <code>calibrate.py</code>.</p>
+  </div>
+  <div class="card">
+    <h3>Fan never responds to the light</h3>
+    <p style="margin:0 0 8px;font-size:13.5px">Not a fault &mdash; uncalibrated thresholds.</p>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-mid)"><b>Check:</b> <code>LIGHT_ON</code> and <code>LIGHT_OFF</code> ship at 30000/20000. If your room's lit and dark readings both fall between those, nothing ever crosses. Run <code>calibrate.light()</code> where it will actually be mounted.</p>
+  </div>
+  <div class="card">
+    <h3>DHT22 never answers</h3>
+    <p style="margin:0 0 8px;font-size:13.5px">Five consecutive failures raises a sensor fault, which clears on its own the moment readings return.</p>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-mid)"><b>Check:</b> silkscreen is <code>VCC &#9474; S &#9474; GND</code>, rows 27/28/29. VCC on 3.3 V, never 5 V. The module has its own pull-up &mdash; do not add one. Its power LED should light when the rail is live.</p>
+  </div>
+</div>
+
+<footer>
+  <span>MicroPython 1.29.0 &middot; RP2350</span>
+  <span>MIN_RPM 800 &middot; tach 2 pulses/rev</span>
+  <span>Known good: 3,840 rpm &middot; 52.9 %RH &middot; 23.8 &deg;C</span>
+</footer>
+</div>
+
+<script>
+/* Thresholds mirrored from config.py. Change them here if you change them there. */
+const CFG = {
+  LIGHT_ON: 30000, LIGHT_OFF: 20000,
+  RH_RISE_ON: 8.0, RH_FALL_OFF: 3.0,
+  MIN_RPM: 800, SPINUP_S: 3,
+  MAX_FAN_FAULTS: 3, FAULT_RETRY_S: 300
+};
+
+const SAMPLE = `state: LEARN -> IDLE  baseline 52.9%
+state: IDLE -> RUN  light on
+state: RUN -> FAULT  fan stalled (0 rpm), stall 1/3
+FAULT rh=53.8% t=23.800002C dp=13.9 base=52.9 exc=+0.9 light=40377(ON) fan=0 rpm=0 fan stalled (0 rpm), stall 1/3`;
+
+const $ = s => document.querySelector(s);
+
+/* ---------------- log decoder ---------------- */
+
+function parseLine(l) {
+  const m = l.match(/^(LEARN|IDLE|RUN|BOOST|FAULT)\s+(.*)$/);
+  if (!m) return null;
+  const rest = m[2], g = k => {
+    const r = rest.match(new RegExp(k + '=([-+]?[\\d.]+)'));
+    return r ? parseFloat(r[1]) : null;
+  };
+  const lightM = rest.match(/light=(\d+)\((ON|off)\)/);
+  const reason = rest.replace(/\S+=\S+/g, '').trim();
+  return {
+    state: m[1], rh: g('rh'), t: g('t'), dp: g('dp'), base: g('base'),
+    exc: g('exc'), fan: g('fan'), rpm: g('rpm'),
+    light: lightM ? +lightM[1] : null,
+    lightOn: lightM ? lightM[2] === 'ON' : null,
+    reason: reason || null
+  };
+}
+
+function rowsFor(d) {
+  const R = [];
+  const push = (k, v, cls, label, note) => R.push({ k, v, cls, label, note });
+
+  push('state', d.state, 'info', d.state,
+    { LEARN:'First 60 s after boot, building the humidity baseline.',
+      IDLE:'Fan off, tracking the baseline. This is the healthy resting state.',
+      RUN:'Fan commanded on because of light and/or humidity.',
+      BOOST:'Manual 15-minute override from the button.',
+      FAULT:'A fault is latched. The reason is at the end of the line.' }[d.state]);
+
+  if (d.rh !== null) {
+    const ok = d.rh > 15 && d.rh < 95;
+    push('rh', d.rh.toFixed(1) + ' %', ok ? 'ok' : 'warn', ok ? 'plausible' : 'out of range',
+      ok ? 'Relative humidity from the DHT22.' : 'Outside 15–95 %RH suggests a bad read rather than real air.');
+  }
+  if (d.t !== null) {
+    const ok = d.t > 0 && d.t < 50;
+    push('t', d.t.toFixed(1) + ' °C', ok ? 'ok' : 'warn', ok ? 'plausible' : 'out of range',
+      'Temperature. ' + (d.t * 9 / 5 + 32).toFixed(1) + ' °F.');
+  }
+  if (d.dp !== null)
+    push('dp', d.dp.toFixed(1) + ' °C', 'info', 'derived',
+      'Dew point, computed from rh and t. Logged for interest; nothing decides on it yet.');
+
+  if (d.base !== null)
+    push('base', d.base.toFixed(1) + ' %', 'info', 'learned',
+      'The room’s resting humidity. Only updates while IDLE and dark.');
+
+  if (d.exc !== null) {
+    let cls = 'ok', label = 'at rest';
+    if (d.exc >= CFG.RH_RISE_ON) { cls = 'warn'; label = 'would start the fan'; }
+    else if (d.exc > CFG.RH_FALL_OFF) { cls = 'info'; label = 'would keep it running'; }
+    push('exc', (d.exc >= 0 ? '+' : '') + d.exc.toFixed(1) + ' %', cls, label,
+      'Rise above baseline. Starts at +' + CFG.RH_RISE_ON + ', stops below +' + CFG.RH_FALL_OFF + '.');
+  }
+
+  if (d.light !== null) {
+    const dead = d.light < CFG.LIGHT_ON && d.light > CFG.LIGHT_OFF;
+    push('light', d.light + (d.lightOn ? ' (ON)' : ' (off)'),
+      dead ? 'warn' : 'ok', dead ? 'in the dead band' : (d.lightOn ? 'light detected' : 'dark'),
+      dead
+        ? 'Between LIGHT_OFF (' + CFG.LIGHT_OFF + ') and LIGHT_ON (' + CFG.LIGHT_ON + '), so the state holds whatever it already was. If both your lit and dark readings land here, run calibrate.light().'
+        : 'Raw ADC, 0–65535. Bright reads high.');
+  }
+
+  if (d.fan !== null)
+    push('fan', d.fan ? '1 (commanded ON)' : '0 (commanded OFF)', d.fan ? 'info' : 'ok',
+      d.fan ? 'driving GP17 high' : 'not driving',
+      'What the controller is asking for — not proof of what the fan is doing.');
+
+  if (d.rpm !== null) {
+    let cls = 'ok', label = 'healthy';
+    if (d.fan && d.rpm < CFG.MIN_RPM) { cls = 'bad'; label = 'below MIN_RPM'; }
+    else if (!d.fan) { cls = 'info'; label = 'not measured'; }
+    push('rpm', String(d.rpm), cls, label,
+      d.fan
+        ? 'Measured from the tach. Under ' + CFG.MIN_RPM + ' while commanded on raises a stall fault after ' + CFG.SPINUP_S + ' s.'
+        : 'The tach is only sampled while the fan is commanded on, so this 0 is forced, not measured. If the blades are turning while fan=0, the transistor is not in the path — see the fault tree.');
+  }
+
+  if (d.reason) push('reason', d.reason, 'bad', 'fault text', 'Printed by check_fan_health when the fault was raised.');
+  return R;
+}
+
+function verdictFor(d) {
+  if (d.state === 'FAULT' && /stall/i.test(d.reason || ''))
+    return { cls:'bad', h:'Fan stall fault',
+      p:['The controller commanded the fan on, waited ' + CFG.SPINUP_S + ' s, read under ' + CFG.MIN_RPM + ' rpm, and shut it down.',
+         'Crucially this does <b>not</b> tell you the fan is stationary — only that no tach pulses arrived. A fan turning on a half-saturated transistor reports exactly this, because the collector sits too high for the Pico to see the tach’s low.',
+         'Go to the fault tree and answer whether the blades actually move. That one observation splits the two causes.'] };
+
+  if (d.state === 'FAULT' && /DHT|sensor/i.test(d.reason || ''))
+    return { cls:'bad', h:'Sensor fault',
+      p:['Five consecutive DHT22 reads failed. This clears itself as soon as readings return.',
+         'Check the module is on <code>VCC &#9474; S &#9474; GND</code> across rows 27/28/29, with VCC on the 3.3 V rail.'] };
+
+  if (d.state === 'RUN' && d.fan === 1 && d.rpm >= CFG.MIN_RPM)
+    return { cls:'ok', h:'Running normally',
+      p:['Fan commanded on and the tach confirms it at ' + d.rpm + ' rpm. This is the whole chain working.'] };
+
+  if (d.state === 'RUN' && d.fan === 0)
+    return { cls:'warn', h:'In RUN but the fan is not driven yet',
+      p:['Normal for one sample. The state changes first and the output is driven on the same tick, so the very first RUN line still shows fan=0.',
+         'If it persists across several lines, something is overriding the output.'] };
+
+  if (d.state === 'LEARN')
+    return { cls:'warn', h:'Still learning',
+      p:['The first 60 seconds after boot. Green blinks, the fan stays off, and no decision is made until a baseline exists.',
+         'If it never leaves LEARN, the DHT22 has never returned a reading — the baseline cannot be set from nothing.'] };
+
+  if (d.state === 'IDLE')
+    return { cls:'ok', h:'Idle and healthy',
+      p:['Fan off, baseline tracking. Green solid. This is where it should sit most of the time.'] };
+
+  if (d.state === 'BOOST')
+    return { cls:'ok', h:'Manual boost',
+      p:['Someone pressed the button. Runs 15 minutes, or until pressed again.'] };
+
+  return { cls:'warn', h:'Decoded', p:['No specific signature matched. Check the field table above.'] };
+}
+
+function decode() {
+  const raw = $('#logInput').value.trim();
+  const out = $('#decodeOut');
+  if (!raw) { out.innerHTML = '<p class="empty">Nothing decoded yet.</p>'; return; }
+
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const transitions = lines.filter(l => l.startsWith('state:'));
+  let d = null;
+  for (let i = lines.length - 1; i >= 0; i--) { d = parseLine(lines[i]); if (d) break; }
+
+  let html = '';
+  if (transitions.length) {
+    html += '<h3 style="font-family:var(--cond);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin:0 0 8px">State changes seen</h3><ul style="margin:0 0 16px;padding-left:18px;font-family:var(--mono);font-size:12px;color:var(--ink-mid)">';
+    transitions.slice(-6).forEach(t => { html += '<li>' + t.replace(/^state:\s*/, '') + '</li>'; });
+    html += '</ul>';
+    const loop = transitions.filter(t => /-> FAULT/.test(t)).length;
+    if (loop >= 2)
+      html += '<div class="verdict warn"><h4>Repeated faults</h4><p>' + loop + ' fault transitions in this capture. If they are stalls arriving every few seconds, the board is running a <code>main.py</code> from before the latching fix.</p></div>';
+  }
+
+  if (!d) {
+    out.innerHTML = html + '<p class="empty">No decodable status line found. A status line starts with LEARN, IDLE, RUN, BOOST or FAULT.</p>';
+    return;
+  }
+
+  const rows = rowsFor(d);
+  html += '<div class="tablewrap"><table><thead><tr><th>Field</th><th>Value</th><th>Verdict</th></tr></thead><tbody>';
+  rows.forEach(r => {
+    html += '<tr><td class="k">' + r.k + '</td><td class="v">' + r.v +
+            '</td><td><span class="pill ' + r.cls + '">' + r.label + '</span>' +
+            (r.note ? '<div class="n" style="margin-top:4px">' + r.note + '</div>' : '') + '</td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  const v = verdictFor(d);
+  html += '<div class="verdict ' + v.cls + '"><h4>' + v.h + '</h4>' + v.p.map(p => '<p>' + p + '</p>').join('') + '</div>';
+  out.innerHTML = html;
+}
+
+$('#decodeBtn').addEventListener('click', decode);
+$('#clearBtn').addEventListener('click', () => { $('#logInput').value = ''; decode(); });
+$('#sampleBtn').addEventListener('click', () => { $('#logInput').value = SAMPLE; decode(); });
+$('#logInput').addEventListener('input', decode);
+
+/* ---------------- fault tree ---------------- */
+
+const LED = (g, r) => '<span class="leds"><span class="dot ' + g + '"></span><span class="dot ' + r + '"></span></span>';
+
+const TREE = {
+  start: {
+    q: 'What are the two status LEDs doing?',
+    sub: 'Green is GP19, red is GP20. Look for a second or two — blinking runs at about 1.2 Hz.',
+    opts: [
+      { t: LED('g','') + 'Green solid, red off', to: 'idle' },
+      { t: LED('','') + 'Any pattern — but the fan never stops', to: 'always' },
+      { t: LED('','') + 'Inverted — on when it should be off', to: 'inverted' },
+      { t: LED('g blink','') + 'Green blinking, red off', to: 'learn' },
+      { t: LED('','r') + 'Red solid, green off', to: 'run' },
+      { t: LED('','r blink') + 'Red blinking, green off', to: 'boost' },
+      { t: LED('g blink','r blink') + 'Both alternating', to: 'fault' },
+      { t: LED('','') + 'Both dark', to: 'dark' }
+    ]
+  },
+  inverted: { a: 'The transistor is a PNP',
+    p: 'Running while the base is low and stopping when it is driven high is PNP behaviour. An NPN cannot do this in any orientation — turning it round changes the voltages you measure but never the behaviour, which is exactly how this wastes an evening. S8050 (NPN) and S8550 (PNP) are complementary parts in identical TO-92 packages, and kits mix them freely.',
+    li: ['<b>Test it out of circuit.</b> Diode mode, red lead in VΩ and black in COM. Hold the part flat-face toward you, legs down, and call them 1-2-3 left to right.',
+         '<b>Red on leg 2</b>, black on 1 then 3: both read ~0.6–0.8 &rarr; <b>NPN</b>, base in the middle. This is the part you want.',
+         '<b>Black on leg 2</b>, red on 1 then 3: both read ~0.6–0.8 &rarr; <b>PNP</b>. Wrong part — set it aside.',
+         'All four OL &rarr; dead. Any reading ~0.000 &rarr; shorted junction, also dead.',
+         'Then for an NPN, red still on the base: the outer leg reading <i>higher</i> (≈0.75 vs 0.70) is the <b>emitter</b>, and that goes to ground.',
+         '<b>Do not rewire around a PNP.</b> As a high-side switch driven from 3.3 V logic against a 5 V rail it will not turn off cleanly, and it puts 5 V on a GPIO that is not 5 V tolerant. Fit an NPN: S8050, 2N3904, 2N2222, BC337 and BC547 all handle 50 mA fine.',
+         '<b>It also destroys parts.</b> A PNP in an NPN low-side socket sits with its base-emitter junction reverse-biased near 5 V against a 6 V limit. Repeated avalanche is what kills them.'] },
+  always: { a: 'The transistor is not in the circuit',
+    p: 'A fan that runs during LEARN, IDLE or FAULT is not being switched at all. Two separate things hold it off: the 100 kΩ pulldown, which works before any code runs, and the pin being constructed low on the first line of main.py. Running through both means the fan reaches ground some other way.',
+    li: ['<b>Confirm with the log first.</b> Capture a few lines and look at <code>fan=</code>. If it reads 0 while the blades turn, this branch is right.',
+         '<b>The rule:</b> row 38 on the left half should hold exactly two things — the fan’s black lead and the diode’s anode. Anything else running from row 38 to the &minus; rail shorts the transistor out of the circuit.',
+         '<b>Check step 26 first.</b> The emitter ground wire belongs in <code>36 a</code>. One row off, in 38, and it grounds the <i>collector</i> instead — the fan then runs permanently and GP17 does nothing. Two holes apart, and the single easiest slip to make in this block.',
+         '<b>Check step 29.</b> The 100 k&Omega; pulldown belongs in <code>37 a</code>. In row 38 it does the same damage.',
+         '<b>Check the black lead is in <code>38 e</code></b> and not still sitting in the &minus; rail from a bypass test.',
+         '<b>Settle it by removing the part.</b> Pull the S8050 right out of the board and leave the holes empty. Fan still spins &rarr; it was never in the path and a wire is shorting row 38 to ground. Fan stops &rarr; the part really had failed short, so fit a spare.',
+         '<b>Reorienting it proves nothing here.</b> No orientation of a working transistor gives full speed with the base low — correct way round it is off, reversed it is off, reversed and driven it barely stirs. Full speed in both orientations means a conductor, not a semiconductor.',
+         '<b>When it goes back in,</b> flat face toward the left rails: E in 36, B in 37, C in 38. Flat face right puts the collector on ground and the emitter on the fan, which is upside down for a low-side switch.'] },
+  idle: { a: 'IDLE — healthy',
+    p: 'The controller is resting with the fan off, tracking the baseline. Nothing is wrong.',
+    li: ['If the bathroom light is on and it still sits in IDLE, your <code>LIGHT_ON</code> threshold is too high. Decode a log line and look at the <code>light=</code> field.',
+         'To prove the fan path without waiting for a shower, press the button for a 15-minute boost.'] },
+  learn: { a: 'LEARN — first 60 seconds',
+    p: 'It is building the humidity baseline. This always follows a power-up or reset.',
+    li: ['Wait a minute. It should go solid green.',
+         'If it <b>never</b> leaves LEARN, the DHT22 has never returned a reading — there is nothing to set a baseline from. Jump to the sensor branch below.',
+         'Note that any <code>mpremote</code> command that soft-resets the board restarts this.'] },
+  boost: { a: 'BOOST — manual override',
+    p: 'The button was pressed. It will run 15 minutes, or until pressed again.',
+    li: ['This is a good way to test the fan path on demand.',
+         'If the fan does not turn during boost, go to the fan branch — the drive circuit is at fault, not the sensing.'] },
+  dark: { a: 'No power, or the script is not running',
+    p: 'Both LEDs dark means the loop is not driving outputs.',
+    li: ['Is the Pico enumerating? Check for a COM port. MicroPython shows up as <code>2E8A:0005</code>.',
+         'Is <code>main.py</code> on the board? <code>mpremote connect COM5 fs ls</code>.',
+         'Did a command leave it sitting at the REPL? A soft reset restarts <code>main.py</code>.',
+         'If the LEDs never light even in LEARN, check their resistors reach the right &minus; rail and that the anodes are the long legs.'] },
+  run: {
+    q: 'It is in RUN, so the fan is commanded on. Are the blades actually turning?',
+    sub: 'Look at the hub, or rest a finger on the frame to feel for vibration.',
+    opts: [
+      { t: 'Yes, spinning at speed', s: 'Clearly moving, normal airflow', to: 'run_ok' },
+      { t: 'Turning, but weakly', s: 'Slow, or stirring without spinning up', to: 'partial' },
+      { t: 'Completely still', s: 'No movement, no hum', to: 'nofan' }
+    ]
+  },
+  run_ok: { a: 'Working',
+    p: 'Commanded on and turning. Decode a log line to confirm the tach agrees — you want <code>rpm</code> near 3,800.',
+    li: ['If rpm reads 0 while it is visibly spinning, that is the partial-saturation signature. Take the "turning, but weakly" path instead.'] },
+  fault: {
+    q: 'A fault is latched. What does the reason say?',
+    sub: 'Read a log line — the reason is printed at the end. Paste it into the decoder above if it is easier.',
+    opts: [
+      { t: 'fan stalled (0 rpm)', s: 'Commanded on, no tach pulses', to: 'run' },
+      { t: 'DHT22 not responding', s: 'Five consecutive failed reads', to: 'sensor' },
+      { t: 'It alternates fast and the fan pulses', s: 'Cycling every few seconds', to: 'oldfw' },
+      { t: 'I cannot read the serial output', s: 'No cable, or the port is busy', to: 'noserial' }
+    ]
+  },
+  oldfw: { a: 'Old firmware on the board',
+    p: 'Fast cycling between fault and idle is the bug where any fault cleared as soon as the DHT22 was healthy — including fan faults. It has been fixed: a stall now latches, counts to ' + CFG.MAX_FAN_FAULTS + ', and waits ' + (CFG.FAULT_RETRY_S / 60) + ' minutes between retries.',
+    li: ['Re-upload: <code>mpremote connect COM5 fs cp main.py :main.py</code> and the same for <code>config.py</code>.',
+         'Then <code>mpremote connect COM5 exec "import machine; machine.reset()"</code>.',
+         'A correct fault now holds steady and the log shows <code>stall 1/3</code>.'] },
+  noserial: { a: 'Get the serial log first',
+    p: 'Nearly every branch below depends on the fault reason. Without it you are guessing.',
+    li: ['Close Thonny — it holds the port and nothing else can open it.',
+         '<code>mpremote connect COM5</code> attaches to the running program. Ctrl-C gets you a REPL.',
+         'Status lines print every 2 s, so a 10-second capture is plenty.'] },
+  partial: { a: 'The transistor is not saturating',
+    p: 'This is the signature: the fan turns but the tach reads nothing. The transistor is acting as a resistor rather than a closed switch, so the fan sees roughly 3 V instead of 4.8 V, and the collector sits near 2 V. Because the tach is open-collector referenced to that same node, its "low" is 2 V — which the Pico reads as a high. No pulses, hence a stall fault on a fan that is visibly moving.',
+    li: ['<b>Check the two resistors are not swapped.</b> The 1 k&Omega; is the base resistor, <code>34 b</code> &rarr; <code>37 b</code>. The 100 k&Omega; is the pulldown, <code>37 a</code> &rarr; left &minus; rail. Reversed, you get 25 &micro;A of base drive where 2.6 mA is needed.',
+         'Their colour bands differ in <b>one position</b> — the fourth. Brown is 1 k, orange is 100 k. Under warm light on a blue body they look identical.',
+         'Measure the collector, row 38, with the fan commanded on. Saturated is 0.1&ndash;0.3 V. If you read 1&ndash;3 V, this is confirmed.',
+         'Also measure the base, row 37: it should sit at 0.7&ndash;0.8 V while driven. Much lower means the base current is not arriving.'] },
+  nofan: {
+    q: 'Nothing turns. Move the fan’s black lead from <code>38 e</code> straight into the left &minus; rail, bypassing the transistor. What happens?',
+    sub: 'This is safe — it just runs the fan directly off 5 V, which is what it is built for.',
+    opts: [
+      { t: 'It spins', s: 'Runs continuously once grounded', to: 'drive' },
+      { t: 'Still nothing', s: 'Dead either way', to: 'supply' }
+    ]
+  },
+  drive: { a: 'Supply and fan are good — the switch is not',
+    p: 'Rail, fan and both power leads are proven. The fault is in steps 25 to 29.',
+    li: ['<b>Swap the two outer legs of the S8050</b>, rows 36 and 38, leaving the base in 37. A reversed NPN has a gain near 3 instead of 200. It is not destructive, so this is the cheapest thing to try.',
+         'Flat face should point at the <b>left rails</b>. That puts E in 36, B in 37, C in 38.',
+         '<b>Re-seat step 27.</b> It runs <code>19 j</code> on the right half over to <code>34 b</code> on the left. Column j matters — the Pico’s body covers d through g on rows 1&ndash;20, so anything inboard of h on those rows is unreachable.',
+         'Confirm the emitter actually reaches ground: <code>36 a</code> to the left &minus; rail.',
+         'Then measure the base at row 37 with the fan commanded on. 0.7&ndash;0.8 V means drive is arriving.'] },
+  supply: { a: 'The problem is upstream of the switch',
+    p: 'With the fan wired straight to ground it should run. If it does not, it never had 5 V.',
+    li: ['Measure the left + rail to ground. It should read <b>5.0 V</b> — VBUS is the raw USB rail, so there is no diode drop to account for. 0 V means step 4 never landed: VBUS is pin 40, row 1 on the right half.',
+         'Check the fan’s red lead is actually in the left + rail and not the adjacent &minus; rail.',
+         'Check the rails are not broken mid-board. Many breadboards split them near row 30.',
+         'Last, test the fan on a known 5 V source to rule out the fan itself.'] },
+  sensor: { a: 'DHT22 is not answering',
+    p: 'Five consecutive failed reads. This clears itself the moment readings return, so it is never latched.',
+    li: ['Silkscreen is <code>VCC &#9474; S &#9474; GND</code> — rows 27, 28, 29, VCC nearest the Pico.',
+         '<b>VCC goes to 3.3 V, never 5 V.</b> The module regulates nothing.',
+         'Does the module’s own power LED light? No light means VCC is not arriving.',
+         'S goes to <code>28 g</code> then up to <code>12 j</code> — column j, because the Pico covers d through g on that row.',
+         'Do not add a pull-up. The module has one; a second in parallel halves it.',
+         'Run <code>calibrate.sensor()</code> for ten reads. The odd checksum failure is normal; ten out of ten is not.'] }
+};
+
+let path = [];
+
+function renderTree(key) {
+  const n = TREE[key];
+  const out = $('#treeOut'), cr = $('#crumbs');
+
+  cr.innerHTML = path.length
+    ? '<button class="ghost" id="backBtn" type="button" style="padding:3px 10px">&larr; Back</button>' +
+      '<button class="ghost" id="restartBtn" type="button" style="padding:3px 10px">Start over</button>' +
+      '<span>' + path.length + ' step' + (path.length > 1 ? 's' : '') + ' in</span>'
+    : '<span>Start here</span>';
+
+  if (n.q) {
+    out.innerHTML = '<p class="q">' + n.q + '</p><p class="qsub">' + (n.sub || '') + '</p><div class="opts">' +
+      n.opts.map((o, i) => '<button class="opt" data-to="' + o.to + '" type="button">' + o.t +
+        (o.s ? '<span>' + o.s + '</span>' : '') + '</button>').join('') + '</div>';
+    out.querySelectorAll('.opt').forEach(b =>
+      b.addEventListener('click', () => { path.push(key); renderTree(b.dataset.to); }));
+  } else {
+    out.innerHTML = '<div class="answer"><h3>' + n.a + '</h3><p style="color:var(--ink-mid);margin:0">' + n.p + '</p>' +
+      (n.li ? '<ol>' + n.li.map(x => '<li>' + x + '</li>').join('') + '</ol>' : '') + '</div>';
+  }
+
+  const back = $('#backBtn'), restart = $('#restartBtn');
+  if (back) back.addEventListener('click', () => renderTree(path.pop()));
+  if (restart) restart.addEventListener('click', () => { path = []; renderTree('start'); });
+}
+
+renderTree('start');
+decode();
+</script>
+</body>
+</html>

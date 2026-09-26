@@ -1,0 +1,1888 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Breadboard wiring and schematic for a Raspberry Pi Pico 2 W bathroom fan controller: DHT22 humidity, LDR occupancy, S8050 low-side fan switch.">
+<link rel="icon" href="data:,">
+<style>
+  /* Baseline reset. Standalone file - nothing else is injected around this. */
+  html { color-scheme: dark; }
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>Fan Controller Build Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: dark;
+
+  /* Ground: an unlit workbench — near-black with a cool blue-green bias */
+  --bg:        #0d1114;
+  --surface:   #141a1f;
+  --raised:    #1b2329;
+  --line:      #2a343c;
+  --line-soft: #202a31;
+
+  --ink:       #e4ebf0;
+  --ink-mid:   #9fb0bc;
+  --ink-dim:   #7c8d99;
+
+  /* Accent borrowed from the fan itself: Noctua beige over plum-brown */
+  --accent:    #d9bd96;
+  --accent-dk: #ae815b;
+
+  /* Wire colours ARE the information here, so they are tokens, not decoration */
+  --w-5v:   #e35f62;
+  --w-33:   #e8a33d;
+  --w-gnd:  #7c8f9e;
+  --w-sig:  #78b465;
+  --w-tach: #e3c94a;
+
+  --ok:     #5fb37a;
+  --warn:   #e0a33c;
+  --danger: #e35f62;
+
+  --pcb:      #1f4b3a;
+  --pcb-edge: #2f6b52;
+  --bb:       #cfd5d8;
+  --bb-edge:  #9aa4aa;
+
+  --r-sm: 3px;
+  --r-md: 7px;
+  --r-lg: 12px;
+
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding-inline: 20px;
+  padding-block: 32px 72px;
+}
+
+/* ---------- masthead ---------- */
+
+header { border-bottom: 1px solid var(--line); padding-bottom: 22px; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--accent-dk);
+  margin: 0 0 10px;
+}
+.eyebrow b { color: var(--accent); font-weight: 500; }
+
+h1 {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: clamp(30px, 5.5vw, 46px);
+  line-height: 1.04;
+  letter-spacing: -.015em;
+  margin: 0 0 12px;
+  text-wrap: balance;
+}
+.standfirst {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--ink-mid);
+  font-size: 16px;
+}
+
+.specs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  margin-top: 20px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.specs div { display: flex; gap: 8px; align-items: baseline; }
+.specs dt { color: var(--ink-dim); text-transform: uppercase; letter-spacing: .08em; }
+.specs dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ---------- warnings ---------- */
+
+.alerts { display: grid; gap: 10px; margin: 26px 0 0; }
+.alert {
+  display: grid;
+  grid-template-columns: 4px 1fr;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.alert i { background: var(--danger); display: block; }
+.alert.warn i { background: var(--warn); }
+.alert .body { padding: 12px 16px 13px 2px; }
+.alert h2 {
+  margin: 0 0 3px;
+  font-family: var(--cond);
+  font-size: 14px;
+  letter-spacing: .01em;
+}
+.alert p { margin: 0; font-size: 13.5px; color: var(--ink-mid); }
+
+/* ---------- schematic ---------- */
+
+.schem-sec { margin-top: 34px; }
+.schem-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.schem-head h2 {
+  font-family: var(--cond);
+  font-size: 22px;
+  letter-spacing: -.01em;
+  margin: 0 0 4px;
+}
+.schem-head p { margin: 0; color: var(--ink-mid); font-size: 13.5px; max-width: 58ch; }
+#schemNote {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.schem-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 8px;
+}
+.schem-card .scrollx { overflow-x: auto; }
+#schem { display: block; width: 100%; min-width: 900px; height: auto; }
+.schem-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 10px 6px 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+/* ---------- two-column workspace ---------- */
+
+.work {
+  display: grid;
+  grid-template-columns: minmax(320px, 390px) 1fr;
+  gap: 34px;
+  margin-top: 36px;
+  align-items: start;
+}
+
+.boardpane { position: sticky; top: 16px; }
+
+.boardcard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 12px;
+}
+.boardcard .scroller {
+  max-height: calc(100vh - 150px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+#board { display: block; width: 100%; height: auto; }
+
+.boardhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 2px 10px;
+}
+.boardhead h2 {
+  font-family: var(--cond);
+  font-size: 13px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin: 0;
+}
+#focusNote {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  text-align: right;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 12px 2px 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-mid);
+}
+.legend span { display: flex; align-items: center; gap: 6px; }
+.legend b { width: 13px; height: 3px; border-radius: 2px; display: block; }
+
+/* ---------- steps ---------- */
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.bar {
+  flex: 1;
+  height: 5px;
+  background: var(--raised);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width .28s ease;
+}
+#count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-mid);
+  font-variant-numeric: tabular-nums;
+}
+button.ghost {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--ink-dim);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+button.ghost:hover { color: var(--ink); border-color: var(--ink-dim); }
+button.ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+p.hint {
+  margin: -8px 0 22px;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+}
+
+.group { margin-bottom: 30px; }
+.group > h3 {
+  font-family: var(--cond);
+  font-size: 12px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 3px;
+}
+.group > p.why {
+  margin: 0 0 12px;
+  font-size: 13.5px;
+  color: var(--ink-dim);
+  max-width: 64ch;
+}
+
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+
+li.step {
+  display: grid;
+  grid-template-columns: 26px 30px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+li.step:hover { background: var(--raised); }
+li.step.sel { background: var(--raised); border-color: var(--accent-dk); }
+li.step.done .txt { opacity: .42; }
+li.step.done .txt .main { text-decoration: line-through; text-decoration-thickness: 1px; }
+
+li.step .num {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+  padding-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+li.step.sel .num { color: var(--accent); }
+
+.chk {
+  width: 19px; height: 19px;
+  margin-top: 2px;
+  border: 1.5px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.chk:hover { border-color: var(--ink-dim); }
+.chk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chk svg { width: 11px; height: 11px; opacity: 0; }
+li.step.done .chk { background: var(--ok); border-color: var(--ok); }
+li.step.done .chk svg { opacity: 1; }
+
+.txt .main { font-size: 14.5px; }
+.txt .main code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.txt .note {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  max-width: 60ch;
+}
+.txt .note.flag { color: var(--warn); }
+
+/* ---------- tables ---------- */
+
+.tablewrap { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  min-width: 460px;
+}
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); }
+th {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-weight: 500;
+}
+td.m { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td.m b { color: var(--accent); font-weight: 500; }
+
+/* ---------- closing sections ---------- */
+
+.after { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 32px; }
+.after h2 {
+  font-family: var(--cond);
+  font-size: 22px;
+  margin: 0 0 6px;
+  letter-spacing: -.01em;
+}
+.after > p { margin: 0 0 20px; color: var(--ink-mid); max-width: 64ch; }
+
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+}
+.panel h3 {
+  font-family: var(--cond);
+  font-size: 14px;
+  letter-spacing: .04em;
+  margin: 0 0 10px;
+}
+.panel ul { margin: 0; padding-left: 17px; color: var(--ink-mid); font-size: 13.5px; }
+.panel li { margin-bottom: 7px; }
+.panel li:last-child { margin-bottom: 0; }
+.panel code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.states { display: grid; gap: 8px; }
+.staterow {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: 12px;
+  align-items: center;
+  font-size: 13.5px;
+}
+.leds { display: flex; gap: 6px; }
+.dot { width: 11px; height: 11px; border-radius: 50%; background: #243039; border: 1px solid var(--line); }
+.dot.g { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 7px rgba(95,179,122,.55); }
+.dot.r { background: var(--danger); border-color: var(--danger); box-shadow: 0 0 7px rgba(227,95,98,.5); }
+.dot.blink { animation: bl 1s steps(1, end) infinite; }
+@keyframes bl { 50% { opacity: .18; box-shadow: none; } }
+.staterow b { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+.staterow span { color: var(--ink-mid); }
+
+footer {
+  margin-top: 44px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+}
+
+/* ---------- svg focus behaviour ---------- */
+
+#board .grp { transition: opacity .18s ease; }
+#board.focused .grp { opacity: .13; }
+#board.focused .grp.on { opacity: 1; }
+#board .halo, #schem .halo { opacity: 0; }
+#board.focused .grp.on .halo { opacity: 1; }
+
+/* Component values would overlap badly if every one showed at once in a
+   narrow pane, so they surface only for the step being followed. */
+#board .vlabel { opacity: 0; transition: opacity .18s ease; }
+#board.focused .grp.on .vlabel { opacity: 1; }
+
+#schem .grp { transition: opacity .18s ease; }
+#schem.focused .grp { opacity: .11; }
+#schem.focused .grp.on { opacity: 1; }
+
+/* ---------- interactive schematic ---------- */
+
+#schem .part { cursor: pointer; transition: filter .12s ease; }
+#schem .part .hit { fill: none; stroke: transparent; stroke-width: 15; pointer-events: stroke; }
+#schem .part .hitbox { fill: transparent; stroke: none; pointer-events: fill; }
+#schem .part:hover { filter: drop-shadow(0 0 5px var(--accent-dk)); }
+#schem .part.picked { filter: drop-shadow(0 0 7px var(--accent)); }
+#schem .part:focus { outline: none; }
+#schem .part:focus-visible { filter: drop-shadow(0 0 7px var(--accent)); }
+
+#schem .vtag text { font-family: var(--mono); font-size: 9px; }
+#schem .vtag rect.plate { fill: var(--bg); stroke: var(--line-soft); stroke-width: .8; rx: 2; }
+#schem .vtag.picked rect.plate { stroke: var(--accent); }
+.vlayer { transition: opacity .18s ease; }
+.vlayer.off { display: none; }
+#schem.focused .vlayer { opacity: .3; }
+
+.vtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  cursor: pointer;
+  color: var(--ink-mid);
+  user-select: none;
+}
+.vtoggle input { accent-color: var(--accent-dk); margin: 0; }
+
+.inspect {
+  margin: 10px 2px 2px;
+  border-top: 1px solid var(--line-soft);
+  padding: 14px 4px 6px;
+}
+.inspect .hintline { margin: 0; color: var(--ink-dim); font-size: 13px; }
+.inspect .ihead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.inspect h3 { margin: 0; font-family: var(--cond); font-size: 18px; letter-spacing: -.01em; }
+.inspect .isub { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+.inspect .iwhere { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
+.inspect .cols {
+  display: grid;
+  grid-template-columns: minmax(230px, 340px) minmax(0, 1fr);
+  gap: 14px 30px;
+  margin-top: 12px;
+}
+.inspect dl.volts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 14px;
+  align-content: start;
+  background: var(--raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  padding: 11px 13px;
+}
+.inspect dl.volts dt { font-size: 12px; color: var(--ink-mid); }
+.inspect dl.volts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ok);
+  text-align: right;
+  white-space: nowrap;
+}
+.inspect .prose p { margin: 0 0 9px; font-size: 13.5px; color: var(--ink-mid); }
+.inspect .prose p:last-child { margin-bottom: 0; }
+.inspect .prose b { color: var(--ink); font-weight: 600; }
+.inspect .prose .tag {
+  font-family: var(--cond);
+  font-size: 10.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  display: block;
+  margin-bottom: 1px;
+}
+.inspect .prose p.bad .tag { color: var(--warn); }
+
+@media (max-width: 720px) {
+  .inspect .cols { grid-template-columns: 1fr; }
+}
+
+/* On a phone the two-column reading list squeezes the labels into one word
+   per line, so stack each reading instead. */
+@media (max-width: 560px) {
+  .inspect dl.volts { grid-template-columns: 1fr; gap: 0; }
+  .inspect dl.volts dt { margin-top: 9px; }
+  .inspect dl.volts dt:first-child { margin-top: 0; }
+  .inspect dl.volts dd { text-align: left; white-space: normal; margin-top: 1px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
+@media (max-width: 900px) {
+  .work { grid-template-columns: 1fr; gap: 26px; }
+  .boardpane { position: static; }
+  .boardcard .scroller { max-height: 68vh; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Pico 2 W &middot; <b>Phase 1</b> &middot; Breadboard wiring</p>
+  <h1>Fan Controller Build Sheet</h1>
+  <p class="standfirst">Thirty-four steps, in order. Tap any step to light up just that wire on the board. The board is drawn in your photo's orientation &mdash; USB at the top, row&nbsp;1 at the top &mdash; so what you see here is what sits in front of you.</p>
+  <dl class="specs">
+    <div><dt>Sensors</dt><dd>DHT22 &middot; LDR</dd></div>
+    <div><dt>Switch</dt><dd>S8050 NPN, low&#8209;side</dd></div>
+    <div><dt>Load</dt><dd>NF&#8209;A4x10 5V &middot; 50 mA</dd></div>
+    <div><dt>Fan supply</dt><dd>VBUS &middot; ~5.0 V</dd></div>
+    <div><dt>Rails</dt><dd>3V3 right &middot; 5V left</dd></div>
+  </dl>
+</header>
+
+<div class="alerts">
+  <div class="alert"><i></i><div class="body">
+    <h2>Unplug the Pico before you wire anything</h2>
+    <p>Every step below assumes the board is dead. Plug in only at the final check.</p>
+  </div></div>
+  <div class="alert"><i></i><div class="body">
+    <h2>Three parts have a wrong way round</h2>
+    <p>Electrolytic caps &mdash; the <strong>stripe is negative</strong>. The 1N4148 &mdash; the <strong>band goes to&nbsp;5V</strong>. LEDs &mdash; long leg is the anode. Reversed caps vent; a reversed diode shorts the rail.</p>
+  </div></div>
+  <div class="alert"><i></i><div class="body">
+    <h2>Your DHT22 is a 3-pin module, silkscreened VCC &#9474; S &#9474; GND</h2>
+    <p>VCC nearest the Pico, then S, then GND &mdash; rows 27, 28, 29. The module carries its own pull-up, so there is no 10&nbsp;k&Omega; to add. Double-check the printing before powering up: VCC and GND swapped will destroy the sensor.</p>
+  </div></div>
+  <div class="alert"><i></i><div class="body">
+    <h2>Columns d&ndash;g are buried under the Pico on rows 1&ndash;20</h2>
+    <p>The board is 21&nbsp;mm wide but its pin rows are 17.78&nbsp;mm apart, so it overhangs its own legs by about 1.6&nbsp;mm each side. Legs sit in <strong>c</strong> and <strong>h</strong>; everything between them is covered. On any row the Pico occupies, land your wire in <strong>i</strong> or <strong>j</strong> &mdash; same node, but you can actually reach it.</p>
+  </div></div>
+  <div class="alert warn"><i></i><div class="body">
+    <h2>Check your rails for a mid-board break</h2>
+    <p>Look for a gap in the red and blue lines near row&nbsp;30. If yours has one, bridge across it on all four rails before you start.</p>
+  </div></div>
+</div>
+
+<section class="schem-sec">
+  <div class="schem-head">
+    <div>
+      <h2>Schematic</h2>
+      <p>The same circuit as an electrical drawing &mdash; what connects to what, with the breadboard geometry taken away. The boxed numbers are the volts you should measure at that point. <b>Click any part, wire or number</b> for what it does, what a meter should read and what a wrong reading means.</p>
+    </div>
+    <div id="schemNote">all connections</div>
+  </div>
+  <div class="schem-card">
+    <div class="scrollx"><svg id="schem" role="img" aria-label="Circuit schematic"></svg></div>
+    <div class="schem-key">
+      <span>&bull; a filled dot is a junction &mdash; wires crossing without one are not connected</span>
+      <span>&bull; Q1 drawn as NPN: collector top, emitter to ground</span>
+      <span>&bull; every voltage is DC, black probe in a blue rail</span>
+      <label class="vtoggle"><input type="checkbox" id="vtoggle" checked> show voltages</label>
+    </div>
+    <div class="inspect" id="inspect" aria-live="polite">
+      <p class="hintline">Nothing selected. Click a component, a wire or a voltage box above &mdash; or press Tab then Enter to step through them.</p>
+    </div>
+  </div>
+</section>
+
+<div class="work">
+
+  <div class="boardpane">
+    <div class="boardcard">
+      <div class="boardhead">
+        <h2>Board</h2>
+        <div id="focusNote">all connections</div>
+      </div>
+      <div class="scroller"><svg id="board" role="img" aria-label="Breadboard wiring diagram"></svg></div>
+      <div class="legend">
+        <span><b style="background:var(--w-5v)"></b>5 V</span>
+        <span><b style="background:var(--w-33)"></b>3.3 V</span>
+        <span><b style="background:var(--w-gnd)"></b>GND</span>
+        <span><b style="background:var(--w-sig)"></b>signal</span>
+        <span><b style="background:var(--w-tach)"></b>tach</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="steps-pane">
+    <div class="progress">
+      <span id="count">0 / 34</span>
+      <div class="bar"><i id="barfill"></i></div>
+      <button class="ghost" id="reset" type="button">Reset</button>
+    </div>
+    <p class="hint">Tap a step to isolate it on the board and schematic. Tick it off and both jump to the next step still to wire.</p>
+    <div style="display:none">
+    </div>
+    <div id="stepsRoot"></div>
+
+    <div class="after" style="margin-top:8px">
+      <h2>Pin map</h2>
+      <p>Physical pin numbers run 1&ndash;20 down the left side and 40&ndash;21 down the right, so a right-side pin is <code>41 &minus; row</code>. Every signal sits on the right.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Signal</th><th>GPIO</th><th>Pin</th><th>Row</th></tr></thead>
+        <tbody>
+          <tr><td>Fan 5 V supply</td><td class="m">&mdash;</td><td class="m">40</td><td class="m"><b>1 R</b></td></tr>
+          <tr><td>Ground</td><td class="m">&mdash;</td><td class="m">38</td><td class="m"><b>3 R</b></td></tr>
+          <tr><td>3.3 V out</td><td class="m">&mdash;</td><td class="m">36</td><td class="m"><b>5 R</b></td></tr>
+          <tr><td>Light level</td><td class="m">GP26 / ADC0</td><td class="m">31</td><td class="m"><b>10 R</b></td></tr>
+          <tr><td>DHT22 data</td><td class="m">GP22</td><td class="m">29</td><td class="m"><b>12 R</b></td></tr>
+          <tr><td>Red LED</td><td class="m">GP20</td><td class="m">26</td><td class="m"><b>15 R</b></td></tr>
+          <tr><td>Green LED</td><td class="m">GP19</td><td class="m">25</td><td class="m"><b>16 R</b></td></tr>
+          <tr><td>Fan tach</td><td class="m">GP18</td><td class="m">24</td><td class="m"><b>17 R</b></td></tr>
+          <tr><td>Fan drive</td><td class="m">GP17</td><td class="m">22</td><td class="m"><b>19 R</b></td></tr>
+          <tr><td>Button</td><td class="m">GP16</td><td class="m">21</td><td class="m"><b>20 R</b></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<div class="after">
+  <h2>Before you plug in</h2>
+  <p>Four meter checks that take a minute and catch the mistakes that cost parts. Probes on the board, Pico still unplugged, meter on continuity or 20k.</p>
+  <div class="cols">
+    <div class="panel">
+      <h3>Continuity, Pico out of the board</h3>
+      <ul>
+        <li><strong>Left + rail to left &minus; rail:</strong> must NOT beep. A beep means the 100&nbsp;µF is backwards or a wire has slipped a column.</li>
+        <li><strong>Right + rail to right &minus; rail:</strong> must NOT beep.</li>
+        <li><strong>Left &minus; to right &minus;:</strong> must beep. That is your ground bridge, step&nbsp;3.</li>
+        <li><strong>Left + to right +:</strong> must NOT beep. These are 5&nbsp;V and 3.3&nbsp;V and they never touch.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Then plug in and measure</h3>
+      <ul>
+        <li><code>left + rail &rarr; GND</code> reads about <strong>5.0 V</strong>. VBUS is the raw USB rail &mdash; the Schottky drop belongs to VSYS (pin 39), not to VBUS. <strong>If this reads 0 V, step 4 is your fault.</strong></li>
+        <li><code>right + rail &rarr; GND</code> reads <strong>3.3 V</strong>.</li>
+        <li>Anything above 3.4&nbsp;V on the right rail: unplug immediately, you have 5&nbsp;V where the DHT22 lives.</li>
+        <li>The fan should be <strong>still</strong>. A fan that spins the instant you plug in means the 100k pulldown is missing or the transistor legs are swapped.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Finding the S8050's legs with a meter</h3>
+      <ul>
+        <li><strong>First, confirm it is actually an NPN.</strong> S8050 (NPN) and S8550 (PNP) are the complementary pair in identical TO-92 packages, and kits mix them. Out of circuit, diode mode, legs 1-2-3 with 2 in the middle: <strong>red on 2</strong> reading ~0.7 to both outer legs means NPN &mdash; what this circuit needs. <strong>Black on 2</strong> reading ~0.7 means PNP, and it will never work here in any orientation. Thirty seconds now saves hours later.</li>
+        <li><strong>Which way does it face?</strong> The legs sit in a line down rows 36&ndash;38, so the flat can only point at the left rails or at the centre channel. <strong>Point it at the left rails.</strong> Stand where the flat is pointing and look back at it: your right hand now points down the board toward higher row numbers, so &quot;E, B, C left to right&quot; lands as E&nbsp;36, B&nbsp;37, C&nbsp;38.</li>
+        <li>The printed marking is tiny and the package is symmetrical, so orientation by eye is still guesswork. The meter settles it in about twenty seconds.</li>
+        <li><strong>Find the base.</strong> Diode-test mode. Put the <strong>red</strong> probe on one leg and touch black to each of the others. When one leg reads about <code>0.7</code> to <em>both</em> others, that leg is the <strong>base</strong> &mdash; and it confirms the part is NPN. On this package the base is the middle leg.</li>
+        <li><strong>Then split collector from emitter.</strong> Red still on the base: the <strong>emitter</strong> reads a few tens of millivolts <em>higher</em> than the collector, typically <code>0.75</code> vs <code>0.70</code>. Small, but consistent.</li>
+        <li><strong>Or skip the subtlety.</strong> If your meter has an hFE socket, drop it into the NPN side. A reading of 160&ndash;300 means you guessed right; under 10 means the outer two legs are swapped.</li>
+        <li><strong>Or just try it.</strong> Backwards, the transistor has a gain near 3 instead of 200, so the fan sits still or barely stirs. Nothing is damaged at 5&nbsp;V through a 1&nbsp;k&Omega; base resistor &mdash; swap the outer legs and go again.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>If something is wrong</h3>
+      <ul>
+        <li><strong>No conduction at all, collector stranded high.</strong> Measure the base at row 37 with the fan commanded on. Around 0.03&ndash;0.1 V means the base resistor and the pulldown are swapped: a 100&nbsp;k&Omega; feeding the base against a 1&nbsp;k&Omega; pulldown forms a 100:1 divider that never reaches the 0.7&nbsp;V turn-on threshold. The base resistor (<code>34 b</code>&rarr;<code>37 b</code>) must be the 1&nbsp;k&Omega;. Measure both with one leg lifted &mdash; in circuit you are reading the junction and the other resistor in parallel.</li>
+        <li><strong>Fan spins but rpm reads 0.</strong> The giveaway for a transistor that is conducting but not <em>saturating</em>. The fan gets ~3&nbsp;V instead of 4.8&nbsp;V so it turns, but the collector sits near 2&nbsp;V &mdash; and the tach is open-collector referenced to that node, so its &quot;low&quot; is 2&nbsp;V and the Pico reads it as high. Cause is nearly always base current: check the <strong>1&nbsp;k&Omega; is the base resistor</strong> (<code>34 b</code>&rarr;<code>37 b</code>) and the <strong>100&nbsp;k&Omega; is the pulldown</strong> (<code>37 a</code>&rarr;rail). Swapped, you get 25&nbsp;µA of drive instead of 2.6&nbsp;mA. Their colour bands differ in one place only &mdash; the fourth, brown for 1&nbsp;k, orange for 100&nbsp;k.</li>
+        <li><strong>Fan completely still.</strong> Swap the two outer transistor legs. A reversed NPN has a gain near 3 instead of 200 &mdash; not destructive, so it is a safe thing to simply try.</li>
+        <li><strong>Halve the problem instead of guessing.</strong> Pull the fan's black lead out of <code>38 e</code> and put it straight into the left &minus; rail. That bypasses the transistor entirely. <strong>Spins</strong> &rarr; rail, fan and leads are good, so the fault is the switch or its drive. <strong>Still dead</strong> &rarr; VBUS is not reaching the left + rail (step&nbsp;4), or the red lead, or the fan.</li>
+        <li><strong>DHT22 always fails.</strong> Almost always the module's pin order. Unplug, check the silkscreen against your wiring, and confirm the module's power LED lights when the rail is live.</li>
+        <li><strong>Pico resets when the fan starts.</strong> The salvaged 100&nbsp;µF has lost its capacitance. Replace it.</li>
+        <li><strong>Everything reads 0 rpm even when it is clearly spinning.</strong> Make sure the board is running the current <code>calibrate.py</code>. An earlier version counted pulses with <code>list.__setitem__</code> in the interrupt handler &mdash; which CPython allows and MicroPython does not, so it threw once per pulse and reported a clean-looking zero.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="after">
+  <h2>Commissioning</h2>
+  <p>What is already on the board, what this build actually measured, and the one thing still left to calibrate.</p>
+  <div class="cols">
+    <div class="panel">
+      <h3>Firmware on the Pico</h3>
+      <ul>
+        <li><strong>MicroPython v1.29.0</strong>, built 2026-08-24 for RPI_PICO2_W, ARM &mdash; not the RISC-V image.</li>
+        <li>Enumerates as <code>2E8A:0005</code>. Before this it ran gusmanb LogicAnalyzer v6.0, which registered its own USB id and no REPL; that image is backed up under <code>_firmware-backups/</code>.</li>
+        <li>On the filesystem: <code>config.py</code>, <code>main.py</code>, <code>calibrate.py</code>. <code>main.py</code> autoruns at power-up.</li>
+        <li><code>dht</code>, <code>network</code> and <code>bluetooth</code> are all present, so phase 2 reporting needs no reflash.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Measured on this build</h3>
+      <ul>
+        <li><strong>Fan 3,840 rpm</strong> &mdash; 128 tach pulses/s, steady to within one pulse. Rated 4,500 at a true 5&nbsp;V; USB rails usually sit nearer 4.8&nbsp;V, which accounts for the difference.</li>
+        <li><strong>DHT22 52.7 %RH, 24.2 &deg;C</strong>, dew point 13.9&nbsp;&deg;C. Baseline locked after the 60-second LEARN pass.</li>
+        <li><strong>LDR ~22,000 raw</strong> at room ambient.</li>
+        <li>Fan pin reads 0 at boot &mdash; the 100&nbsp;k&Omega; pulldown is doing its job.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Still to calibrate</h3>
+      <ul>
+        <li>The light thresholds ship at <code>LIGHT_ON 30000</code> / <code>LIGHT_OFF 20000</code>, and ambient here measured <strong>~22,000</strong> &mdash; that sits in the dead band between them. <strong>These numbers are placeholders and must be set in the real bathroom.</strong></li>
+        <li>Run <code>calibrate.light()</code> in the actual mounting position, fixture on for half the window and off for the other half, then put its suggested values into <code>config.py</code>.</li>
+        <li>Until that is done the fan will not respond to the light at all, and only humidity will start it.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Bench commands</h3>
+      <ul>
+        <li><code>calibrate.leds()</code> &mdash; blinks both LEDs, echoes the button.</li>
+        <li><code>calibrate.fan()</code> &mdash; drives the fan, reports rpm each second.</li>
+        <li><code>calibrate.sensor()</code> &mdash; ten DHT22 reads; occasional checksum errors are normal.</li>
+        <li><code>calibrate.light()</code> &mdash; LDR sweep with suggested thresholds.</li>
+        <li>Run one with <code>mpremote connect COM5 exec &quot;import calibrate; calibrate.fan()&quot;</code>. Ctrl-C gets you a REPL even while <code>main.py</code> is looping.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="after">
+  <h2>What the LEDs tell you</h2>
+  <p>Two LEDs carry five states, so you can read the controller from the doorway without a serial cable.</p>
+  <div class="panel" style="max-width:620px">
+    <div class="states">
+      <div class="staterow"><span class="leds"><span class="dot g blink"></span><span class="dot"></span></span><div><b>LEARN</b> <span>&mdash; first 60 s, building the humidity baseline</span></div></div>
+      <div class="staterow"><span class="leds"><span class="dot g"></span><span class="dot"></span></span><div><b>IDLE</b> <span>&mdash; fan off, tracking the baseline</span></div></div>
+      <div class="staterow"><span class="leds"><span class="dot"></span><span class="dot r"></span></span><div><b>RUN</b> <span>&mdash; fan on, light and/or humidity</span></div></div>
+      <div class="staterow"><span class="leds"><span class="dot"></span><span class="dot r blink"></span></span><div><b>BOOST</b> <span>&mdash; 15 min manual override from the button</span></div></div>
+      <div class="staterow"><span class="leds"><span class="dot g blink"></span><span class="dot r blink"></span></span><div><b>FAULT</b> <span>&mdash; DHT22 silent, or fan commanded on but not turning</span></div></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>Pico 2 W &middot; RP2350 &middot; MicroPython 1.29.0</span>
+  <span>S8050 group D &middot; hFE 160&ndash;300</span>
+  <span>Tach 2 pulses/rev &middot; measured 3,840 rpm</span>
+  <span>Phase 1 of 4 &mdash; mains relay comes later, in a box</span>
+</footer>
+</div>
+
+<script>
+/* ============================================================
+   Geometry. A 63-row breadboard at 0.1 inch pitch, drawn
+   vertically to match the build photo: USB at top, row 1 at top.
+   ============================================================ */
+const P = 13, ROWS = 63, Y0 = 36;
+const rowY = r => Y0 + (r - 1) * P;
+const COLX = { a:76, b:89, c:102, d:115, e:128, f:167, g:180, h:193, i:206, j:219 };
+const RAILX = { 'L-':34, 'L+':50, 'R-':241, 'R+':257 };
+const W = 292, H = 1010;
+
+/* A node is either a tie point {c,r} or a point on a rail {rail,r}. */
+const pt = n => n.rail
+  ? { x: RAILX[n.rail], y: rowY(n.r) }
+  : { x: COLX[n.c], y: rowY(n.r) };
+
+const WIRE = { v5:'var(--w-5v)', v33:'var(--w-33)', gnd:'var(--w-gnd)', sig:'var(--w-sig)', tach:'var(--w-tach)' };
+
+/* Resistor colour bands, 5-band metal film — drawn so they can be
+   checked against the real part before it goes in. */
+const BANDS = {
+  '330' : ['#e0802b','#e0802b','#15191c','#15191c','#7a4a1e'],
+  '1k'  : ['#7a4a1e','#15191c','#15191c','#7a4a1e','#7a4a1e'],
+  '10k' : ['#7a4a1e','#15191c','#15191c','#d13a3a','#7a4a1e'],
+  '100k': ['#7a4a1e','#15191c','#15191c','#e0802b','#7a4a1e']
+};
+
+const NS = 'http://www.w3.org/2000/svg';
+const el = (t, a = {}) => {
+  const e = document.createElementNS(NS, t);
+  for (const k in a) e.setAttribute(k, a[k]);
+  return e;
+};
+
+/* ============================================================
+   Build steps. Each carries the drawing instructions for its own
+   connection, so the diagram and the checklist can never drift.
+   ============================================================ */
+const GROUPS = [
+{ name:'Power rails',
+  why:'Left red rail is 5 V, right red rail is 3.3 V. Keeping them on opposite halves means a 5 V wire reaching a 3.3 V part is physically awkward rather than a quiet mistake.',
+  steps:[
+  { t:'3V3 out to the <b>right + rail</b>', c:'Pin 36. Use red.', d:[{k:'wire',a:{c:'j',r:5},b:{rail:'R+',r:5},col:'v33'}] },
+  { t:'GND to the <b>right &minus; rail</b>', c:'Pin 38. Use black.', d:[{k:'wire',a:{c:'j',r:3},b:{rail:'R-',r:3},col:'gnd'}] },
+  { t:'Bridge <b>right &minus;</b> to <b>left &minus;</b>', c:'Run it along the bottom at row 61. One ground for the whole board.', d:[{k:'wire',a:{rail:'R-',r:61},b:{rail:'L-',r:61},col:'gnd',bow:34}] },
+  { t:'VBUS to the <b>left + rail</b>', c:'Pin 40, over the top of the Pico. Use orange so you never mistake it for the 3.3 V run.', d:[{k:'wire',a:{c:'j',r:1},b:{rail:'L+',r:1},col:'v5',bow:-40}] }
+]},
+{ name:'Decoupling',
+  why:'The 100 µF absorbs the fan’s inrush so the Pico does not brown out when it starts. Stripe is the negative lead on both.',
+  steps:[
+  { t:'<b>100 µF</b> across the left rails at row 33', c:'Long leg to +, stripe to &minus;. This one is doing real work.', d:[{k:'cap',a:{rail:'L+',r:33},b:{rail:'L-',r:33},big:true}] },
+  { t:'<b>1 µF</b> across the right rails at row 33', c:'Long leg to +, stripe to &minus;.', d:[{k:'cap',a:{rail:'R+',r:33},b:{rail:'R-',r:33}}] }
+]},
+{ name:'Light sensor',
+  why:'The bathroom light is the occupancy signal. LDR on top of the divider means bright reads high on the ADC.',
+  steps:[
+  { t:'<b>LDR</b> legs into <code>22 i</code> and <code>24 i</code>', c:'No polarity — either way round is fine.', d:[{k:'ldr',a:{c:'i',r:22},b:{c:'i',r:24}}] },
+  { t:'<code>22 j</code> to the <b>right + rail</b>', c:'Top of the divider, 3.3 V.', d:[{k:'wire',a:{c:'j',r:22},b:{rail:'R+',r:22},col:'v33'}] },
+  { t:'<b>10 kΩ</b> from <code>24 j</code> to the <b>right &minus; rail</b>', c:'Bottom of the divider.', d:[{k:'res',a:{c:'j',r:24},b:{rail:'R-',r:24},v:'10k'}] },
+  { t:'<code>24 g</code> up to <code>10 j</code>', c:'The divider tap into GP26 / ADC0. Land it in column <b>j</b> — the Pico’s body covers d through g on rows 1–20.', d:[{k:'wire',a:{c:'g',r:24},b:{c:'j',r:10},col:'sig',bow:30}] }
+]},
+{ name:'Temperature and humidity',
+  why:'Your breakout is silkscreened <b>VCC │ S │ GND</b>, so it drops straight in: VCC at the top, S in the middle, GND at the bottom. The module already carries the 10 kΩ pull-up and a power LED, so there is no pull-up to add and no unused NC pin.',
+  steps:[
+  { t:'Confirm the printing reads <b>VCC │ S │ GND</b>', c:'Hold the module so VCC is the pin nearest the Pico. Everything below assumes that order — if the board in your hand reads differently, stop and re-check, because VCC and GND swapped will destroy the sensor.', flag:true, d:[] },
+  { t:'<b>DHT22 module</b> into <code>27&ndash;29 h</code>', c:'VCC in row 27, S in row 28, GND in row 29. Grille facing away from the Pico, sitting in open air — never inside a sealed enclosure.', d:[{k:'dht',a:{c:'h',r:27}}] },
+  { t:'<b>VCC</b> — <code>27 j</code> to the <b>right + rail</b>', c:'3.3 V, never 5 V. The module regulates nothing, so 5 V here would put 5 V logic on the data line and straight into GP22.', flag:true, d:[{k:'wire',a:{c:'j',r:27},b:{rail:'R+',r:27},col:'v33'}] },
+  { t:'<b>S</b> — <code>28 g</code> up to <code>12 j</code>', c:'Signal into GP22. The pull-up is already on the module — a second one in parallel would halve it to 5 kΩ, which still works but is needless.', d:[{k:'wire',a:{c:'g',r:28},b:{c:'j',r:12},col:'sig',bow:38}] },
+  { t:'<b>GND</b> — <code>29 j</code> to the <b>right &minus; rail</b>', c:'', d:[{k:'wire',a:{c:'j',r:29},b:{rail:'R-',r:29},col:'gnd'}] }
+]},
+{ name:'Button',
+  why:'Short press boosts for 15 minutes; hold two seconds to relearn the humidity baseline.',
+  steps:[
+  { t:'<b>Tactile switch</b> across the channel at rows 43 and 45', c:'Straddle the centre gap.', d:[{k:'btn',a:{r:43}}] },
+  { t:'<code>45 g</code> up to <code>20 j</code>', c:'Into GP16, which uses the internal pull-up. Column <b>j</b> again — anything inboard of h is under the Pico.', d:[{k:'wire',a:{c:'g',r:45},b:{c:'j',r:20},col:'sig',bow:46}] },
+  { t:'<code>43 b</code> to the <b>left &minus; rail</b>', c:'Use diagonally opposite corners. Two pins on the same side of a tactile switch are permanently shorted together; diagonal corners are always a real switched pair.', flag:true, d:[{k:'wire',a:{c:'b',r:43},b:{rail:'L-',r:43},col:'gnd'}] }
+]},
+{ name:'Status LEDs',
+  why:'Resistors sit on the cathode side so the anode can take a single long jumper straight to its GPIO.',
+  steps:[
+  { t:'<b>Green LED</b>: anode <code>48 i</code>, cathode <code>49 i</code>', c:'Long leg is the anode; the flat on the rim marks the cathode.', d:[{k:'led',a:{c:'i',r:48},col:'#5fb37a'}] },
+  { t:'<code>48 j</code> up to <code>16 j</code>', c:'Anode to GP19.', d:[{k:'wire',a:{c:'j',r:48},b:{c:'j',r:16},col:'sig',bow:-30}] },
+  { t:'<b>330 Ω</b> from <code>49 j</code> to the <b>right &minus; rail</b>', c:'Anything from 220 Ω to 1 kΩ works. Higher is dimmer, which is kinder at 3am.', d:[{k:'res',a:{c:'j',r:49},b:{rail:'R-',r:49},v:'330'}] },
+  { t:'<b>Red LED</b>: anode <code>55 i</code>, cathode <code>56 i</code>', c:'Same orientation rule.', d:[{k:'led',a:{c:'i',r:55},col:'#e2565a'}] },
+  { t:'<code>55 j</code> up to <code>15 j</code>', c:'Anode to GP20.', d:[{k:'wire',a:{c:'j',r:55},b:{c:'j',r:15},col:'sig',bow:-44}] },
+  { t:'<b>330 Ω</b> from <code>56 j</code> to the <b>right &minus; rail</b>', c:'', d:[{k:'res',a:{c:'j',r:56},b:{rail:'R-',r:56},v:'330'}] }
+]},
+{ name:'Fan drive',
+  why:'The S8050 switches the fan’s ground. On/off only — PWM here would chop the tach’s reference and turn the RPM reading to noise, and a working tach is what tells you the fan has died.',
+  steps:[
+  { t:'<b>S8050 (NPN — verify it)</b> legs into <code>36 d</code>, <code>37 d</code>, <code>38 d</code>', c:'<b>Diode-test it before fitting:</b> red probe on the middle leg must read ~0.7 to both outer legs. If black-on-middle reads 0.7 instead, it is an S8550 (PNP) and cannot work here — a PNP conducts when the base goes low, the opposite of what this circuit asks for, and sits with its base-emitter junction reverse-biased near its 6 V limit until it fails short. Turn it so the <b>flat face points at the left rails</b> and the rounded back faces the centre channel. That orientation puts E in 36, B in 37, C in 38. Rotate it 180&deg; and E and C swap — the base stays in 37 either way. Verify with the meter before powering up.', d:[{k:'npn',a:{c:'d',r:36}}] },
+  { t:'<code>36 a</code> to the <b>left &minus; rail</b>', c:'Emitter to ground.', d:[{k:'wire',a:{c:'a',r:36},b:{rail:'L-',r:36},col:'gnd'}] },
+  { t:'<code>19 j</code> across to <code>34 b</code>', c:'GP17 over to the left half. Start in column <b>j</b> — the outer side of the Pico — and run it round the bottom of the board, not under it.', flag:true, d:[{k:'wire',a:{c:'j',r:19},b:{c:'b',r:34},col:'sig',bow:34}] },
+  { t:'<b>1 kΩ</b> from <code>34 b</code> to <code>37 b</code>', c:'Base resistor. Sets about 2.6 mA of base drive — deep saturation for a 50 mA load.', d:[{k:'res',a:{c:'b',r:34},b:{c:'b',r:37},v:'1k'}] },
+  { t:'<b>100 kΩ</b> from <code>37 a</code> to the <b>left &minus; rail</b>', c:'Holds the base low while GP17 is high-impedance at boot, so the fan cannot twitch on. <b>10 kΩ works just as well</b> — the junction clamps the base at 0.75 V, so the pulldown only diverts 0.75 V ÷ R: 7.5 µA at 100 k, 75 µA at 10 k, out of 2.55 mA. Anything from 4.7 kΩ to 1 MΩ is fine.', d:[{k:'res',a:{c:'a',r:37},b:{rail:'L-',r:37},v:'100k'}] },
+  { t:'Fan <b>BLACK</b> into <code>38 e</code>', c:'The collector. This is the switched side.', d:[{k:'fanwire',which:'blk'}] },
+  { t:'Fan <b>RED</b> to the <b>left + rail</b>', c:'5 V straight off USB. Minus the transistor’s saturation drop the fan sees about 4.8 V — essentially its rated voltage.', d:[{k:'fanwire',which:'red'}] },
+  { t:'<b>1N4148</b> from <code>38 a</code> to the <b>left + rail</b>', c:'The BAND goes to the rail, the 5 V side. Backwards, it shorts the supply.', flag:true, d:[{k:'diode',a:{c:'a',r:38},b:{rail:'L+',r:38}}] },
+  { t:'Fan <b>YELLOW</b> into <code>17 i</code>', c:'Tach into GP18, two pulses per revolution. Column <b>i</b> because j on that row is taken by the pull-up — same node either way.', d:[{k:'fanwire',which:'ylw'}] },
+  { t:'<b>10 kΩ</b> from <code>17 j</code> to the <b>right + rail</b>', c:'The tach is open-collector — it only ever pulls low, so it needs this to read high. Ignore the reading while the fan is off.', d:[{k:'res',a:{c:'j',r:17},b:{rail:'R+',r:17},v:'10k'}] }
+]}];
+
+const STEPS = [];
+GROUPS.forEach(g => g.steps.forEach(s => { s.n = STEPS.length + 1; s.group = g.name; STEPS.push(s); }));
+
+/* ============================================================
+   Drawing
+   ============================================================ */
+const svg = document.getElementById('board');
+svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+function bowPath(p1, p2, bow) {
+  if (!bow) return `M${p1.x},${p1.y} L${p2.x},${p2.y}`;
+  const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+  const dx = p2.x - p1.x, dy = p2.y - p1.y, L = Math.hypot(dx, dy) || 1;
+  return `M${p1.x},${p1.y} Q${mx - dy / L * bow},${my + dx / L * bow} ${p2.x},${p2.y}`;
+}
+
+/* --- static board --- */
+function drawBoard() {
+  svg.appendChild(el('rect', { x:0, y:0, width:W, height:H, fill:'none' }));
+
+  // board slab
+  svg.appendChild(el('rect', {
+    x:22, y:18, width:247, height:rowY(ROWS) - 18 + 20,
+    rx:6, fill:'var(--bb)', stroke:'var(--bb-edge)', 'stroke-width':1
+  }));
+
+  // centre channel
+  svg.appendChild(el('rect', {
+    x:COLX.e + 8, y:24, width:COLX.f - COLX.e - 16, height:rowY(ROWS) - 24 + 14,
+    fill:'#b6bec3'
+  }));
+
+  // rails
+  for (const [name, x] of Object.entries(RAILX)) {
+    const neg = name.endsWith('-');
+    svg.appendChild(el('line', {
+      x1:x, y1:24, x2:x, y2:rowY(ROWS) + 12,
+      stroke: neg ? '#2f6fb8' : '#c4413f', 'stroke-width':1.6, opacity:.85
+    }));
+    const lb = el('text', { x:x, y:15, 'text-anchor':'middle',
+      'font-family':'var(--mono)', 'font-size':9, fill: neg ? '#2f6fb8' : '#c4413f', 'font-weight':600 });
+    lb.textContent = neg ? '−' : '+';
+    svg.appendChild(lb);
+  }
+
+  // tie-point holes
+  const g = el('g', { fill:'#8f999f' });
+  for (let r = 1; r <= ROWS; r++) {
+    for (const c in COLX) g.appendChild(el('rect', { x:COLX[c] - 2, y:rowY(r) - 2, width:4, height:4, rx:.8 }));
+    if (r % 6 !== 0) for (const rl in RAILX)
+      g.appendChild(el('rect', { x:RAILX[rl] - 2, y:rowY(r) - 2, width:4, height:4, rx:.8 }));
+  }
+  svg.appendChild(g);
+
+  // row numbers every five, plus every row referenced by a step
+  const used = new Set();
+  STEPS.forEach(s => s.d.forEach(d => { [d.a, d.b].forEach(n => { if (n && n.r) used.add(n.r); }); }));
+  for (let r = 1; r <= ROWS; r++) {
+    const major = r === 1 || r % 5 === 0;
+    if (!major && !used.has(r)) continue;
+    [14, W - 14].forEach(x => {
+      const t = el('text', { x, y:rowY(r) + 3.2, 'text-anchor':'middle',
+        'font-family':'var(--mono)', 'font-size':8.8,
+        fill: major ? 'var(--ink-mid)' : 'var(--accent-dk)',
+        'font-weight': major ? 500 : 600 });
+      t.textContent = r;
+      svg.appendChild(t);
+    });
+  }
+
+  // column letters, top and bottom
+  [24, rowY(ROWS) + 12].forEach(y => {
+    for (const c in COLX) {
+      const t = el('text', { x:COLX[c], y, 'text-anchor':'middle',
+        'font-family':'var(--mono)', 'font-size':8, fill:'#8b959b' });
+      t.textContent = c;
+      svg.appendChild(t);
+    }
+  });
+
+  drawPico();
+  drawFan();
+}
+
+function drawPico() {
+  const x1 = COLX.c, x2 = COLX.h, y1 = rowY(1), y2 = rowY(20);
+  const g = el('g');
+  g.appendChild(el('rect', { x:x1 - 11, y:y1 - 9, width:x2 - x1 + 22, height:y2 - y1 + 18,
+    rx:4, fill:'var(--pcb)', stroke:'var(--pcb-edge)', 'stroke-width':1 }));
+  // USB
+  g.appendChild(el('rect', { x:(x1 + x2) / 2 - 10, y:y1 - 16, width:20, height:9, rx:2, fill:'#9aa6ac' }));
+  // RF can
+  g.appendChild(el('rect', { x:(x1 + x2) / 2 - 17, y:rowY(13), width:34, height:26, rx:2, fill:'#8d9aa1', opacity:.8 }));
+  // legs
+  for (let r = 1; r <= 20; r++) {
+    [x1, x2].forEach(x => g.appendChild(el('circle', { cx:x, cy:rowY(r), r:2.6, fill:'#d9c07a' })));
+  }
+  const t = el('text', { x:(x1 + x2) / 2, y:rowY(8), 'text-anchor':'middle',
+    'font-family':'var(--cond)', 'font-size':10, fill:'#cfe0d6', 'letter-spacing':'.1em' });
+  t.textContent = 'PICO 2 W';
+  g.appendChild(t);
+
+  // label only the pins this build uses
+  const labels = { 1:'VBUS', 3:'GND', 5:'3V3', 10:'GP26', 12:'GP22', 15:'GP20', 16:'GP19', 17:'GP18', 19:'GP17', 20:'GP16' };
+  for (const r in labels) {
+    const lb = el('text', { x:x2 - 14, y:rowY(+r) + 2.6, 'text-anchor':'end',
+      'font-family':'var(--mono)', 'font-size':8.4, fill:'#c2dccd' });
+    lb.textContent = labels[r];
+    g.appendChild(lb);
+  }
+  svg.appendChild(g);
+}
+
+const FAN = { x:64, y:900, s:76 };
+function drawFan() {
+  const g = el('g');
+  const { x, y, s } = FAN;
+  g.appendChild(el('rect', { x, y, width:s, height:s, rx:9, fill:'#6d4c3d', stroke:'#8a6450' }));
+  g.appendChild(el('circle', { cx:x + s / 2, cy:y + s / 2, r:s / 2 - 5, fill:'#d8cbb6' }));
+  for (let i = 0; i < 7; i++) {
+    const a = i * Math.PI * 2 / 7;
+    g.appendChild(el('path', {
+      d:`M${x + s / 2},${y + s / 2} L${x + s / 2 + Math.cos(a) * 28},${y + s / 2 + Math.sin(a) * 28} A28,28 0 0,1 ${x + s / 2 + Math.cos(a + .7) * 28},${y + s / 2 + Math.sin(a + .7) * 28} Z`,
+      fill:'#6d4c3d', opacity:.55
+    }));
+  }
+  g.appendChild(el('circle', { cx:x + s / 2, cy:y + s / 2, r:12, fill:'#33506b' }));
+  const t = el('text', { x:x + s / 2, y:y + s + 14, 'text-anchor':'middle',
+    'font-family':'var(--mono)', 'font-size':8, fill:'var(--ink-dim)' });
+  t.textContent = 'NF-A4x10 5V';
+  g.appendChild(t);
+  svg.appendChild(g);
+}
+
+/* --- per-step artwork --- */
+const FANOUT = { red:{ x:FAN.x + 22, y:FAN.y }, blk:{ x:FAN.x + 38, y:FAN.y }, ylw:{ x:FAN.x + 54, y:FAN.y } };
+
+function draw(d, g) {
+  const stroke = (p, col, w = 2.4) => {
+    g.appendChild(el('path', { d:p, stroke:col, 'stroke-width':w + 3.5, fill:'none',
+      'stroke-linecap':'round', opacity:0, class:'halo' }));
+    g.appendChild(el('path', { d:p, stroke:col, 'stroke-width':w, fill:'none', 'stroke-linecap':'round' }));
+  };
+
+  if (d.k === 'wire') {
+    stroke(bowPath(pt(d.a), pt(d.b), d.bow || 0), WIRE[d.col]);
+    [d.a, d.b].forEach(n => g.appendChild(el('circle', { ...pt(n) && { cx:pt(n).x, cy:pt(n).y }, r:2.8, fill:WIRE[d.col] })));
+  }
+
+  if (d.k === 'res' || d.k === 'diode' || d.k === 'cap') {
+    const p1 = pt(d.a), p2 = pt(d.b);
+    const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+    const dx = p2.x - p1.x, dy = p2.y - p1.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const lead = d.k === 'cap' ? '#b9c2c8' : '#c9ced2';
+    stroke(`M${p1.x},${p1.y} L${p2.x},${p2.y}`, lead, 1.5);
+
+    // Body rotates to follow the part. The LABEL never does -- text inside a
+    // rotated group reads upside down whenever the part points left or down.
+    const body = el('g', { transform:`translate(${mx},${my}) rotate(${ang})` });
+    let text = '', off = 13;
+
+    if (d.k === 'res') {
+      const bw = Math.min(22, Math.max(13, len - 16)), bh = 8.5;
+      body.appendChild(el('rect', { x:-bw / 2, y:-bh / 2, width:bw, height:bh, rx:3, fill:'#4b7fa8' }));
+      BANDS[d.v].forEach((c, i) => body.appendChild(el('rect', {
+        x:-bw / 2 + 3 + i * (bw - 7) / 5, y:-bh / 2, width:1.9, height:bh, fill:c })));
+      text = d.v + 'Ω';
+    }
+    if (d.k === 'diode') {
+      body.appendChild(el('rect', { x:-9, y:-4, width:18, height:8, rx:2, fill:'#1d2429' }));
+      body.appendChild(el('rect', { x:5, y:-4, width:3, height:8, fill:'#e8e2d4' }));
+      text = 'band→' + (d.to || '5V');
+    }
+    if (d.k === 'cap') {
+      const r = d.big ? 11 : 7;
+      body.appendChild(el('rect', { x:-r, y:-r, width:r * 2, height:r * 2, rx:r * .55, fill:'#2c4b73', stroke:'#4e7099' }));
+      body.appendChild(el('rect', { x:-r, y:-r, width:r * .5, height:r * 2, rx:1, fill:'#cfd8e0' }));
+      text = d.big ? '100µF' : '1µF';
+      off = r + 8;
+    }
+    g.appendChild(body);
+
+    // Mark the actual tie points. Without these the centred body reads as if
+    // it spans fewer rows than it does -- a 34-to-37 part looks like 34-to-36.
+    [p1, p2].forEach(q => {
+      g.appendChild(el('circle', { cx:q.x, cy:q.y, r:3.4, fill:'var(--bg)' }));
+      g.appendChild(el('circle', { cx:q.x, cy:q.y, r:2.6, fill:'var(--accent)' }));
+    });
+
+    // Perpendicular offset: above a horizontal part, right of a vertical one.
+    const nx = dy / len, ny = -dx / len;
+    const lbl = el('text', {
+      x:mx + nx * off, y:my + ny * off + 3.4,
+      'text-anchor': Math.abs(dx) > Math.abs(dy) ? 'middle' : 'start',
+      'font-family':'var(--mono)', 'font-size':10, class:'vlabel',
+      fill: d.k === 'diode' ? 'var(--warn)' : 'var(--accent)', 'font-weight':600 });
+    lbl.textContent = text;
+    g.appendChild(lbl);
+    // a small halo plate so the value stays readable over wires when shown
+    const plate = el('rect', { x:+lbl.getAttribute('x') - 2, y:+lbl.getAttribute('y') - 11,
+      width:text.length * 6.1 + 4, height:14, rx:3, fill:'var(--bg)', opacity:.82, class:'vlabel' });
+    if (lbl.getAttribute('text-anchor') === 'middle')
+      plate.setAttribute('x', +lbl.getAttribute('x') - (text.length * 6.1 + 4) / 2);
+    g.insertBefore(plate, lbl);
+  }
+
+  if (d.k === 'ldr') {
+    const p1 = pt(d.a), p2 = pt(d.b);
+    stroke(`M${p1.x},${p1.y} L${p1.x},${p1.y - 4} M${p2.x},${p2.y} L${p2.x},${p2.y + 4}`, '#c9ced2', 1.5);
+    g.appendChild(el('circle', { cx:p1.x, cy:(p1.y + p2.y) / 2, r:10, fill:'#e6d9a8', stroke:'#a8964f' }));
+    g.appendChild(el('path', { d:`M${p1.x - 6},${(p1.y + p2.y) / 2 - 4} l4,4 l-4,4 M${p1.x + 1},${(p1.y + p2.y) / 2 - 4} l4,4 l-4,4`,
+      stroke:'#6b5c2a', 'stroke-width':1.6, fill:'none' }));
+    const t = el('text', { x:p1.x - 15, y:(p1.y + p2.y) / 2 + 3, 'text-anchor':'end',
+      'font-family':'var(--mono)', 'font-size':10, fill:'var(--accent)' });
+    t.textContent = 'LDR';
+    g.appendChild(t);
+  }
+
+  if (d.k === 'dht') {
+    const x = COLX.h, y1 = rowY(27), y2 = rowY(29);
+    // carrier PCB
+    g.appendChild(el('rect', { x:x - 17, y:y1 - 11, width:34, height:y2 - y1 + 22, rx:2,
+      fill:'#1d4a35', stroke:'#2f6b52' }));
+    // the sensor body sitting on it
+    g.appendChild(el('rect', { x:x - 12, y:y1 - 6, width:24, height:y2 - y1 + 12, rx:2,
+      fill:'#e8eaec', stroke:'#b4bbc0' }));
+    for (let i = 0; i < 4; i++)
+      g.appendChild(el('rect', { x:x - 8, y:y1 - 1 + i * 7, width:16, height:2.2, rx:1, fill:'#b9c0c5' }));
+    // on-board pull-up and power LED, the reason step 13 is gone
+    g.appendChild(el('rect', { x:x + 6, y:y1 - 9, width:8, height:3, rx:1, fill:'#4b7fa8' }));
+    g.appendChild(el('circle', { cx:x + 11, cy:y2 + 7, r:2.2, fill:'#e35f62' }));
+    for (let r = 27; r <= 29; r++)
+      g.appendChild(el('circle', { cx:x, cy:rowY(r), r:2.4, fill:'#c9a94e' }));
+    const t = el('text', { x:x - 27, y:rowY(28) + 3, 'text-anchor':'end',
+      'font-family':'var(--mono)', 'font-size':10, fill:'var(--accent)', 'font-weight':600 });
+    t.textContent = 'DHT22';
+    g.appendChild(t);
+    const t2 = el('text', { x:x - 27, y:rowY(28) + 12, 'text-anchor':'end',
+      'font-family':'var(--mono)', 'font-size':8.5, fill:'var(--ink-mid)' });
+    t2.textContent = '3-pin';
+    g.appendChild(t2);
+  }
+
+  if (d.k === 'btn') {
+    const x1 = COLX.e, x2 = COLX.f, y1 = rowY(43), y2 = rowY(45);
+    g.appendChild(el('rect', { x:x1 - 5, y:y1 - 5, width:x2 - x1 + 10, height:y2 - y1 + 10, rx:2, fill:'#2b3238', stroke:'#4a545c' }));
+    g.appendChild(el('circle', { cx:(x1 + x2) / 2, cy:(y1 + y2) / 2, r:7, fill:'#4b555d' }));
+    [[x1,y1],[x1,y2],[x2,y1],[x2,y2]].forEach(([x,y]) => g.appendChild(el('circle', { cx:x, cy:y, r:2.4, fill:'#c9a94e' })));
+  }
+
+  if (d.k === 'led') {
+    const p = pt(d.a);
+    g.appendChild(el('circle', { cx:p.x, cy:p.y + P / 2, r:8, fill:d.col, opacity:.85, stroke:d.col }));
+    g.appendChild(el('path', { d:`M${p.x - 8},${p.y + P / 2 + 5} L${p.x + 8},${p.y + P / 2 + 5}`, stroke:'#1a1f23', 'stroke-width':1.6 }));
+    g.appendChild(el('circle', { cx:p.x, cy:p.y, r:2.6, fill:'#c9ced2' }));
+    g.appendChild(el('circle', { cx:p.x, cy:p.y + P, r:2.6, fill:'#c9ced2' }));
+  }
+
+  if (d.k === 'npn') {
+    const x = COLX.d, y = rowY(37);
+    const yt = rowY(36) - 7, yb = rowY(38) + 7;
+    // body: flat edge west (toward the left rails), rounded back bulging east
+    g.appendChild(el('path', {
+      d:`M${x - 11},${yt} L${x - 11},${yb} C${x + 21},${yb} ${x + 21},${yt} ${x - 11},${yt} Z`,
+      fill:'#20262b', stroke:'#4c565e' }));
+    // emphasise the flat face, and mark which way it points
+    g.appendChild(el('line', { x1:x - 11, y1:yt, x2:x - 11, y2:yb,
+      stroke:'var(--accent)', 'stroke-width':2.6 }));
+    const f = el('text', { x:x - 15, y:y + 3, 'text-anchor':'end',
+      'font-family':'var(--mono)', 'font-size':8.5, fill:'var(--accent)' });
+    f.textContent = 'flat';
+    g.appendChild(f);
+
+    [36, 37, 38].forEach(r => g.appendChild(el('circle', { cx:x, cy:rowY(r), r:2.6, fill:'#c9ced2' })));
+    ['E', 'B', 'C'].forEach((s, i) => {
+      const t = el('text', { x:x + 25, y:rowY(36 + i) + 3.4,
+        'font-family':'var(--mono)', 'font-size':10, fill:'var(--accent)', 'font-weight':600 });
+      t.textContent = s;
+      g.appendChild(t);
+    });
+    const t = el('text', { x:x - 15, y:yb + 12, 'text-anchor':'end',
+      'font-family':'var(--mono)', 'font-size':9, fill:'var(--ink-mid)' });
+    t.textContent = 'S8050';
+    g.appendChild(t);
+  }
+
+  if (d.k === 'fanwire') {
+    const o = FANOUT[d.which];
+    const map = { red:{ n:{ rail:'L+', r:41 }, col:'v5', side:'L' },
+                  blk:{ n:{ c:'e', r:38 },    col:'gnd', side:'L' },
+                  ylw:{ n:{ c:'i', r:17 },    col:'tach', side:'R' } };
+    const m = map[d.which], target = pt(m.n);
+    const gut = m.side === 'L' ? 8 : W - 8;
+    const p = `M${o.x},${o.y} L${o.x},${o.y - 14} L${gut},${o.y - 14} L${gut},${target.y} L${target.x},${target.y}`;
+    stroke(p, WIRE[m.col], 2.2);
+    g.appendChild(el('circle', { cx:target.x, cy:target.y, r:2.8, fill:WIRE[m.col] }));
+  }
+}
+
+drawBoard();
+const layer = el('g');
+svg.appendChild(layer);
+STEPS.forEach(s => {
+  const g = el('g', { class:'grp', 'data-step':s.n });
+  s.d.forEach(d => draw(d, g));
+  layer.appendChild(g);
+});
+
+/* ============================================================
+   Schematic. Same 34 steps, drawn electrically. Buses run
+   horizontally: +5V top, +3V3 under it, GND along the bottom.
+   Sensors sit left of the Pico, outputs right of it.
+   ============================================================ */
+const SW = 1228, SH = 720;
+const V5 = 44, V33 = 86, GY = 670, BX0 = 60, BX1 = 1150;
+const PX0 = 490, PX1 = 665, PY0 = 180, PY1 = 560;
+const sch = document.getElementById('schem');
+sch.setAttribute('viewBox', `0 0 ${SW} ${SH}`);
+
+const SC = { v5:'var(--w-5v)', v33:'var(--w-33)', gnd:'var(--w-gnd)',
+             sig:'var(--w-sig)', tach:'var(--w-tach)', part:'#b9c4cc' };
+
+function zig(x, y, len, dir) {
+  const n = 6, amp = 5, half = len / 2, out = [];
+  const along = dir === 'v' ? (t => [x, y + t]) : (t => [x + t, y]);
+  const off = dir === 'v' ? ((p, o) => [p[0] + o, p[1]]) : ((p, o) => [p[0], p[1] + o]);
+  out.push(along(-half));
+  for (let i = 0; i < n; i++) out.push(off(along(-half + len * (i + .5) / n), i % 2 ? -amp : amp));
+  out.push(along(half));
+  return out.map(p => p.join(',')).join(' ');
+}
+
+function sdraw(o, g) {
+  const add = (t, a) => { const e = el(t, a); g.appendChild(e); return e; };
+  const halo = d => add('path', { d, stroke:'var(--accent)', 'stroke-width':9, fill:'none',
+    'stroke-linecap':'round', 'stroke-linejoin':'round', class:'halo', opacity:0 });
+  const lbl = (x, y, t, anchor = 'middle', fill = 'var(--ink-mid)', size = 10) => {
+    const e = add('text', { x, y, 'text-anchor':anchor, 'font-family':'var(--mono)',
+      'font-size':size, fill });
+    e.textContent = t;
+    return e;
+  };
+
+  if (o.k === 'w') {
+    const d = 'M' + o.p.map(p => p.join(',')).join(' L');
+    halo(d);
+    const a = { d, stroke:SC[o.c || 'part'], 'stroke-width':o.dash ? 1.6 : 2.2, fill:'none',
+      'stroke-linejoin':'round', 'stroke-linecap':'round' };
+    if (o.dash) a['stroke-dasharray'] = '4 3';
+    add('path', a);
+  }
+
+  if (o.k === 'mod') {
+    add('rect', { x:o.x, y:o.y, width:o.w, height:o.h, rx:6, fill:'none',
+      stroke:'var(--ink-dim)', 'stroke-width':1.3, 'stroke-dasharray':'7 5' });
+  }
+
+  if (o.k === 'dot') add('circle', { cx:o.x, cy:o.y, r:4, fill:SC[o.c || 'part'] });
+
+  if (o.k === 'r') {
+    const len = o.len || 60, v = o.dir === 'v';
+    add('polyline', { points:zig(o.x, o.y, len, o.dir), stroke:SC.part,
+      'stroke-width':2, fill:'none', 'stroke-linejoin':'round' });
+    lbl(v ? o.x + 14 : o.x, v ? o.y + 3 : o.y - 14, o.v + 'Ω', v ? 'start' : 'middle', 'var(--accent)');
+  }
+
+  if (o.k === 'cap') {
+    const h = o.y;
+    add('path', { d:`M${o.x},${h - 30} L${o.x},${h - 7}`, stroke:SC.part, 'stroke-width':2 });
+    add('line', { x1:o.x - 17, y1:h - 7, x2:o.x + 17, y2:h - 7, stroke:SC.part, 'stroke-width':2.6 });
+    add('path', { d:`M${o.x - 17},${h + 11} Q${o.x},${h + 1} ${o.x + 17},${h + 11}`,
+      stroke:SC.part, 'stroke-width':2.6, fill:'none' });
+    add('path', { d:`M${o.x},${h + 7} L${o.x},${h + 30}`, stroke:SC.part, 'stroke-width':2 });
+    lbl(o.x - 22, h - 12, '+', 'end', 'var(--w-5v)', 13);
+    lbl(o.x + 22, h + 4, o.v, 'start', 'var(--accent)');
+  }
+
+  if (o.k === 'led' || o.k === 'dio') {
+    const up = o.k === 'dio';           // diode drawn cathode-up
+    const c = o.c || SC.part, y = o.y;
+    add('path', { d:`M${o.x},${y - 30} L${o.x},${y + 30}`, stroke:SC.part, 'stroke-width':2 });
+    if (up) {
+      add('polygon', { points:`${o.x - 11},${y + 11} ${o.x + 11},${y + 11} ${o.x},${y - 11}`, fill:c });
+      add('line', { x1:o.x - 12, y1:y - 11, x2:o.x + 12, y2:y - 11, stroke:'#e8e2d4', 'stroke-width':3 });
+      lbl(o.x + 16, y - 14, 'K', 'start', 'var(--warn)');
+    } else {
+      add('polygon', { points:`${o.x - 12},${y - 11} ${o.x + 12},${y - 11} ${o.x},${y + 11}`, fill:c });
+      add('line', { x1:o.x - 13, y1:y + 11, x2:o.x + 13, y2:y + 11, stroke:c, 'stroke-width':3 });
+      [0, 7].forEach(k => add('path', {
+        d:`M${o.x + 13 + k},${y - 2 + k} l9,-9 m0,0 l-5,1 m5,-1 l-1,5`,
+        stroke:c, 'stroke-width':1.5, fill:'none' }));
+    }
+    if (o.t) lbl(o.x - 16, y + 4, o.t, 'end', 'var(--accent)');
+  }
+
+  if (o.k === 'ldr') {
+    add('path', { d:`M${o.x},${o.y - 40} L${o.x},${o.y - 22} M${o.x},${o.y + 22} L${o.x},${o.y + 40}`,
+      stroke:SC.part, 'stroke-width':2 });
+    add('circle', { cx:o.x, cy:o.y, r:26, fill:'none', stroke:SC.part, 'stroke-width':1.6 });
+    add('polyline', { points:zig(o.x, o.y, 38, 'v'), stroke:SC.part, 'stroke-width':2, fill:'none' });
+    [-10, 4].forEach(k => add('path', {
+      d:`M${o.x - 48},${o.y - 6 + k} l14,9 m0,0 l-5,-4 m5,4 l-5,4`,
+      stroke:'var(--w-33)', 'stroke-width':1.6, fill:'none' }));
+    lbl(o.x + 30, o.y + 4, 'LDR', 'start', 'var(--accent)');
+  }
+
+  if (o.k === 'sw') {
+    add('path', { d:`M${o.x},${o.y - 30} L${o.x},${o.y - 15}`, stroke:SC.part, 'stroke-width':2 });
+    add('circle', { cx:o.x, cy:o.y - 15, r:3.4, fill:SC.part });
+    add('line', { x1:o.x, y1:o.y - 15, x2:o.x + 17, y2:o.y + 8, stroke:SC.part, 'stroke-width':2.4 });
+    add('circle', { cx:o.x, cy:o.y + 15, r:3.4, fill:SC.part });
+    add('path', { d:`M${o.x},${o.y + 15} L${o.x},${o.y + 30}`, stroke:SC.part, 'stroke-width':2 });
+    lbl(o.x - 12, o.y + 4, 'SW1', 'end', 'var(--accent)');
+  }
+
+  if (o.k === 'npn') {
+    const X = o.x, Y = o.y, bx = X - 21;
+    add('circle', { cx:X - 11, cy:Y, r:27, fill:'none', stroke:SC.part, 'stroke-width':1.4 });
+    add('line', { x1:bx, y1:Y - 15, x2:bx, y2:Y + 15, stroke:SC.part, 'stroke-width':3 });
+    add('path', { d:`M${X - 42},${Y} L${bx},${Y}`, stroke:SC.part, 'stroke-width':2 });
+    add('path', { d:`M${bx},${Y - 9} L${X},${Y - 26} L${X},${Y - 40}`, stroke:SC.part, 'stroke-width':2, fill:'none' });
+    add('path', { d:`M${bx},${Y + 9} L${X},${Y + 26} L${X},${Y + 40}`, stroke:SC.part, 'stroke-width':2, fill:'none' });
+    add('polygon', { points:`${X - 5},${Y + 17} ${X - 1},${Y + 27} ${X - 11},${Y + 25}`, fill:SC.part });
+    lbl(X + 32, Y - 26, 'Q1', 'start', 'var(--accent)');
+    lbl(X + 32, Y - 13, 'S8050', 'start', 'var(--ink-dim)', 9);
+    lbl(X + 8, Y - 34, 'C', 'start', 'var(--ink-dim)', 9);
+    lbl(X + 8, Y + 34, 'E', 'start', 'var(--ink-dim)', 9);
+    lbl(X - 46, Y - 8, 'B', 'end', 'var(--ink-dim)', 9);
+  }
+
+  if (o.k === 'fan') {
+    add('circle', { cx:o.x, cy:o.y, r:32, fill:'none', stroke:SC.part, 'stroke-width':1.8 });
+    for (let i = 0; i < 5; i++) {
+      const a = i * Math.PI * 2 / 5;
+      add('path', { d:`M${o.x},${o.y} Q${o.x + Math.cos(a) * 20},${o.y + Math.sin(a) * 20} ${o.x + Math.cos(a + .55) * 24},${o.y + Math.sin(a + .55) * 24}`,
+        stroke:SC.part, 'stroke-width':1.6, fill:'none' });
+    }
+    lbl(o.x + 38, o.y - 2, 'M1', 'start', 'var(--accent)');
+    lbl(o.x + 38, o.y + 11, 'fan', 'start', 'var(--ink-dim)', 9);
+  }
+
+  if (o.k === 'box') {
+    add('rect', { x:o.x, y:o.y, width:o.w, height:o.h, rx:4,
+      fill:'#e8eaec', stroke:'#b4bbc0', 'stroke-width':1.4 });
+    for (let i = 0; i < 4; i++)
+      add('line', { x1:o.x + 8, y1:o.y + 14 + i * 9, x2:o.x + o.w - 8, y2:o.y + 14 + i * 9,
+        stroke:'#b9c0c5', 'stroke-width':2.2 });
+    const e = add('text', { x:o.x + o.w / 2, y:o.y + o.h - 10, 'text-anchor':'middle',
+      'font-family':'var(--cond)', 'font-size':12, fill:'#38414a', 'font-weight':600 });
+    e.textContent = o.t;
+  }
+
+  if (o.k === 't') lbl(o.x, o.y, o.t, o.anchor || 'start', o.c || 'var(--ink-mid)', o.size || 10);
+}
+
+/* ---- static frame: the Pico and its pin stubs ---- */
+/* GPIO name -> [y on the drawing, physical pin number]. The pin number is the
+   one you count on the board; the GP number is the one the code uses. */
+const SPINS_L = { GP26:[230, 31], GP22:[430, 29], GP16:[500, 21] };
+const SPINS_R = { GP19:[220, 25], GP20:[250, 26], GP18:[300, 24], GP17:[340, 22] };
+
+function schFrame() {
+  const g = el('g', { class:'part', 'data-info':'pico', tabindex:'0', role:'button' });
+  const ttl = el('title'); ttl.textContent = 'Pico 2 W — click for detail'; g.appendChild(ttl);
+  const add = (t, a) => g.appendChild(el(t, a));
+  add('rect', { x:PX0, y:PY0, width:PX1 - PX0, height:PY1 - PY0, rx:6,
+    fill:'var(--pcb)', stroke:'var(--pcb-edge)', 'stroke-width':1.5 });
+  const nm = el('text', { x:(PX0 + PX1) / 2, y:PY0 + 34, 'text-anchor':'middle',
+    'font-family':'var(--cond)', 'font-size':15, fill:'#cfe0d6', 'letter-spacing':'.06em' });
+  nm.textContent = 'PICO 2 W';
+  g.appendChild(nm);
+  const sub = el('text', { x:(PX0 + PX1) / 2, y:PY0 + 50, 'text-anchor':'middle',
+    'font-family':'var(--mono)', 'font-size':9, fill:'#8fae9e' });
+  sub.textContent = 'RP2350';
+  g.appendChild(sub);
+
+  // Each stub carries both names: GP for the code, pin for your finger.
+  const stub = (n, y, pin, x, anchor) => {
+    const t = el('text', { x, y:y + 1, 'text-anchor':anchor,
+      'font-family':'var(--mono)', 'font-size':10, fill:'#cfe0d6' });
+    t.textContent = n; g.appendChild(t);
+    const p = el('text', { x, y:y + 12, 'text-anchor':anchor,
+      'font-family':'var(--mono)', 'font-size':8.5, fill:'#8fae9e' });
+    p.textContent = 'pin ' + pin; g.appendChild(p);
+  };
+  for (const [n, [y, pin]] of Object.entries(SPINS_L)) {
+    add('line', { x1:PX0, y1:y, x2:465, y2:y, stroke:'#9ab0a4', 'stroke-width':1.6 });
+    stub(n, y, pin, PX0 + 9, 'start');
+  }
+  for (const [n, [y, pin]] of Object.entries(SPINS_R)) {
+    add('line', { x1:PX1, y1:y, x2:690, y2:y, stroke:'#9ab0a4', 'stroke-width':1.6 });
+    stub(n, y, pin, PX1 - 9, 'end');
+  }
+  // Above the top edge, next to the wire each one belongs to -- inside the box
+  // they would run into the GP20 row.
+  [['VBUS · pin 40', 520, SC.v5], ['3V3 · pin 36', 600, SC.v33]].forEach(([n, x, c]) => {
+    const t = el('text', { x:x + 7, y:PY0 - 8, 'font-family':'var(--mono)', 'font-size':9, fill:c });
+    t.textContent = n; g.appendChild(t);
+  });
+  const gt = el('text', { x:571, y:PY1 - 12, 'font-family':'var(--mono)', 'font-size':9, fill:'#8fae9e' });
+  gt.textContent = 'GND · pin 38'; g.appendChild(gt);
+  sch.appendChild(g);
+}
+
+/* ---- one entry per build step ---- */
+const SCH = {
+  1:  [{k:'w',p:[[BX0,V33],[BX1,V33]],c:'v33',i:'rail33'}, {k:'w',p:[[600,PY0],[600,V33]],c:'v33',i:'rail33'},
+       {k:'dot',x:600,y:V33,c:'v33'}, {k:'t',x:BX0,y:V33-9,t:'+3V3  ·  pin 36  ·  right red rail',c:'var(--w-33)'}],
+  2:  [{k:'w',p:[[565,PY1],[565,GY]],c:'gnd',i:'gnd'}, {k:'dot',x:565,y:GY,c:'gnd'}],
+  3:  [{k:'w',p:[[BX0,GY],[BX1,GY]],c:'gnd',i:'gnd'},
+       {k:'t',x:BX0,y:GY+20,t:'GND  ·  pin 38  ·  both blue rails, bridged into one net',c:'var(--w-gnd)'}],
+  4:  [{k:'w',p:[[BX0,V5],[BX1,V5]],c:'v5',i:'rail5'}, {k:'w',p:[[520,PY0],[520,V5]],c:'v5',i:'rail5'},
+       {k:'dot',x:520,y:V5,c:'v5'}, {k:'t',x:BX0,y:V5-9,t:'+5V  ·  VBUS  pin 40  ·  left red rail  ·  raw USB 5 V',c:'var(--w-5v)'}],
+
+  5:  [{k:'w',p:[[1010,V5],[1010,350]],c:'v5',i:'c1'}, {k:'cap',x:1010,y:380,v:'100µF',i:'c1'},
+       {k:'w',p:[[1010,410],[1010,GY]],c:'gnd',i:'c1'}, {k:'dot',x:1010,y:V5,c:'v5'}, {k:'dot',x:1010,y:GY,c:'gnd'}],
+  6:  [{k:'w',p:[[110,V33],[110,350]],c:'v33',i:'c2'}, {k:'cap',x:110,y:380,v:'1µF',i:'c2'},
+       {k:'w',p:[[110,410],[110,GY]],c:'gnd',i:'c2'}, {k:'dot',x:110,y:V33,c:'v33'}, {k:'dot',x:110,y:GY,c:'gnd'}],
+
+  7:  [{k:'ldr',x:410,y:190,i:'ldr'}, {k:'w',p:[[410,230],[410,280]],i:'adc'}],
+  8:  [{k:'w',p:[[410,V33],[410,150]],c:'v33',i:'ldr'}, {k:'dot',x:410,y:V33,c:'v33'}],
+  9:  [{k:'r',x:410,y:310,dir:'v',v:'10k',i:'rldr'}, {k:'w',p:[[410,340],[410,GY]],c:'gnd',i:'gnd'}, {k:'dot',x:410,y:GY,c:'gnd'}],
+  10: [{k:'dot',x:410,y:270}, {k:'w',p:[[410,270],[445,270],[445,230],[465,230]],c:'sig',i:'adc'}],
+
+  11: [{k:'t',x:236,y:310,t:'VCC │ S │ GND',anchor:'start',c:'var(--warn)',size:9}],
+  12: [{k:'mod',x:236,y:128,w:120,h:162},
+       {k:'box',x:255,y:150,w:90,h:120,t:'DHT22',i:'dht'},
+       {k:'t',x:296,y:284,t:'module · 10kΩ pull-up on board',
+        anchor:'middle',c:'var(--ink-dim)',size:8}],
+  13: [{k:'w',p:[[275,150],[275,V33]],c:'v33',i:'dht'}, {k:'dot',x:275,y:V33,c:'v33'}],
+  14: [{k:'w',p:[[345,210],[370,210],[370,430],[465,430]],c:'sig',i:'dhtdata'}],
+  15: [{k:'w',p:[[325,270],[325,GY]],c:'gnd',i:'gnd'}, {k:'dot',x:325,y:GY,c:'gnd'}],
+
+  16: [{k:'sw',x:200,y:530,i:'sw1'}],
+  17: [{k:'w',p:[[465,500],[200,500]],c:'sig',i:'gp16'}],
+  18: [{k:'w',p:[[200,560],[200,GY]],c:'gnd',i:'gnd'}, {k:'dot',x:200,y:GY,c:'gnd'}],
+
+  19: [{k:'led',x:1080,y:280,c:'#5fb37a',t:'D2',i:'d2'}],
+  20: [{k:'w',p:[[690,220],[1080,220],[1080,250]],c:'sig',i:'gp19'}],
+  21: [{k:'w',p:[[1080,310],[1080,345]],i:'r330g'}, {k:'r',x:1080,y:375,dir:'v',v:'330',i:'r330g'},
+       {k:'w',p:[[1080,405],[1080,GY]],c:'gnd',i:'gnd'}, {k:'dot',x:1080,y:GY,c:'gnd'}],
+  22: [{k:'led',x:1140,y:320,c:'#e2565a',t:'D3',i:'d3'}],
+  23: [{k:'w',p:[[690,250],[1140,250],[1140,290]],c:'sig',i:'gp20'}],
+  24: [{k:'w',p:[[1140,350],[1140,385]],i:'r330r'}, {k:'r',x:1140,y:415,dir:'v',v:'330',i:'r330r'},
+       {k:'w',p:[[1140,445],[1140,GY]],c:'gnd',i:'gnd'}, {k:'dot',x:1140,y:GY,c:'gnd'}],
+
+  25: [{k:'npn',x:880,y:340,i:'q1'}],
+  26: [{k:'w',p:[[880,380],[880,GY]],c:'gnd',i:'gnd'}, {k:'dot',x:880,y:GY,c:'gnd'}],
+  27: [{k:'w',p:[[690,340],[776,340]],c:'sig',i:'gp17'}, {k:'dot',x:776,y:340,c:'sig'}],
+  28: [{k:'r',x:806,y:340,dir:'h',v:'1k',i:'r1k'}, {k:'w',p:[[836,340],[859,340]],c:'sig',i:'r1k'}],
+  29: [{k:'w',p:[[776,340],[776,450]],i:'r100k'}, {k:'r',x:776,y:480,dir:'v',v:'100k',i:'r100k'},
+       {k:'w',p:[[776,510],[776,GY]],c:'gnd',i:'gnd'}, {k:'dot',x:776,y:GY,c:'gnd'}],
+  30: [{k:'w',p:[[880,192],[880,300]],c:'gnd',i:'coll'}, {k:'dot',x:880,y:300}],
+  31: [{k:'fan',x:880,y:160,i:'fan'}, {k:'w',p:[[880,128],[880,V5]],c:'v5',i:'fan'}, {k:'dot',x:880,y:V5,c:'v5'}],
+  32: [{k:'w',p:[[880,300],[975,300],[975,285]],i:'d1'}, {k:'dio',x:975,y:255,c:'#c3ccd3',i:'d1'},
+       {k:'w',p:[[975,225],[975,V5]],c:'v5',i:'d1'}, {k:'dot',x:975,y:V5,c:'v5'},
+       {k:'t',x:993,y:262,t:'D1  band → +5V',c:'var(--warn)',size:9}],
+  33: [{k:'w',p:[[848,160],[720,160],[720,300],[690,300]],c:'tach',i:'tach'}, {k:'dot',x:720,y:160,c:'tach'}],
+  34: [{k:'w',p:[[720,160],[720,150]],c:'v33',i:'rtach'}, {k:'r',x:720,y:125,dir:'v',v:'10k',len:50,i:'rtach'},
+       {k:'w',p:[[720,100],[720,V33]],c:'v33',i:'rtach'}, {k:'dot',x:720,y:V33,c:'v33'}]
+};
+
+schFrame();
+const schLayer = el('g');
+sch.appendChild(schLayer);
+
+/* ============================================================
+   What every part is, and what a meter should read on it.
+   All voltages DC, black probe in a blue rail, unless it says
+   otherwise. The tolerances are what a healthy board looks
+   like -- they are not datasheet limits.
+   ============================================================ */
+const INFO = {
+
+pico: { t:'Pico 2 W', s:'RP2350 · the controller', p:'rows 1–20, legs in c and h',
+  v:[['VBUS, pin 40','4.75 – 5.25 V'],['3V3 out, pin 36','3.25 – 3.35 V'],
+     ['GND, pin 38','0 V'],['any GPIO, high','3.3 V'],['any GPIO, low','0 V']],
+  why:"USB 5 V arrives on VBUS; a regulator on the board makes the 3.3 V rail from it. <b>Every logic pin here is 3.3 V, not 5 V.</b> That is why the DHT22 runs from 3V3, and why the fan's 5 V never touches a GPIO — it goes through the transistor instead.",
+  meas:"Plug in with nothing else connected and check 3V3 to GND first. If that one number is right, the board is alive and every other reading on this page means something.",
+  bad:"3V3 dropping below 3.1 V when the fan starts means the 5 V rail is sagging: check C1 is fitted the right way round, and try a shorter USB cable." },
+
+rail5: { t:'+5 V rail', s:'net · left red rail', p:'from VBUS, pin 40',
+  v:[['rail to GND, idle','4.75 – 5.25 V'],['rail to GND, fan running','≥ 4.6 V'],['what it feeds','the fan, and nothing else']],
+  why:"Raw, unregulated USB power. It exists only to drive the fan. Keeping it on the left rails and 3.3 V on the right means a 5 V wire reaching a 3.3 V part is physically awkward rather than a quiet mistake.",
+  meas:"Black probe in either blue rail, red probe in the left red rail. Do this before the fan is connected.",
+  bad:"Under 4.6 V: the supply or the cable cannot hold up. A wall charger beats a laptop USB port, and a short thick cable beats a long thin one." },
+
+rail33: { t:'+3.3 V rail', s:'net · right red rail', p:'from pin 36',
+  v:[['rail to GND','3.25 – 3.35 V'],['total current available','~300 mA'],['what this build draws','under 5 mA']],
+  why:"Regulated on the Pico. It powers the DHT22, the light divider, the tach pull-up and both LEDs. Every logic level in the circuit is referenced to this number.",
+  meas:"Black in a blue rail, red in the right red rail.",
+  bad:"0 V means the jumper from pin 36 is in the wrong row — pin 36 is row 5 on the right side. Below 3.1 V means something is loading it: unplug, and look for a wire bridging red to blue." },
+
+gnd: { t:'Ground', s:'net · both blue rails', p:'from pin 38, bridged at row 61',
+  v:[['anywhere on this net','0.00 V — it is the reference'],['left rail to right rail','under 0.05 V'],['rail to rail, in ohms','under 1 Ω']],
+  why:"Every voltage on this page is measured against this net. Both blue rails are bridged into one so the fan's return current and the sensors' return current share a single ground — split grounds are why breadboard sensors read noise.",
+  meas:"Put the meter across the two blue rails: you want essentially zero. Then leave the black probe parked in a blue rail for every other measurement on this page.",
+  bad:"A missing bridge, or a rail with a mid-board break near row 30, is the classic cause of <b>sensors read garbage and the fan will not switch</b>." },
+
+c1: { t:'C1 · 100 µF', s:'electrolytic · across the 5 V rails', p:'row 33, left rails',
+  v:[['across it, steady','4.75 – 5.25 V'],['dip when the fan starts','should stay above 4.6 V']],
+  why:"A motor takes a gulp of current the moment it starts. This capacitor sits right beside the rail and supplies that gulp locally, so the 5 V rail does not dip far enough to reset the Pico mid-start.",
+  meas:"Watch the 5 V rail on the meter while the fan switches on. With C1 fitted the dip is small and over in a blink.",
+  bad:"<b>The stripe is the negative lead and goes to the blue rail.</b> An electrolytic fitted backwards heats up and can vent. Long leg to red, stripe to blue." },
+
+c2: { t:'C2 · 1 µF', s:'across the 3.3 V rails', p:'row 33, right rails',
+  v:[['across it','3.25 – 3.35 V']],
+  why:"Steadies the 3.3 V rail for the sensors. Less critical than C1, but it costs nothing and keeps the ADC reading from jittering.",
+  meas:"Same measurement as the 3.3 V rail itself.",
+  bad:"Stripe to the blue rail, same rule as C1." },
+
+ldr: { t:'LDR', s:'light-dependent resistor · top of the divider', p:'rows 22 i and 24 i',
+  v:[['its resistance, covered','100 k – 1 MΩ'],['its resistance, lit room','1 – 5 kΩ'],['its top leg','3.3 V'],['the tap below it','0.15 V dark → 2.8 V lit']],
+  why:"The bathroom light is the occupancy signal. The LDR sits above the 10 kΩ resistor, so more light means less resistance above the tap and the tap voltage climbs. No polarity — either leg either way round.",
+  meas:"With the power off, measure the LDR on its own in resistance mode: once with your thumb over it, once under the room light. You want a change of at least ten to one.",
+  bad:"If the tap barely moves, check the LDR really does bridge rows 22 and 24 in column i, and is not sharing a row with something else." },
+
+rldr: { t:'R1 · 10 kΩ', s:'bottom of the light divider', p:'row 24 to the right − rail',
+  v:[['across it = the tap','0.15 V dark → 2.8 V lit'],['current through the divider','15 – 300 µA']],
+  why:"Gives the LDR something to divide against. 10 kΩ puts the interesting part of the swing near the middle of the ADC range for ordinary indoor light.",
+  meas:"Probe row 24 against ground, then cup your hand over the LDR and watch the number fall.",
+  bad:"Stuck near 3.3 V: this resistor is not reaching the blue rail. Stuck near 0 V: the LDR is not reaching the red rail." },
+
+adc: { t:'Light tap → GP26 / ADC0', s:'analogue input · pin 31', p:'row 24 g up to row 10 j',
+  v:[['dark','0.15 – 0.4 V  (~3 000 counts)'],['lit room','2.4 – 3.0 V  (~52 000 counts)'],['absolute maximum','3.3 V — never 5 V']],
+  why:"GP26 is one of the pins wired to the chip's analogue-to-digital converter. <code>read_u16()</code> maps 0 – 3.3 V onto 0 – 65535, and <code>calibrate.py</code> turns your dark and lit readings into the on/off threshold.",
+  meas:"Probe row 10 j against ground with the light on, then off. Then run <code>calibrate.py</code> and confirm the two counts move the same way.",
+  bad:"A reading that never changes usually means the wire landed in a row the Pico's body covers. On rows 1–20 it must go into column <b>i</b> or <b>j</b>." },
+
+dht: { t:'DHT22 module', s:'U1 · humidity and temperature', p:'rows 27–29, column h',
+  v:[['VCC, row 27','3.30 V — never 5 V'],['S, row 28, idle','3.3 V'],['GND, row 29','0 V'],['reading interval','one every 2 s, minimum']],
+  why:"Humidity is what actually decides the fan; the light sensor only says whether anyone is there. Your module already carries the 10 kΩ pull-up and a power LED, so there is nothing to add and no unused pin.",
+  meas:"With power on, VCC to GND should read 3.30 V and the tiny LED on the module should be lit. Check this pin before you trust any reading.",
+  bad:"<b>5 V on VCC puts 5 V on the data line and straight into GP22.</b> If the silkscreen on your module is not VCC │ S │ GND, stop and re-check before powering up." },
+
+dhtdata: { t:'DHT22 data → GP22', s:'one-wire signal · pin 29', p:'row 28 g up to row 12 j',
+  v:[['idle, between readings','3.3 V'],['during a reading','pulses to 0 V for about 4 ms'],['on a meter, averaged','3.2 – 3.3 V']],
+  why:"Both ends take turns pulling this single line low; the pull-up on the module holds it high in between. That is why a meter sees a steady 3.3 V even while the sensor is talking.",
+  meas:"Probe row 12 j against ground. A steady 3.3 V is correct — the data bursts are far too short for a meter to show.",
+  bad:"A steady 0 V means the line is shorted to ground, or the module is unpowered. Occasional checksum errors in the log are usually a long or loose data wire, not a dead sensor." },
+
+sw1: { t:'SW1 · tactile switch', s:'boost, and re-baseline', p:'rows 43 and 45, across the channel',
+  v:[['released, at GP16','3.3 V'],['pressed','0 V'],['contact resistance, closed','under 1 Ω']],
+  why:"Short press boosts the fan for 15 minutes; hold for two seconds to relearn the humidity baseline. One side goes to ground and the pin's internal pull-up does the rest, so there is no resistor to fit.",
+  meas:"Power off, meter in continuity mode across the two corners you wired: it should beep only while you hold the button down.",
+  bad:"Beeping all the time means you picked two pins that are permanently joined inside the switch. <b>Use diagonally opposite corners</b> — those are always a real switched pair." },
+
+gp16: { t:'Button → GP16', s:'digital input, active low · pin 21', p:'row 45 g up to row 20 j',
+  v:[['idle','3.3 V, held by the internal pull-up'],['pressed','0 V'],['bounce on each press','a few ms — the firmware handles it']],
+  why:"Active low: the pull-up inside the RP2350 holds the line at 3.3 V, and the button's only job is to short it to ground. Nothing to add on the breadboard.",
+  meas:"Probe row 20 j against ground and press — 3.3 V should snap to 0 V and back.",
+  bad:"Floating around 1–2 V means the internal pull-up is not switched on. That is a firmware setting, not a wiring fault." },
+
+d2: { t:'D2 · green LED', s:'status: running normally', p:'anode row 48 i, cathode row 49 i',
+  v:[['anode, lit','3.3 V'],['across the LED','about 2.1 V'],['cathode / top of R4','about 1.2 V'],['current','about 3.6 mA']],
+  why:"Tells you at a glance that the controller is alive and happy. The long leg is the anode and faces the GPIO; the flat spot on the rim marks the cathode, which faces the resistor.",
+  meas:"With it lit, probe row 49 against ground: around 1.2 V. That number is the proof the LED is conducting and the resistor is doing its job.",
+  bad:"Anode at 3.3 V, cathode also at 3.3 V and the LED dark: it is in backwards. No harm done — just turn it round." },
+
+r330g: { t:'R4 · 330 Ω', s:'green LED current limit', p:'row 49 to the right − rail',
+  v:[['across it','about 1.2 V'],['current','about 3.6 mA']],
+  why:"Without it the LED is a short across the pin. 330 Ω sets a comfortable few milliamps; anything from 220 Ω to 1 kΩ works, and higher is dimmer — which is kinder at 3am.",
+  meas:"Probe row 49 against ground while the LED is lit.",
+  bad:"0 V across it means no current is flowing: the LED is backwards, or the GPIO is low." },
+
+d3: { t:'D3 · red LED', s:'status: fault', p:'anode row 55 i, cathode row 56 i',
+  v:[['anode, lit','3.3 V'],['across the LED','about 1.9 V'],['cathode / top of R7','about 1.4 V'],['current','about 4.2 mA']],
+  why:"Lights when a sensor stops answering or a reading is out of range. Red needs less forward voltage than green, so a little more current flows through the same resistor.",
+  meas:"Probe row 56 against ground while it is lit: around 1.4 V.",
+  bad:"Same rule as the green one — long leg to the GPIO side, flat on the rim to the resistor." },
+
+r330r: { t:'R7 · 330 Ω', s:'red LED current limit', p:'row 56 to the right − rail',
+  v:[['across it','about 1.4 V'],['current','about 4.2 mA']],
+  why:"Same job as R4, on the red LED.",
+  meas:"Probe row 56 against ground.",
+  bad:"0 V across it: LED backwards, or the pin is low." },
+
+gp19: { t:'GP19 → green LED', s:'digital output · pin 25', p:'row 16 j down to row 48 j',
+  v:[['LED on','3.3 V'],['LED off','0 V'],['safe current per pin','keep under 12 mA']],
+  why:"A plain push-pull output. It sources the LED current directly, which is why the resistor matters.",
+  meas:"Probe row 48 j against ground: it should follow the LED exactly.",
+  bad:"3.3 V at the pin but a dark LED means the fault is downstream — LED orientation, or the resistor's landing row." },
+
+gp20: { t:'GP20 → red LED', s:'digital output · pin 26', p:'row 15 j down to row 55 j',
+  v:[['LED on','3.3 V'],['LED off','0 V']],
+  why:"Same as GP19, driving the fault LED.",
+  meas:"Probe row 55 j against ground.",
+  bad:"If both LEDs misbehave together, suspect the shared ground rail rather than the pins." },
+
+q1: { t:'Q1 · S8050 NPN', s:'low-side switch for the fan', p:'legs in rows 36, 37, 38, column d',
+  v:[['base, fan on','0.70 – 0.80 V'],['base, fan off','0 V'],['collector, fan on','0.1 – 0.3 V'],['collector, fan off','about 5 V'],['emitter','0 V, always']],
+  why:"A 3.3 V pin cannot drive a 5 V motor, so the transistor does it: a small base current lets a much larger current flow from collector to emitter. Low-side means the fan sits above the transistor, and the transistor makes and breaks its path to ground.",
+  meas:"Emitter to ground must read 0 V — if it does not, E and C are swapped. With the fan on, collector to ground should be a few tenths of a volt: that is saturation, and it is what keeps the transistor cold.",
+  bad:"<b>Flat face towards the left rails</b> puts E in 36, B in 37, C in 38. Rotated 180°, E and C swap: the fan runs weakly and the transistor gets hot. Check with the meter before powering up." },
+
+r1k: { t:'R5 · 1 kΩ', s:'base resistor', p:'row 34 b to row 37 b',
+  v:[['GPIO side, fan on','3.3 V'],['base side, fan on','about 0.75 V'],['across it','about 2.55 V'],['base current','about 2.6 mA']],
+  why:"The base of an NPN behaves like a diode: it clamps at roughly 0.75 V and will take whatever current you let it. This resistor takes the 2.55 V difference and sets that current. 2.6 mA driving a 50 mA load is deep saturation, with plenty of margin.",
+  meas:"With the fan on, probe each end against ground: 3.3 V on the GPIO side, 0.75 V on the base side.",
+  bad:"Leave it out and the GPIO is shorted into a diode, which can damage the pin. Fit 10 kΩ instead and the fan may run weakly, because the transistor never fully saturates." },
+
+r100k: { t:'R6 · 100 kΩ', s:'base pull-down', p:'row 37 a to the left − rail',
+  v:[['base node, fan off','0 V'],['leaked through it, fan on','7.5 µA out of 2 550 µA']],
+  why:"For a moment at power-up GP17 is high-impedance — neither high nor low. This resistor holds the base at ground through that moment, so the fan cannot twitch on. 10 kΩ works just as well; anything from 4.7 kΩ to 1 MΩ is fine.",
+  meas:"With the Pico unplugged, measure resistance from row 37 to the blue rail.",
+  bad:"If the fan kicks for an instant every time you plug in, this resistor is missing or not actually reaching ground." },
+
+gp17: { t:'GP17 → fan drive', s:'digital output · pin 22', p:'row 19 j round to row 34 b',
+  v:[['fan commanded on','3.30 V'],['fan off','0 V'],['at boot, briefly','high-impedance — R6 holds it down']],
+  why:"On and off only, never PWM. Chopping the supply would chop the tach signal's reference and turn the RPM reading into noise, and a working tach is the thing that tells you the fan has died.",
+  meas:"Probe row 34 b against ground while toggling the fan from the REPL.",
+  bad:"Run this wire round the bottom of the board, not under the Pico — you cannot reach the covered columns to fix it later." },
+
+coll: { t:'Collector node', s:'the switched side · fan black wire', p:'row 38',
+  v:[['fan running','0.1 – 0.3 V'],['fan off','about 5 V'],['across the fan, running','about 4.8 V']],
+  why:"The fan's black wire lands here rather than on ground. When Q1 turns on, this node is pulled almost to ground and the fan sees nearly the full 5 V; when Q1 turns off, the fan's own winding pulls the node up to 5 V and nothing flows.",
+  meas:"Fan off, a reading of about 5 V here is <b>normal, not a fault</b> — you are measuring through the motor winding.",
+  bad:"Stuck at 5 V with the fan commanded on means there is no base drive: check GP17, R5, and which way round Q1 is." },
+
+fan: { t:'M1 · Noctua NF-A4x10 5V', s:'the load · about 50 mA', p:'red, black and yellow flying leads',
+  v:[['red to ground','5 V, always'],['black to ground, running','0.1 – 0.3 V'],['across the motor','about 4.8 V'],['yellow','two pulses per revolution']],
+  why:"Red is permanently on the 5 V rail; the transistor makes and breaks the black return. Yellow reports speed and draws almost nothing. Seeing 4.8 V instead of 5 V costs a few rpm and nothing else.",
+  meas:"With it spinning, black wire to ground should read a few tenths of a volt.",
+  bad:"Running but slow, with a warm transistor: it is not saturating. Check R5 is 1 kΩ and that the base really is at 0.75 V." },
+
+d1: { t:'D1 · 1N4148', s:'flyback diode across the fan', p:'row 38 a to the left + rail',
+  v:[['cathode, the banded end','5 V — on the rail'],['anode','0.2 V running, 5 V idle'],['during switch-off','clamps about 0.7 V above the rail'],['in normal running','conducts nothing at all']],
+  why:"A motor is a coil, and a coil fights any attempt to stop its current by throwing up a large reverse voltage — easily enough to punch through the transistor. This diode gives that spike a harmless path back into the rail. It does nothing the rest of the time.",
+  meas:"Unpowered, meter in diode mode: red probe on the plain end reads about 0.6 V, and the other way round reads open.",
+  bad:"<b>The band goes to the 5 V rail.</b> Fitted backwards it is a permanent short across the supply, the moment you plug in." },
+
+tach: { t:'Fan tach → GP18', s:'speed feedback · pin 24', p:'yellow wire into row 17 i',
+  v:[['fan off','3.3 V, idle high'],['running, on a meter','1.5 – 2.5 V average'],['pulses','two per revolution'],['at 4 500 rpm','150 Hz']],
+  why:"The tach output is open-collector: it can only pull the line down, never up, which is why the 10 kΩ pull-up exists. The firmware counts falling edges and computes rpm as pulses per second × 30.",
+  meas:"A meter shows the average of a square wave, so something near half the rail while spinning is exactly right. Ignore the reading entirely while the fan is off.",
+  bad:"Stuck at 3.3 V while the fan is clearly spinning: the yellow wire or the pull-up is not landing in row 17. Stuck at 0 V: the yellow wire is shorted to ground." },
+
+rtach: { t:'R2 · 10 kΩ', s:'tach pull-up to 3.3 V', p:'row 17 j to the right + rail',
+  v:[['line idle','3.3 V, no current'],['line pulled low','0.33 mA through it']],
+  why:"An open-collector output has nothing to pull itself high with. Without this resistor the tach line floats and the pulse count is meaningless noise.",
+  meas:"Unpowered, measure resistance from row 17 to the right red rail: 10 kΩ.",
+  bad:"A missing pull-up usually shows up as a wildly unstable rpm reading rather than no reading at all." }
+
+};
+
+/* wrap one drawn object in its own clickable group */
+function part(key, parent) {
+  const g = el('g', { class:'part', 'data-info':key, tabindex:'0', role:'button' });
+  const ti = el('title');
+  ti.textContent = (INFO[key] ? INFO[key].t : key) + ' — click for detail';
+  g.appendChild(ti);
+  parent.appendChild(g);
+  return g;
+}
+
+const needBox = [];
+STEPS.forEach(s => {
+  const g = el('g', { class:'grp', 'data-step':s.n });
+  (SCH[s.n] || []).forEach(o => {
+    if (!o.i) { sdraw(o, g); return; }
+    const pg = part(o.i, g);
+    sdraw(o, pg);
+    // A wire is easier to hit with a fat invisible stroke than with its bounding
+    // box, which for a long dog-leg would swallow half the drawing.
+    if (o.k === 'w') pg.appendChild(el('path', { class:'hit', d:'M' + o.p.map(p => p.join(',')).join(' L') }));
+    else needBox.push(pg);
+  });
+  schLayer.appendChild(g);
+});
+needBox.forEach(pg => {
+  const b = pg.getBBox();
+  pg.appendChild(el('rect', { class:'hitbox', x:b.x - 4, y:b.y - 4, width:b.width + 8, height:b.height + 8 }));
+});
+
+/* ---- expected voltages, pinned to the node they belong to ---- */
+const VTAGS = [
+  { x:700,  y:V5,  c:'v5',   i:'rail5',   t:'4.75 – 5.25 V' },
+  { x:850,  y:V33, c:'v33',  i:'rail33',  t:'3.30 V' },
+  { x:670,  y:GY,  c:'gnd',  i:'gnd',     t:'0.00 V reference' },
+  { x:410,  y:270, lx:418,  ly:266, a:'start', c:'sig',  i:'adc',     t:'0.15–2.8 V' },
+  { x:370,  y:380, lx:378,  ly:380, a:'start', c:'sig',  i:'dhtdata', t:'3.3 V idle' },
+  { x:330,  y:500, lx:330,  ly:488,            c:'sig',  i:'gp16',    t:'3.3 V → 0 V pressed' },
+  { x:1000, y:220, lx:1045, ly:208,            c:'sig',  i:'gp19',    t:'3.3 V on' },
+  { x:1080, y:330, lx:1072, ly:330, a:'end',   c:'part', i:'r330g',   t:'1.2 V' },
+  { x:850,  y:250, lx:850,  ly:238,            c:'sig',  i:'gp20',    t:'3.3 V on' },
+  { x:1140, y:370, lx:1148, ly:370, a:'start', c:'part', i:'r330r',   t:'1.4 V' },
+  { x:859,  y:340, lx:812,  ly:368,            c:'sig',  i:'r1k',     t:'0.7 V base' },
+  { x:880,  y:300, lx:816,  ly:290,            c:'part', i:'coll',    t:'0.2 V / 5 V' },
+  { x:880,  y:128, lx:800,  ly:104,            c:'v5',   i:'fan',     t:'4.8 V across' },
+  { x:720,  y:160, lx:786,  ly:184,            c:'tach', i:'tach',    t:'3.3 V idle' },
+  { x:733,  y:340, lx:733,  ly:326,            c:'sig',  i:'gp17',    t:'0 / 3.3 V' },
+  { x:880,  y:400, lx:890,  ly:400, a:'start', c:'gnd',  i:'q1',      t:'0 V emitter' }
+];
+
+const vlayer = el('g', { class:'vlayer' });
+sch.appendChild(vlayer);
+VTAGS.forEach(o => {
+  const g = el('g', { class:'vtag part', 'data-info':o.i, tabindex:'0', role:'button' });
+  const ti = el('title');
+  ti.textContent = (INFO[o.i] ? INFO[o.i].t : o.i) + ' — expected reading, click for detail';
+  g.appendChild(ti);
+  const lx = o.lx === undefined ? o.x : o.lx, ly = o.ly === undefined ? o.y : o.ly;
+  if (lx !== o.x || ly !== o.y) {
+    g.appendChild(el('line', { x1:o.x, y1:o.y, x2:lx, y2:ly,
+      stroke:'var(--ink-dim)', 'stroke-width':.9, 'stroke-dasharray':'2 2' }));
+    g.appendChild(el('circle', { cx:o.x, cy:o.y, r:2.8, fill:'var(--bg)',
+      stroke:SC[o.c], 'stroke-width':1.5 }));
+  }
+  g.appendChild(el('rect', { class:'plate', rx:2, x:0, y:0, width:0, height:0 }));
+  const tx = el('text', { x:lx, y:ly + 3.2, 'text-anchor':o.a || 'middle', fill:SC[o.c] });
+  tx.textContent = o.t;
+  g.appendChild(tx);
+  vlayer.appendChild(g);
+});
+// Size each backing plate to its text, now that the text has been laid out.
+vlayer.querySelectorAll('g.vtag').forEach(g => {
+  const tx = g.querySelector('text'), r = g.querySelector('rect.plate');
+  const w = tx.getComputedTextLength() || tx.textContent.length * 5.4;
+  const a = tx.getAttribute('text-anchor'), x = +tx.getAttribute('x'), y = +tx.getAttribute('y') - 3.2;
+  const x0 = a === 'start' ? x : a === 'end' ? x - w : x - w / 2;
+  r.setAttribute('x', x0 - 4);
+  r.setAttribute('y', y - 7.5);
+  r.setAttribute('width', w + 8);
+  r.setAttribute('height', 15);
+});
+
+const vbox = document.getElementById('vtoggle');
+vbox.addEventListener('change', () => vlayer.classList.toggle('off', !vbox.checked));
+
+/* ---- the detail panel under the drawing ---- */
+const insp = document.getElementById('inspect');
+const EMPTY = '<p class="hintline">Nothing selected. Click a component, a wire or a voltage box above &mdash; or press Tab, then Enter, to step through them.</p>';
+let picked = null;
+
+function showInfo(key) {
+  const inf = key ? INFO[key] : null;
+  picked = inf ? key : null;
+  sch.querySelectorAll('.part').forEach(p => p.classList.toggle('picked', p.dataset.info === picked));
+  if (!inf) { insp.innerHTML = EMPTY; return; }
+  const rows = (inf.v || []).map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  insp.innerHTML =
+    `<div class="ihead"><h3>${inf.t}</h3><span class="isub">${inf.s}</span>` +
+      (inf.p ? `<span class="iwhere">${inf.p}</span>` : '') + `</div>` +
+    `<div class="cols">` +
+      (rows ? `<dl class="volts">${rows}</dl>` : `<div></div>`) +
+      `<div class="prose">` +
+        (inf.why  ? `<p><span class="tag">what it is for</span>${inf.why}</p>` : '') +
+        (inf.meas ? `<p><span class="tag">how to check it</span>${inf.meas}</p>` : '') +
+        (inf.bad  ? `<p class="bad"><span class="tag">if it reads wrong</span>${inf.bad}</p>` : '') +
+      `</div>` +
+    `</div>`;
+}
+
+function pickFrom(target) {
+  const p = target.closest('.part');
+  if (!p) { showInfo(null); return; }
+  // A dimmed part is unreadable, so looking something up drops the step focus.
+  if (sel !== null) focusStep(sel);
+  showInfo(p.dataset.info === picked ? null : p.dataset.info);
+}
+
+sch.addEventListener('click', e => pickFrom(e.target));
+sch.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (!e.target.closest('.part')) return;
+  e.preventDefault();
+  pickFrom(e.target);
+});
+
+/* ============================================================
+   Checklist
+   ============================================================ */
+const root = document.getElementById('stepsRoot');
+const KEY = 'fanbuild.v1';
+let done = new Set();
+try { done = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch (e) { /* private window */ }
+
+GROUPS.forEach(g => {
+  const sec = document.createElement('section');
+  sec.className = 'group';
+  sec.innerHTML = `<h3>${g.name}</h3><p class="why">${g.why}</p>`;
+  const ol = document.createElement('ol');
+  ol.className = 'steps';
+  g.steps.forEach(s => {
+    const li = document.createElement('li');
+    li.className = 'step';
+    li.dataset.n = s.n;
+    li.tabIndex = 0;
+    li.innerHTML =
+      `<span class="num">${String(s.n).padStart(2, '0')}</span>` +
+      `<span class="chk" role="checkbox" tabindex="0" aria-checked="false" aria-label="Step ${s.n} complete">` +
+        `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6.2 L4.4 9.6 L11 2.4" fill="none" stroke="#0d1114" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>` +
+      `</span>` +
+      `<span class="txt"><span class="main">${s.t}</span>${s.c ? `<span class="note${s.flag ? ' flag' : ''}">${s.c}</span>` : ''}</span>`;
+    ol.appendChild(li);
+  });
+  sec.appendChild(ol);
+  root.appendChild(sec);
+});
+
+const note = document.getElementById('focusNote');
+const schNote = document.getElementById('schemNote');
+let sel = null;
+
+function focusStep(n) {
+  sel = (sel === n) ? null : n;
+  [svg, sch].forEach(s => s.classList.toggle('focused', sel !== null));
+  [layer, schLayer].forEach(l =>
+    l.querySelectorAll('.grp').forEach(g => g.classList.toggle('on', +g.dataset.step === sel)));
+  document.querySelectorAll('li.step').forEach(li => li.classList.toggle('sel', +li.dataset.n === sel));
+  const label = sel ? `step ${String(sel).padStart(2, '0')}` : 'all connections';
+  note.textContent = label;
+  schNote.textContent = label;
+}
+
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify([...done])); } catch (e) { /* ignore */ }
+}
+
+function render() {
+  document.querySelectorAll('li.step').forEach(li => {
+    const on = done.has(+li.dataset.n);
+    li.classList.toggle('done', on);
+    li.querySelector('.chk').setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  document.getElementById('count').textContent = `${done.size} / ${STEPS.length}`;
+  document.getElementById('barfill').style.width = (done.size / STEPS.length * 100) + '%';
+}
+
+function nextUndone(after) {
+  for (let i = after + 1; i <= STEPS.length; i++) if (!done.has(i)) return i;
+  for (let i = 1; i <= STEPS.length; i++) if (!done.has(i)) return i;   // wrap
+  return null;
+}
+
+function toggle(n) {
+  const completing = !done.has(n);
+  completing ? done.add(n) : done.delete(n);
+  save();
+  render();
+
+  if (!completing) return;
+  // Checking a step off means you are done with it -- move the board and the
+  // schematic on to the next thing to wire, rather than leaving them pinned to
+  // finished work. Unchecking just unchecks.
+  const next = nextUndone(n);
+  if (next === null) { if (sel !== null) focusStep(sel); return; }   // all done: clear
+  sel = null;                                                        // focusStep toggles
+  focusStep(next);
+  const li = document.querySelector(`li.step[data-n="${next}"]`);
+  if (li) li.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+root.addEventListener('click', e => {
+  const li = e.target.closest('li.step');
+  if (!li) return;
+  if (e.target.closest('.chk')) { toggle(+li.dataset.n); return; }
+  focusStep(+li.dataset.n);
+  if (window.innerWidth <= 900) document.querySelector('.boardcard').scrollIntoView({ behavior:'smooth', block:'start' });
+});
+
+root.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const li = e.target.closest('li.step');
+  if (!li) return;
+  e.preventDefault();
+  if (e.target.classList.contains('chk')) toggle(+li.dataset.n);
+  else focusStep(+li.dataset.n);
+});
+
+document.getElementById('reset').addEventListener('click', () => { done.clear(); save(); render(); });
+
+render();
+</script>
+</body>
+</html>
