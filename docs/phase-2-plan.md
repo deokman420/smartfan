@@ -143,18 +143,36 @@ Measured: press to fan-on in under 5 s. The boost countdown publishes on
 whole-minute changes, so it reads 15, 14, 13 instead of jumping on the
 interval.
 
-**2b.2 — parameters. Still to do.**
+**2b.2 — parameters. Done.**
 
-`settings.json` persistence and HA number/select entities for the thresholds
-and timings.
+`settings.py` layers runtime overrides over `config.py`:
 
-Every writable parameter gets a hard range in firmware. A bad MQTT payload must
-not be able to set `MAX_RUN_S` to zero or write a threshold outside the ADC's
-range. Clamp, log the rejection, carry on.
+    config.py defaults  <-  settings.json  <-  MQTT writes
 
-Worth doing *after* a week of real data. The point of the read-only phase was
-to replace guessed defaults with observed ones — writing that capability
-before the data exists just makes it easier to tune to the wrong numbers.
+Reads fall through, so a missing or corrupt `settings.json` costs the tuning
+and nothing else. A controller that refuses to boot because of a bad settings
+write is a ladder trip; one that boots on defaults is an inconvenience. The
+file is re-validated on load, so a hand-edited or half-written file cannot put
+the controller somewhere `set()` could not have reached.
+
+Eight `number` entities and a `select`, all `entity_category: config`. Every
+write is clamped in firmware, not merely by the slider — Home Assistant's
+advertised min/max only shapes the control, and anything on the broker can
+publish to `fan/<room>/set/+`.
+
+Range clamping alone is not enough, so paired settings stay ordered:
+`RH_RISE_ON` above `RH_FALL_OFF`, `LIGHT_ON` above `LIGHT_OFF`, `MAX_RUN_S`
+above `MIN_RUN_S`. Whichever was just written wins and the other moves out of
+its way. Rejecting instead would tell the user no without saying which other
+value was blocking them.
+
+**Mode** — Auto / Force off / Force on — sits above the automatic logic
+including LEARN, because an override that waits out a 60 s baseline pass is
+not an override. FAULT still wins: forcing a stalled fan on would re-stall it.
+
+Verified on hardware: writes round-trip, out-of-range values clamp, bad types
+and unknown names are rejected, Force on interrupted a LEARN pass within 6 s,
+and two overrides survived a reboot.
 
 ### 2c — Robustness. Done.
 

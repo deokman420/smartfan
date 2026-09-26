@@ -88,9 +88,10 @@ states = {e["entity_id"]: e for e in api("/api/states")}
 PREFIX = "bathroom_fan_controller"
 mine = {k: v for k, v in states.items() if PREFIX in k}
 check("device discovered in HA", len(mine) > 0, "%d entities" % len(mine))
-check("expected entity count", len(mine) >= 21, "%d found" % len(mine))
+check("expected entity count", len(mine) >= 30, "%d found" % len(mine))
 
-for kind, n in (("sensor.", 15), ("binary_sensor.", 3), ("button.", 3)):
+for kind, n in (("sensor.", 15), ("binary_sensor.", 3), ("button.", 3),
+                ("number.", 8), ("select.", 1)):
     got = sum(1 for k in mine if k.startswith(kind))
     check("%s entities" % kind.rstrip("."), got >= n, "%d/%d" % (got, n))
 
@@ -179,6 +180,52 @@ if check("gauge present", len(gauges) == 1):
 
 ws.close()
 
+# --- writable settings: round-trip, clamping, and mode --------------------
+N = "number.%s_humidity_rise_to_start" % PREFIX
+before = api("/api/states/" + N)["state"]
+
+
+def wait_for(eid, want, secs=20):
+    for _ in range(secs // 2):
+        time.sleep(2)
+        if api("/api/states/" + eid)["state"] == want:
+            return True
+    return False
+
+
+api("/api/services/number/set_value", {"entity_id": N, "value": 11})
+check("parameter write round-trips", wait_for(N, "11.0"),
+      api("/api/states/" + N)["state"])
+
+# Firmware must clamp independently of the range HA advertises, because
+# anything on the broker can publish to the set topic. Publishing a wildly
+# out-of-range value through HA is refused client-side, so this goes at the
+# entity's own maximum and checks it is honoured rather than exceeded.
+api("/api/services/number/set_value", {"entity_id": N, "value": 20})
+ok_hi = wait_for(N, "20.0")
+check("accepts the documented maximum", ok_hi,
+      api("/api/states/" + N)["state"])
+
+api("/api/services/number/set_value", {"entity_id": N, "value": float(before)})
+check("restored to %s" % before, wait_for(N, before))
+
+M = "select.%s_mode" % PREFIX
+S_ = "sensor.%s_controller_state" % PREFIX
+B_ = "binary_sensor.%s_fan_running" % PREFIX
+api("/api/services/select/select_option", {"entity_id": M, "option": "Force on"})
+forced = wait_for(S_, "RUN")
+check("Force on overrides automatic", forced, api("/api/states/" + S_)["state"])
+if forced:
+    check("fan runs when forced on", wait_for(B_, "on"),
+          api("/api/states/" + B_)["state"])
+
+api("/api/services/select/select_option", {"entity_id": M, "option": "Force off"})
+check("Force off stops the fan", wait_for(B_, "off"),
+      api("/api/states/" + B_)["state"])
+
+api("/api/services/select/select_option", {"entity_id": M, "option": "Auto"})
+check("returns to Auto", wait_for(M, "Auto"))
+
 # --- the command path actually reaches the fan ----------------------------
 S = "sensor.%s_controller_state" % PREFIX
 B = "binary_sensor.%s_fan_running" % PREFIX
@@ -209,7 +256,15 @@ if boosted:
             cancelled = True
             break
     check("cancel returns to automatic", cancelled)
-    check("fan stops after cancel", api("/api/states/" + B)["state"] == "off")
+    # Cancel returns control to the automatic logic -- it does not mean
+    # "stop". With the room light on, automatic correctly keeps running.
+    # Asserting the fan stops here fails whenever the lights happen to be
+    # on, which is exactly when someone would be using the bathroom.
+    lit = api("/api/states/binary_sensor.%s_light_detected" % PREFIX)["state"]
+    fan_now = api("/api/states/" + B)["state"]
+    expect = "on" if lit == "on" else "off"
+    check("fan follows automatic after cancel", fan_now == expect,
+          "light=%s fan=%s expected=%s" % (lit, fan_now, expect))
 
 # --- summary --------------------------------------------------------------
 passed = sum(1 for _, ok, _ in results if ok)

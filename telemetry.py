@@ -20,7 +20,9 @@ thb1s bridge uses.
 import json
 import time
 
-FW_VERSION = "2b.1"
+from settings import SPECS, MODES
+
+FW_VERSION = "2b.2"
 
 # Sensors: key -> (label, json field, unit, device_class, state_class, icon)
 _SENSORS = (
@@ -74,6 +76,7 @@ class Telemetry:
         self.status_topic = "fan/%s/status" % room
         self.state_topic = "fan/%s/state" % room
         self.cmd_topic = "fan/%s/cmd" % room
+        self.set_topic = "fan/%s/set" % room
 
         self._announced = False
         self._last_pub = None
@@ -200,11 +203,39 @@ class Telemetry:
                 "homeassistant/button/%s/%s/config" % (self.cfg.DEVICE_ID, key),
                 json.dumps(cfgd), retain=True)
 
+        # Writable settings. min/max here are advisory -- Home Assistant uses
+        # them to draw the control, but firmware clamps independently because
+        # anything on the broker can publish to these topics.
+        for name, (kind, lo, hi, step, unit, label, icon) in SPECS.items():
+            base = {
+                "name": label,
+                "unique_id": "%s_%s" % (self.cfg.DEVICE_ID, name.lower()),
+                "command_topic": "%s/%s" % (self.set_topic, name.lower()),
+                "state_topic": self.state_topic,
+                "value_template": "{{ value_json.cfg.%s }}" % name,
+                "availability_topic": self.status_topic,
+                "icon": icon,
+                "entity_category": "config",
+                "device": dev,
+            }
+            if kind == "select":
+                base["options"] = list(MODES)
+                topic = "homeassistant/select/%s/%s/config"
+            else:
+                base.update({"min": lo, "max": hi, "step": step,
+                             "mode": "box"})
+                if unit:
+                    base["unit_of_measurement"] = unit
+                topic = "homeassistant/number/%s/%s/config"
+            ok &= self.link.publish(topic % (self.cfg.DEVICE_ID, name.lower()),
+                                    json.dumps(base), retain=True)
+
         if ok:
             self.link.publish(self.status_topic, "online", retain=True)
             self._announced = True
             self._log("telemetry: announced %d entities"
-                      % (len(_SENSORS) + len(_BINARY) + len(_BUTTONS)))
+                      % (len(_SENSORS) + len(_BINARY) + len(_BUTTONS)
+                         + len(SPECS)))
         return ok
 
     def on_disconnect(self):
@@ -236,6 +267,7 @@ class Telemetry:
             "reconn":   self.link.connects,
             "outage_s": self.link.outage_s,
             "boot":     getattr(c, "boot_reason", "unknown"),
+            "cfg":      c.st.as_dict(),
         }
 
     @staticmethod
@@ -245,8 +277,13 @@ class Telemetry:
         boost_left is whole minutes, so the countdown publishes once a minute
         while a boost runs and stays quiet otherwise.
         """
+        # rpm is bucketed to 500 rather than included raw. Raw would publish
+        # on every sample and flood the recorder; omitting it entirely leaves
+        # Home Assistant showing the spin-up reading -- around 2,500 -- for up
+        # to 30 s after the fan has actually settled near 4,000.
         return (p["state"], p["fan_on"], p["light_on"], p["fault"],
-                p["boost_left"])
+                p["boost_left"], (p["rpm"] or 0) // 500,
+                tuple(sorted(p["cfg"].items())))
 
     def publish(self, c, raw_light, rssi=None, force=False):
         """Publish state on the interval, or at once when something changes.

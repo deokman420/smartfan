@@ -19,6 +19,7 @@ from machine import Pin, ADC, WDT, reset_cause
 import dht
 
 import config as cfg
+from settings import Settings
 
 # The network layer is strictly additive. No secrets.py, or any failure while
 # bringing it up, leaves a controller that still runs the fan exactly as it
@@ -162,6 +163,8 @@ class Controller:
         self.tach = Tach(cfg.PIN_TACH)
         self.button = Button(cfg.PIN_BUTTON)
 
+        self.st = Settings(log=print)
+
         self.state = LEARN
         self.entered_at = time.ticks_ms()
         self.fan_on_at = None
@@ -187,8 +190,10 @@ class Controller:
         if _NET:
             try:
                 cmd_topic = "fan/%s/cmd" % cfg.ROOM
+                set_topic = "fan/%s/set/+" % cfg.ROOM
                 self.link = Link(secrets, "fan/%s/status" % cfg.ROOM, log=print,
-                                 subscribe=(cmd_topic,), on_msg=self.on_command)
+                                 subscribe=(cmd_topic, set_topic),
+                                 on_msg=self.on_command)
                 self.telem = Telemetry(cfg, self.link, log=print)
                 print("net: enabled, room=%s" % cfg.ROOM)
             except Exception as e:
@@ -213,9 +218,9 @@ class Controller:
         self.led_ok.value(ok)
         self.led_run.value(run)
 
-        if raw >= cfg.LIGHT_ON:
+        if raw >= self.st.LIGHT_ON:
             self.light_on = True
-        elif raw <= cfg.LIGHT_OFF:
+        elif raw <= self.st.LIGHT_OFF:
             self.light_on = False
         return raw
 
@@ -278,6 +283,22 @@ class Controller:
         elif self.dark_since is None:
             self.dark_since = now
 
+        # Mode sits above the automatic logic, including LEARN. Force off is
+        # how you stop the fan during a long bath without pulling power, or
+        # silence a misbehaving sensor from away; force on is how you air the
+        # room out. An override that waits out a 60 s baseline pass before
+        # taking effect is not an override.
+        #
+        # FAULT still wins: forcing a stalled fan on would just re-stall it.
+        mode = self.st.mode
+        if mode != "Auto" and self.state != FAULT:
+            if mode == "Force off":
+                if self.state != IDLE:
+                    self.set_state(IDLE, "forced off")
+            elif self.state != RUN:
+                self.set_state(RUN, "forced on")
+            return
+
         if self.state == LEARN:
             if ms_since(self.entered_at) > 60000 and self.baseline is not None:
                 self.set_state(IDLE, "baseline %.1f%%" % self.baseline)
@@ -324,7 +345,7 @@ class Controller:
 
             if self.light_on:
                 self.set_state(RUN, "light on")
-            elif self.excess_rh >= cfg.RH_RISE_ON:
+            elif self.excess_rh >= self.st.RH_RISE_ON:
                 self.set_state(RUN, "humidity +%.1f%%" % self.excess_rh)
             return
 
@@ -332,16 +353,16 @@ class Controller:
         ran = self.fan_seconds()
         if self.rpm >= cfg.MIN_RPM:
             self.fan_faults = 0          # a healthy run resets the tally
-        if ran >= cfg.MAX_RUN_S:
+        if ran >= self.st.MAX_RUN_S:
             self.set_state(IDLE, "max run time")
             return
-        if ran < cfg.MIN_RUN_S:
+        if ran < self.st.MIN_RUN_S:
             return
         if self.light_on:
             return
-        if self.dark_since and ms_since(self.dark_since) / 1000.0 < cfg.POST_LIGHT_S:
+        if self.dark_since and ms_since(self.dark_since) / 1000.0 < self.st.POST_LIGHT_S:
             return
-        if self.excess_rh > cfg.RH_FALL_OFF:
+        if self.excess_rh > self.st.RH_FALL_OFF:
             return
         self.set_state(IDLE, "dry, +%.1f%%" % self.excess_rh)
 
@@ -398,14 +419,32 @@ class Controller:
         commands are logged and ignored rather than guessed at.
         """
         try:
-            cmd = payload.decode().strip().lower()
+            raw = payload.decode().strip()
         except Exception:
             return
-        print("cmd: %s" % cmd)
+        cmd = raw if "/set/" in topic else raw.lower()
+        print("cmd: %s -> %s" % (topic.rsplit("/", 2)[-1], cmd))
+
+        # fan/<room>/set/<PARAM> carries a value; the command topic carries
+        # a verb. Split on the topic so a value can never be read as a verb.
+        if "/set/" in topic:
+            name = topic.rsplit("/", 1)[-1].upper()
+            ok, result = self.st.set(name, cmd)
+            if ok:
+                print("set: %s = %s" % (name, result))
+                self._push = True
+            else:
+                print("set: rejected %s=%r (%s)" % (name, cmd, result))
+            return
+
+        if cmd == "reset-settings":
+            self.st.reset()
+            self._push = True
+            return
 
         if cmd == "boost":
             self.boost_until = time.ticks_add(time.ticks_ms(),
-                                              cfg.BOOST_S * 1000)
+                                              self.st.BOOST_S * 1000)
             self.set_state(BOOST, "boost via mqtt")
         elif cmd == "cancel":
             if self.state == BOOST:
@@ -450,7 +489,7 @@ class Controller:
                 self.set_state(IDLE, "boost cancelled")
             else:
                 self.boost_until = time.ticks_add(time.ticks_ms(),
-                                                  cfg.BOOST_S * 1000)
+                                                  self.st.BOOST_S * 1000)
                 self.set_state(BOOST, "button")
 
     def log(self, raw_light):
@@ -473,6 +512,8 @@ class Controller:
         print("boot: %s" % self.boot_reason)
         next_sample = time.ticks_ms()
         started = time.ticks_ms()
+        sampled = False
+        raw_light = 0
 
         while True:
             press = self.button.poll()
@@ -494,21 +535,25 @@ class Controller:
                 if cfg.LOG:
                     self.log(raw_light)
 
-                # Report after deciding, so what is published is what the
-                # controller actually concluded this tick. Never allowed to
-                # affect control: telemetry cannot raise past here.
-                if self.telem:
-                    try:
-                        self.telem.publish(self, raw_light, self._rssi(),
-                                           force=self._push)
-                        self._push = False
-                    except Exception as e:
-                        print("telemetry: %s" % e)
+                sampled = True
 
             # Outputs first, then the network. If a connect attempt blocks for
             # a few seconds the fan is already in the state this pass decided,
             # and it simply holds there.
             self.drive_outputs()
+
+            # Publish AFTER the outputs are driven. Reporting before meant a
+            # state change and the pin change landed in different messages,
+            # so Home Assistant briefly showed "RUN" with the fan still off.
+            # Never allowed to affect control: telemetry cannot raise here.
+            if sampled and self.telem:
+                sampled = False
+                try:
+                    self.telem.publish(self, raw_light, self._rssi(),
+                                       force=self._push)
+                    self._push = False
+                except Exception as e:
+                    print("telemetry: %s" % e)
 
             # The single feed point. Deliberately after the outputs are
             # driven, so a loop that reaches here has done a full useful
