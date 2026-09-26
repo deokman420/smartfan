@@ -123,12 +123,38 @@ shower beats guessing.
 
 ### 2b — Remote configuration
 
-Add SUBSCRIBE to `mqtt.py`, `settings.json` persistence, HA number/select/button
-entities, validation and clamping on every inbound value.
+**2b.1 — commands. Done.**
+
+SUBSCRIBE, Remaining-Length parsing and `check_msg()` added to `mqtt.py`. All
+socket reads now route through one `_recv()`, so an inbound PUBLISH arriving
+between a PINGREQ and its PINGRESP is dispatched rather than mistaken for a
+malformed reply — a bug that only surfaces once the broker is busy.
+
+`net.py` resubscribes on every reconnect and services inbound traffic each
+poll. It also syncs NTP once per association, which is what makes the daily
+runtime rollover work.
+
+Commands on `fan/<room>/cmd`: `boost`, `cancel`, `relearn`, `clear`. Three HA
+button entities. The handler runs on the main thread inside `link.poll()`, so
+there is no concurrency to reason about; it drives the outputs immediately and
+forces a republish rather than waiting for the 30 s tick.
+
+Measured: press to fan-on in under 5 s. The boost countdown publishes on
+whole-minute changes, so it reads 15, 14, 13 instead of jumping on the
+interval.
+
+**2b.2 — parameters. Still to do.**
+
+`settings.json` persistence and HA number/select entities for the thresholds
+and timings.
 
 Every writable parameter gets a hard range in firmware. A bad MQTT payload must
 not be able to set `MAX_RUN_S` to zero or write a threshold outside the ADC's
 range. Clamp, log the rejection, carry on.
+
+Worth doing *after* a week of real data. The point of the read-only phase was
+to replace guessed defaults with observed ones — writing that capability
+before the data exists just makes it easier to tune to the wrong numbers.
 
 ### 2c — Robustness
 
@@ -141,9 +167,19 @@ range. Clamp, log the rejection, carry on.
 
 Safe mode is not optional once this thing is mounted.
 
-### 2d — Dashboard
+### 2d — Dashboard. Done.
 
-**Recommendation: use Home Assistant's own dashboard first.**
+Built over the WebSocket API (Lovelace config cannot be written over REST).
+Seven sections, 31 cards, 17 entities: current state, boost controls with a
+countdown that only appears while boosting, the excess-above-baseline gauge
+with its bands set to the real control thresholds, activity timeline, climate,
+health, and a light-calibration graph.
+
+The gauge is the one that matters — it shows whether the fan *should* be on
+without the reader needing to know the logic.
+
+**Original recommendation, which still stands: use Home Assistant's own
+dashboard first.**
 
 Once entities exist, HA gives you history, graphs, gauges, automations and phone
 notifications for free. A Lovelace view with the humidity trace, the fan state
@@ -180,17 +216,21 @@ counter.
 **Retained discovery.** HA discovery configs must be published retained, or the
 entities vanish when HA restarts before the Pico republishes.
 
-## Open questions
+## Decisions taken
 
-1. **Broker address** — reuse `192.168.0.5` and the `pico` account, or a
-   separate credential per device?
-2. **Sample rate to MQTT** — every 2 s matches the control loop but is noisy for
-   history. Every 30 s with immediate publish on state change is probably right.
-3. **Retention** — HA's default recorder keeps 10 days. Longer needs InfluxDB or
-   the long-term statistics table. Worth deciding before a year of data exists.
-4. **Multi-room** — phase 4 implies several of these. Device naming and topic
-   structure should assume more than one now, while it is cheap. `fan/bathroom/`
-   already does.
+1. **Broker** — `192.168.0.5:1883`, reusing the existing `pico` account for now
+   (option A). Per-device accounts remain the intent; the topic namespace
+   already separates the devices, so splitting later is two lines.
+   `MQTT_CLIENT_ID` is already distinct per device — sharing one would have the
+   two clients disconnecting each other in a loop that looks exactly like a
+   flaky network.
+2. **Sample rate** — 30 s, plus immediate publish on any change of state, fan,
+   light, fault or boost-minute. Verified: a `LEARN -> IDLE` transition landed
+   at 62.4 s rather than waiting for the 90 s tick.
+3. **Retention** — 30 days. HA's recorder defaults to 10, so this needs a
+   `recorder:` override in `configuration.yaml`. Still to do.
+4. **Multi-room** — assumed from the start. `fan/<room>/...` topics, with
+   `ROOM`, `ROOM_NAME` and `DEVICE_ID` in `config.py`.
 
 ## Not in scope
 

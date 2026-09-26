@@ -1,8 +1,12 @@
 """Minimal MQTT 3.1.1 publisher for MicroPython.
 
-Reused verbatim from the pico2w-thb1s-bridge project. Publish-only for
-now; phase 2b adds SUBSCRIBE and inbound PUBLISH handling so Home
-Assistant can write parameters back.
+Started as the publish-only client from pico2w-thb1s-bridge. Phase 2b adds
+SUBSCRIBE and inbound PUBLISH handling so Home Assistant can send commands.
+
+All socket reads go through _recv() so that an inbound PUBLISH arriving
+between a PINGREQ and its PINGRESP is dispatched rather than mistaken for a
+malformed reply -- which is exactly the sort of bug that only shows up once
+the broker is busy.
 
 Deliberately dependency-free: umqtt.simple is not bundled in the RPI_PICO2_W
 build and mip-installing it needs a working network at first boot, which is
@@ -12,6 +16,7 @@ exactly what we cannot assume. Publish-only, QoS 0, with LWT support.
 import select
 import socket
 import struct
+import time
 
 
 class MQTTClient:
@@ -26,6 +31,8 @@ class MQTTClient:
         self.will_topic = will_topic
         self.will_msg = will_msg
         self.sock = None
+        self.cb = None              # called as cb(topic:str, payload:bytes)
+        self._pid = 0
 
     @staticmethod
     def _rlen(n):
@@ -83,21 +90,94 @@ class MQTTClient:
         pkt = bytes([hdr]) + self._rlen(len(var) + len(msg)) + var + msg
         self.sock.write(pkt)
 
+    def set_callback(self, cb):
+        """cb(topic, payload) for every inbound PUBLISH. Keep it fast."""
+        self.cb = cb
+
+    def subscribe(self, topic, qos=0):
+        """SUBSCRIBE and wait for its SUBACK."""
+        self._pid = (self._pid % 65534) + 1
+        var = struct.pack("!H", self._pid)
+        payload = self._str(topic) + bytes([qos])
+        self.sock.write(bytes([0x82]) + self._rlen(len(var) + len(payload))
+                        + var + payload)
+        if not self._recv(5000, want=0x90):
+            raise OSError("MQTT: no SUBACK for %s" % topic)
+        return True
+
+    def _readlen(self):
+        """Remaining Length off the wire: 7 bits per byte, high bit continues."""
+        n = 0
+        sh = 0
+        while True:
+            b = self.sock.read(1)
+            if not b:
+                raise OSError("MQTT: truncated length")
+            n |= (b[0] & 0x7F) << sh
+            if not b[0] & 0x80:
+                return n
+            sh += 7
+            if sh > 21:
+                raise OSError("MQTT: bad length")
+
+    def _recv(self, timeout_ms, want=None):
+        """Read packets until `want` arrives or the budget runs out.
+
+        Inbound PUBLISHes are dispatched to the callback as they are met, so
+        a command landing mid-handshake is handled rather than discarded.
+        Returns the matched packet type, or None on timeout.
+        """
+        poller = select.poll()
+        poller.register(self.sock, select.POLLIN)
+        deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
+
+        while True:
+            left = time.ticks_diff(deadline, time.ticks_ms())
+            if left < 0:
+                left = 0
+            if not poller.poll(left):
+                return None          # nothing pending, or the budget ran out
+
+            hdr = self.sock.read(1)
+            if not hdr:
+                raise OSError("MQTT: connection closed")
+            kind = hdr[0] & 0xF0
+            rlen = self._readlen()
+            body = self.sock.read(rlen) if rlen else b""
+            if rlen and (body is None or len(body) < rlen):
+                raise OSError("MQTT: short read")
+
+            if kind == 0x30:                       # PUBLISH
+                tlen = (body[0] << 8) | body[1]
+                topic = body[2:2 + tlen].decode()
+                off = 2 + tlen
+                if hdr[0] & 0x06:                  # QoS > 0 carries a packet id
+                    off += 2
+                if self.cb:
+                    try:
+                        self.cb(topic, body[off:])
+                    except Exception:
+                        pass                       # a bad handler must not kill the link
+                continue
+
+            if want is not None and kind == want:
+                return kind
+            # anything else (PUBACK, SUBACK we did not ask for) is ignored
+
+    def check_msg(self):
+        """Dispatch any already-arrived PUBLISH. Never blocks."""
+        self._recv(0, want=None)
+
     def ping(self):
         """PINGREQ, then verify PINGRESP.
 
         Writing to a half-open TCP socket succeeds silently for a long time,
-        so without reading the reply the bridge can keep publishing into a
-        dead connection while the broker has already fired our LWT.
+        so without reading the reply we would keep publishing into a dead
+        connection while the broker has already fired our LWT.
         """
         self.sock.write(bytes([0xC0, 0x00]))
-        poller = select.poll()
-        poller.register(self.sock, select.POLLIN)
-        if not poller.poll(5000):
+        if not self._recv(5000, want=0xD0):
             raise OSError("MQTT: no PINGRESP")
-        resp = self.sock.read(2)
-        if not resp or resp[0] != 0xD0:
-            raise OSError("MQTT: bad PINGRESP")
 
     def close(self):
         try:

@@ -1,13 +1,15 @@
 """Home Assistant MQTT discovery and state publishing.
 
-Phase 2a: reporting only. Nothing here can change how the fan behaves --
-there is no subscribe path yet, by design. That arrives in 2b, once a week
-of real data has shown what the thresholds should actually be.
+Sensors and binary sensors report; buttons send commands back. Parameter
+writes (thresholds, timings) are still to come -- those need clamping and
+persistence, and are worth doing after a week of real data rather than
+before.
 
 Topic layout assumes more than one of these will exist:
 
     fan/<room>/status        online | offline   (LWT, retained)
     fan/<room>/state         JSON snapshot      (retained)
+    fan/<room>/cmd           boost | cancel | relearn | clear
     homeassistant/<kind>/<device>/<key>/config  (discovery, retained)
 
 One JSON state topic rather than a topic per sensor: fewer publishes, one
@@ -18,7 +20,7 @@ thb1s bridge uses.
 import json
 import time
 
-FW_VERSION = "2a"
+FW_VERSION = "2b.1"
 
 # Sensors: key -> (label, json field, unit, device_class, state_class, icon)
 _SENSORS = (
@@ -32,6 +34,14 @@ _SENSORS = (
     ("state",       "Controller state",  "state",    None,      None,          None,               "mdi:state-machine"),
     ("runtime",     "Runtime today",     "run_min",  "min",     None,          "total_increasing", "mdi:timer-outline"),
     ("rssi",        "WiFi signal",       "rssi",     "dBm",     "signal_strength", "measurement",   None),
+    ("boost_left",  "Boost remaining",   "boost_left", "min",   "duration",    None,               "mdi:timer-sand"),
+)
+
+# Buttons: key -> (label, payload sent on press, icon)
+_BUTTONS = (
+    ("boost",   "Boost 15 min",   "boost",   "mdi:fan-plus"),
+    ("cancel",  "Cancel boost",   "cancel",  "mdi:fan-off"),
+    ("relearn", "Relearn baseline", "relearn", "mdi:refresh"),
 )
 
 # Binary sensors: key -> (label, json field, device_class, icon)
@@ -40,6 +50,14 @@ _BINARY = (
     ("light_on", "Light detected", "light_on", "light",   None),
     ("fault",    "Fault",          "fault",    "problem", None),
 )
+
+
+def _boost_left_min(c):
+    """Whole minutes left on a boost, or 0 when none is running."""
+    if c.state != "BOOST" or c.boost_until is None:
+        return 0
+    ms = time.ticks_diff(c.boost_until, time.ticks_ms())
+    return max(0, int((ms + 59999) // 60000))      # round up: 1 s left reads 1
 
 
 class Telemetry:
@@ -51,6 +69,7 @@ class Telemetry:
         room = cfg.ROOM
         self.status_topic = "fan/%s/status" % room
         self.state_topic = "fan/%s/state" % room
+        self.cmd_topic = "fan/%s/cmd" % room
 
         self._announced = False
         self._last_pub = None
@@ -160,11 +179,25 @@ class Telemetry:
                 "homeassistant/binary_sensor/%s/%s/config" % (self.cfg.DEVICE_ID, key),
                 json.dumps(cfgd), retain=True)
 
+        for key, label, payload, icon in _BUTTONS:
+            cfgd = {
+                "name": label,
+                "unique_id": "%s_%s" % (self.cfg.DEVICE_ID, key),
+                "command_topic": self.cmd_topic,
+                "payload_press": payload,
+                "availability_topic": self.status_topic,
+                "icon": icon,
+                "device": dev,
+            }
+            ok &= self.link.publish(
+                "homeassistant/button/%s/%s/config" % (self.cfg.DEVICE_ID, key),
+                json.dumps(cfgd), retain=True)
+
         if ok:
             self.link.publish(self.status_topic, "online", retain=True)
             self._announced = True
             self._log("telemetry: announced %d entities"
-                      % (len(_SENSORS) + len(_BINARY)))
+                      % (len(_SENSORS) + len(_BINARY) + len(_BUTTONS)))
         return ok
 
     def on_disconnect(self):
@@ -190,14 +223,20 @@ class Telemetry:
             "fault":    c.state == "FAULT",
             "reason":   c.fault_reason or None,
             "run_min":  self._runtime_min(),
+            "boost_left": _boost_left_min(c),
             "rssi":     rssi,
             "up_s":     time.ticks_ms() // 1000,
         }
 
     @staticmethod
     def _signature(p):
-        """Fields whose change should publish immediately rather than wait."""
-        return (p["state"], p["fan_on"], p["light_on"], p["fault"])
+        """Fields whose change should publish immediately rather than wait.
+
+        boost_left is whole minutes, so the countdown publishes once a minute
+        while a boost runs and stays quiet otherwise.
+        """
+        return (p["state"], p["fan_on"], p["light_on"], p["fault"],
+                p["boost_left"])
 
     def publish(self, c, raw_light, rssi=None, force=False):
         """Publish state on the interval, or at once when something changes.

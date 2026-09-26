@@ -120,9 +120,12 @@ class Controller:
 
         self.link = None
         self.telem = None
+        self._push = False         # force a publish after a command lands
         if _NET:
             try:
-                self.link = Link(secrets, "fan/%s/status" % cfg.ROOM, log=print)
+                cmd_topic = "fan/%s/cmd" % cfg.ROOM
+                self.link = Link(secrets, "fan/%s/status" % cfg.ROOM, log=print,
+                                 subscribe=(cmd_topic,), on_msg=self.on_command)
                 self.telem = Telemetry(cfg, self.link, log=print)
                 print("net: enabled, room=%s" % cfg.ROOM)
             except Exception as e:
@@ -324,6 +327,48 @@ class Controller:
             self.led_ok.value(1)
             self.led_run.value(0)
 
+    def on_command(self, topic, payload):
+        """Inbound MQTT command. Runs on the main thread via link.poll().
+
+        Must be fast and must never raise: it is called from inside the MQTT
+        reader, and an exception here would tear down the link. Unknown
+        commands are logged and ignored rather than guessed at.
+        """
+        try:
+            cmd = payload.decode().strip().lower()
+        except Exception:
+            return
+        print("cmd: %s" % cmd)
+
+        if cmd == "boost":
+            self.boost_until = time.ticks_add(time.ticks_ms(),
+                                              cfg.BOOST_S * 1000)
+            self.set_state(BOOST, "boost via mqtt")
+        elif cmd == "cancel":
+            if self.state == BOOST:
+                self.boost_until = None
+                self.set_state(IDLE, "boost cancelled via mqtt")
+        elif cmd == "relearn":
+            self.baseline = self.rh
+            self.set_state(LEARN, "relearn via mqtt")
+            self.entered_at = time.ticks_ms() - 59000
+        elif cmd == "clear":
+            self.fault_kind = None
+            self.fault_until = None
+            self.fan_faults = 0
+            self.dht_fails = 0
+            if self.state == FAULT:
+                self.set_state(IDLE, "fault cleared via mqtt")
+        else:
+            print("cmd: ignoring unknown %r" % cmd)
+            return
+
+        # Drive the outputs now rather than waiting for the loop, so the fan
+        # responds to the press immediately, then republish so the dashboard
+        # reflects it without waiting for the 30 s tick.
+        self.drive_outputs()
+        self._push = True
+
     def handle_button(self, press):
         if press == "long":
             self.baseline = self.rh
@@ -389,7 +434,9 @@ class Controller:
                 # affect control: telemetry cannot raise past here.
                 if self.telem:
                     try:
-                        self.telem.publish(self, raw_light, self._rssi())
+                        self.telem.publish(self, raw_light, self._rssi(),
+                                           force=self._push)
+                        self._push = False
                     except Exception as e:
                         print("telemetry: %s" % e)
 

@@ -17,8 +17,9 @@ import time
 
 try:
     import network
+    import ntptime
 except ImportError:                       # running off-device, e.g. syntax check
-    network = None
+    network = ntptime = None
 
 from mqtt import MQTTClient
 
@@ -42,10 +43,13 @@ def _since(t):
 class Link:
     """WiFi + MQTT connection, driven by repeated poll() calls."""
 
-    def __init__(self, secrets, status_topic, log=None):
+    def __init__(self, secrets, status_topic, log=None, subscribe=None, on_msg=None):
         self._s = secrets
         self.status_topic = status_topic
         self._log = log or (lambda *a: None)
+        self._subs = list(subscribe or ())
+        self._on_msg = on_msg
+        self.clock_ok = False
 
         self.state = OFFLINE
         self.client = None
@@ -123,6 +127,7 @@ class Link:
     def _poll_wifi(self):
         if self._wlan.isconnected():
             self._log("net: wifi up, ip %s" % self._wlan.ifconfig()[0])
+            self._sync_clock()
             self._goto(MQTT_WAIT)
             return
         if _since(self._entered) > _WIFI_TIMEOUT_S * 1000:
@@ -131,6 +136,17 @@ class Link:
             except Exception:
                 pass
             self._fail("wifi timeout")
+
+    def _sync_clock(self):
+        """One NTP attempt per association. Failure is not fatal."""
+        if self.clock_ok or ntptime is None:
+            return
+        try:
+            ntptime.settime()
+            self.clock_ok = time.localtime()[0] >= 2024
+            self._log("net: clock %s" % ("synced" if self.clock_ok else "still unset"))
+        except Exception as e:
+            self._log("net: ntp failed (%s)" % e)
 
     def _poll_mqtt(self):
         """The one genuinely blocking step, bounded and backoff-gated."""
@@ -154,6 +170,17 @@ class Link:
         except Exception:
             pass
 
+        if self._on_msg:
+            c.set_callback(self._on_msg)
+        try:
+            for t in self._subs:
+                c.subscribe(t)
+                self._log("net: subscribed %s" % t)
+        except Exception as e:
+            c.close()                          # not yet self.client; close it here
+            self._fail("subscribe: %s" % e)
+            return
+
         self.client = c
         self.connects += 1
         self._backoff = _BACKOFF_START_S
@@ -161,6 +188,11 @@ class Link:
         self._goto(ONLINE)
 
     def _poll_online(self):
+        try:
+            self.client.check_msg()          # non-blocking; dispatches commands
+        except Exception as e:
+            self._fail("recv: %s" % e)
+            return
         if _since(self._last_ping) < _PING_INTERVAL_S * 1000:
             return
         self._last_ping = _now()
