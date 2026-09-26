@@ -20,3 +20,8 @@ __pycache__/
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# Host-side tooling credentials, if any are ever needed.
+.env
+.env.local
+.env*.local

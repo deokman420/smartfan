@@ -20,6 +20,19 @@ import dht
 
 import config as cfg
 
+# The network layer is strictly additive. No secrets.py, or any failure while
+# bringing it up, leaves a controller that still runs the fan exactly as it
+# would have done offline. A bathroom extractor that stops working when the
+# WiFi drops fails silently in a room nobody watches.
+try:
+    import secrets
+    from net import Link
+    from telemetry import Telemetry
+    _NET = True
+except ImportError:
+    secrets = None
+    _NET = False
+
 LEARN, IDLE, RUN, BOOST, FAULT = "LEARN", "IDLE", "RUN", "BOOST", "FAULT"
 
 
@@ -105,6 +118,19 @@ class Controller:
         self.fault_until = None    # earliest retry for a fan fault
         self.fan_faults = 0        # consecutive stalls
 
+        self.link = None
+        self.telem = None
+        if _NET:
+            try:
+                self.link = Link(secrets, "fan/%s/status" % cfg.ROOM, log=print)
+                self.telem = Telemetry(cfg, self.link, log=print)
+                print("net: enabled, room=%s" % cfg.ROOM)
+            except Exception as e:
+                print("net: disabled (%s)" % e)
+                self.link = self.telem = None
+        else:
+            print("net: disabled (no secrets.py) - running offline")
+
     # -- sensing ------------------------------------------------------
 
     def read_light(self):
@@ -170,6 +196,8 @@ class Controller:
         self.fan.value(1 if on else 0)
         self.fan_on_at = time.ticks_ms() if on else None
         self.tach.rpm()          # discard the stale window
+        if self.telem:
+            self.telem.note_fan(on)
 
     def fan_seconds(self):
         return 0 if self.fan_on_at is None else ms_since(self.fan_on_at) / 1000.0
@@ -356,8 +384,39 @@ class Controller:
                 if cfg.LOG:
                     self.log(raw_light)
 
+                # Report after deciding, so what is published is what the
+                # controller actually concluded this tick. Never allowed to
+                # affect control: telemetry cannot raise past here.
+                if self.telem:
+                    try:
+                        self.telem.publish(self, raw_light, self._rssi())
+                    except Exception as e:
+                        print("telemetry: %s" % e)
+
+            # Outputs first, then the network. If a connect attempt blocks for
+            # a few seconds the fan is already in the state this pass decided,
+            # and it simply holds there.
             self.drive_outputs()
+
+            if self.link:
+                was = self.link.online
+                try:
+                    self.link.poll()
+                except Exception as e:
+                    print("net: %s" % e)
+                if was and not self.link.online and self.telem:
+                    self.telem.on_disconnect()
+
             time.sleep_ms(20)
+
+    def _rssi(self):
+        """WiFi signal, or None when offline. Cheap and never raises."""
+        try:
+            if self.link and self.link.online and self.link._wlan:
+                return self.link._wlan.status("rssi")
+        except Exception:
+            pass
+        return None
 
 
 if __name__ == "__main__":

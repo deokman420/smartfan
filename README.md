@@ -49,6 +49,11 @@ tach is the only thing that notices a fan that has died in a ceiling.
 | `main.py` | The controller. Autoruns at power-up. |
 | `config.py` | Every tunable: pins, thresholds, timings. Versioned. |
 | `calibrate.py` | Bench helpers — `light()`, `sensor()`, `fan()`, `leds()`. |
+| `net.py` | WiFi + MQTT supervision, polled from the loop. Never blocks it. |
+| `telemetry.py` | Home Assistant discovery and state publishing. |
+| `mqtt.py` | MQTT 3.1.1 client. Publish-only until phase 2b. |
+| `ringbuf.py` | Bounded FIFO for samples taken while the broker is unreachable. |
+| `secrets.example.py` | Credentials template. Copy to `secrets.py` (gitignored). |
 | `build-sheet.html` | Wiring: 34 steps, a tappable breadboard diagram and a schematic. |
 | `troubleshoot.html` | Diagnostics: serial-log decoder, fault tree, expected voltages. |
 
@@ -123,11 +128,50 @@ Measured on the built hardware:
 ## Roadmap
 
 - **Phase 1** — local control. ✅ Done.
-- **Phase 2** — WiFi, MQTT, Home Assistant discovery, remote configuration,
-  logged history. Credentials go in `secrets.py`, which is gitignored.
-  Plan: [`docs/phase-2-plan.md`](docs/phase-2-plan.md).
+- **Phase 2** — WiFi, MQTT, Home Assistant, remote configuration, logged
+  history. Plan: [`docs/phase-2-plan.md`](docs/phase-2-plan.md).
+  - **2a** — telemetry only, no inbound control. ✅ Done.
+  - **2b** — remote configuration via MQTT subscribe.
+  - **2c** — watchdog, backoff, offline buffering, safe-mode boot pin.
+  - **2d** — dashboard (Home Assistant's own first).
 - **Phase 3** — mains relay for a real ceiling extractor, in a proper enclosure.
 - **Phase 4** — multi-room.
+
+## Networking
+
+Optional and strictly additive. **Without `secrets.py` the controller runs
+exactly as it does offline** — it prints `net: disabled` and carries on. An
+extractor that stops working when the WiFi drops fails silently, in a room
+nobody watches, and the first symptom is a mouldy ceiling.
+
+```bash
+cp secrets.example.py secrets.py     # then fill in, it is gitignored
+mpremote connect COM5 fs cp secrets.py :secrets.py
+mpremote connect COM5 exec "import machine; machine.reset()"
+```
+
+Use a **dedicated broker account per device** so one can be revoked without
+touching the others. On the Mosquitto add-on:
+
+```bash
+mosquitto_passwd -b /share/mosquitto/accesscontrol pico-fan-bathroom <password>
+```
+
+Entities appear in Home Assistant automatically via MQTT discovery. State is
+published every 30 s, and immediately on any change of state, fan, light or
+fault — so a 20-second run is never invisible between two samples.
+
+### Topics
+
+```
+fan/<room>/status                            online | offline  (LWT, retained)
+fan/<room>/state                             JSON snapshot     (retained)
+homeassistant/<kind>/<device_id>/<key>/config  discovery       (retained)
+```
+
+`ROOM`, `ROOM_NAME` and `DEVICE_ID` in `config.py` make this multi-room from
+the start. Retrofitting that later means renaming every entity in Home
+Assistant and losing its history.
 
 ## A note on the transistor
 

@@ -49,5 +49,20 @@ SPINUP_S = 3     # ignore the tach while the fan gets going
 FAULT_RETRY_S  = 300   # wait this long before retrying a stalled fan
 MAX_FAN_FAULTS = 3     # consecutive stalls before latching for good
 
+# --- Identity ---------------------------------------------------------
+# Topics and unique_ids assume there will eventually be more than one of
+# these. Getting the shape right now costs nothing; retrofitting it later
+# means renaming every entity in Home Assistant and losing their history.
+ROOM       = "bathroom"        # topic segment: lowercase, no spaces
+ROOM_NAME  = "Bathroom"        # display name in Home Assistant
+DEVICE_ID  = "fan_bathroom"    # unique_id prefix; must be unique per device
+
+# --- Telemetry --------------------------------------------------------
+# 30 s keeps history readable without flooding the recorder. Any change of
+# state, fan, light or fault publishes immediately regardless, so a 20 s
+# run is never invisible between two samples.
+PUBLISH_INTERVAL_S = 30
+EXPIRE_AFTER_S     = 120   # HA marks entities unavailable after this silence
+
 # --- Misc -------------------------------------------------------------
 LOG = True       # print a status line on every sample
