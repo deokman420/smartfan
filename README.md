@@ -56,6 +56,8 @@ tach is the only thing that notices a fan that has died in a ceiling.
 | `mqtt.py` | MQTT 3.1.1 client. Publish-only until phase 2b. |
 | `ringbuf.py` | Bounded FIFO for samples taken while the broker is unreachable. |
 | `secrets.example.py` | Credentials template. Copy to `secrets.py` (gitignored). |
+| `tools/build_dashboard.py` | Builds the Home Assistant dashboard over the WebSocket API. |
+| `tools/ota_publish.py` | Builds a manifest, serves it, tells the device to update. |
 | `build-sheet.html` | Wiring: 34 steps, a tappable breadboard diagram and a schematic. |
 | `troubleshoot.html` | Diagnostics: serial-log decoder, fault tree, expected voltages. |
 
@@ -202,6 +204,17 @@ touching the others. On the Mosquitto add-on:
 ```bash
 mosquitto_passwd -b /share/mosquitto/accesscontrol pico-fan-bathroom <password>
 ```
+
+### Dashboard
+
+```bash
+python tools/build_dashboard.py      # idempotent; safe to re-run
+```
+
+Eight sections, 52 cards, every one of the 31 entities used. Lovelace config
+cannot be written over REST, so this goes through the WebSocket API. Re-running
+it reports any entity the dashboard references that no longer exists, and any
+entity that exists but is not shown.
 
 Entities appear in Home Assistant automatically via MQTT discovery. State is
 published every 30 s, and immediately on any change of state, fan, light or

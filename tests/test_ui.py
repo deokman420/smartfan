@@ -34,6 +34,24 @@ HEADED = "--headed" in sys.argv
 env = io.open(os.path.join(ROOT, ".env"), encoding="utf-8").read()
 TOKEN = re.search(r'HASS_LLAT\s*=\s*"?([^"\s]+)', env).group(1)
 
+
+def entity_state(eid):
+    """Read one entity over the API.
+
+    State checks must not be made against page text: the explainer cards
+    legitimately contain the words IDLE, RUN and BOOST, so get_by_text would
+    match the documentation for ever and the assertion could never fail.
+    """
+    import json as _json
+    import urllib.request
+    try:
+        r = urllib.request.Request(HA + "/api/states/" + eid,
+                                   headers={"Authorization": "Bearer " + TOKEN})
+        with urllib.request.urlopen(r, timeout=8) as f:
+            return _json.load(f)["state"]
+    except Exception:
+        return None
+
 os.makedirs(SHOTS, exist_ok=True)
 results = []
 
@@ -92,14 +110,14 @@ with sync_playwright() as pw:
             return False
 
     # Section headings prove the view rendered, not just that HA loaded.
-    for hd in ("Right now", "Boost", "The decision", "Activity",
-               "Climate", "Health", "Light calibration"):
+    for hd in ("Right now", "Manual control", "The decision", "Activity",
+               "Climate", "Health", "Light sensing", "Timings"):
         check("section renders: %s" % hd, seen(hd))
 
     # Entity values reaching the DOM means the whole chain painted.
-    check("controller state on screen",
-          any(seen(s, exact=True)
-              for s in ("IDLE", "RUN", "LEARN", "BOOST", "FAULT")))
+    live = entity_state("sensor.bathroom_fan_controller_controller_state")
+    check("controller state on screen", bool(live) and seen(live, exact=True),
+          live or "entity unreachable")
     check("a humidity reading is shown", seen("Humidity"))
     check("gauge legend present", seen("Excess above baseline"))
 
@@ -107,7 +125,7 @@ with sync_playwright() as pw:
     print("     -> screenshots/dashboard.png")
 
     # --- the boost button, driven through the real UI --------------------
-    btn = page.get_by_text("Boost 15 minutes", exact=False).first
+    btn = page.get_by_text("Boost 15", exact=False).first
     if check("boost tile is present", btn.count() > 0):
         # HA's sticky header overlays whatever scrolls under it, so a plain
         # click gets intercepted. Centre the tile, then force past the
@@ -116,7 +134,8 @@ with sync_playwright() as pw:
         page.wait_for_timeout(600)
         btn.click(force=True)
         page.wait_for_timeout(9000)      # command -> MQTT -> device -> back
-        boosting = seen("BOOST", exact=True)
+        boosting = entity_state(
+            "sensor.bathroom_fan_controller_controller_state") == "BOOST"
         check("pressing the tile starts a boost", boosting)
         # These two are configured to appear only while boosting.
         check("countdown appears while boosting",
@@ -132,7 +151,9 @@ with sync_playwright() as pw:
             page.wait_for_timeout(600)
             cancel.click(force=True)
             page.wait_for_timeout(9000)
-            check("cancel returns to automatic", not seen("BOOST", exact=True))
+            check("cancel returns to automatic",
+                  entity_state("sensor.bathroom_fan_controller_"
+                               "controller_state") != "BOOST")
             check("countdown hidden again", not seen("Time remaining"))
 
     # --- phone width ------------------------------------------------------
