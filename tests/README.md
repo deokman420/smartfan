@@ -88,7 +88,7 @@ controls. Rename a heading in `tools/build_dashboard.py` and this suite fails
 until the rename is deliberate. Screenshots land in `tests/screenshots/`
 (gitignored) for eyeballing after a change.
 
-**`test_app.py` — 23 checks.** The app, served from `app/build` so it
+**`test_app.py` — 31 checks.** The app, served from `app/build` so it
 tests the artefact that would actually be deployed, against the live broker
 and the live fan.
 
@@ -108,6 +108,16 @@ background is usually transparent and scoring text against transparent
 silently passes everything.
 
 It drives the real fan for a few seconds and puts it back.
+
+## inner_text() returns what the browser renders
+
+`.k` labels are uppercased by `text-transform` in CSS. The DOM holds
+"Boost remaining"; `inner_text()` reports **"BOOST REMAINING"**. A
+case-sensitive substring check fails on a label that is plainly on screen.
+
+Match labels case-insensitively. This is the same family as the
+`get_by_text` note below — both are about asserting on rendered text rather
+than on source text.
 
 ## Assertions must wait, not glance
 

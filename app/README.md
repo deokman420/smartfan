@@ -38,6 +38,25 @@ cannot start working on its own, and bury the reason.
 > engineered away. Give the app account the narrowest access that works and
 > treat it as a LAN credential, not a secret.
 
+## Sections, not one long scroll
+
+Four views — Status, Readings, Thresholds, Health — with a sidebar on
+desktop and a sticky tab strip on phones. The Status view on a phone went
+from 3502 px of scrolling to 937 px.
+
+**Deliberately not a hamburger.** A hamburger earns its place when there
+are many destinations, or when navigation is secondary to the content.
+Here there are four, they are the whole app, and it is operated one-handed
+in a steamy room. Hiding four buttons behind a tap costs an interaction
+every time and hides the fault badge, which is the one thing you want to
+see without going looking for it.
+
+Every entity the device publishes now has its own card. Several used to be
+sub-labels — raw light under Light level, last restart under Uptime, last
+outage under Reconnects, baseline under Humidity — and boost remaining was
+rendered only while boosting, so the one time you wanted to check it was
+the only time it existed.
+
 ## Design
 
 The palette, type pairing and card idioms come from phbeks.com. The `:root`

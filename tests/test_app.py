@@ -190,23 +190,54 @@ with sync_playwright() as pw:
     check("connects to the broker",
           appears(page.get_by_text("Live", exact=True).first))
 
+    # --- navigation -------------------------------------------------------
+    def go(label):
+        page.get_by_role("button", name=label, exact=True).first.click()
+        page.wait_for_timeout(250)
+
+    for label in ("Status", "Readings", "Thresholds", "Health"):
+        check("section reachable: %s" % label,
+              page.get_by_role("button", name=label, exact=True).count() > 0)
+
     # --- the screen agrees with the wire ---------------------------------
     p = latest["payload"]
+    go("Status")
     shown_state = page.locator(".state").inner_text().strip()
     check("controller state matches telemetry",
           shown_state == p["state"], "%s vs %s" % (shown_state, p["state"]))
 
+    go("Readings")
     body = page.locator(".wrap").inner_text()
     check("humidity matches telemetry", "%.1f%%" % p["rh"] in body,
           "%.1f%%" % p["rh"])
-    check("build fingerprint matches telemetry", p["fw"] in body, p["fw"])
+    check("baseline is shown in its own right", "%.1f%%" % p["base"] in body)
+    check("raw light is shown in its own right",
+          "{:,}".format(p["light"]) in body, str(p["light"]))
+    # Only rendered while boosting before; a sensor that vanishes when its
+    # value is uninteresting still has to have somewhere to live.
+    #
+    # Matched case-insensitively: inner_text() returns text AS RENDERED, and
+    # these labels are uppercased by text-transform in CSS. The DOM says
+    # "Boost remaining", the browser reports "BOOST REMAINING", and a
+    # case-sensitive check fails on a label that is plainly on screen.
+    check("boost remaining has a home when idle",
+          "boost remaining" in body.lower())
 
+    go("Health")
+    body = page.locator(".wrap").inner_text()
+    check("build fingerprint matches telemetry", p["fw"] in body, p["fw"])
+    check("last restart is shown in its own right", p["boot"] in body,
+          p["boot"])
+
+    go("Thresholds")
     # A threshold on screen that disagrees with the device is worse than no
     # threshold shown: it describes a fan that does not exist.
     rise = page.locator("#RH_RISE_ON").input_value()
     check("thresholds match the device's own config",
           float(rise) == float(p["cfg"]["RH_RISE_ON"]),
           "%s vs %s" % (rise, p["cfg"]["RH_RISE_ON"]))
+
+    go("Status")
 
     check("no horizontal scroll at 420px",
           page.evaluate("document.documentElement.scrollWidth") <= 420,
@@ -254,16 +285,20 @@ with sync_playwright() as pw:
     # Not against the token list: a token that passes in isolation still
     # fails when it lands on a different surface, and the palette is
     # deliberately divergent from the brand's on exactly this point.
-    rows = page.evaluate(CONTRAST_AUDIT)
+    rows = []
+    for label in ("Status", "Readings", "Thresholds", "Health"):
+        go(label)
+        rows += page.evaluate(CONTRAST_AUDIT)
+    go("Status")
     aa = [r for r in rows if not r["aa"]]
     aaa = [r for r in rows if not r["aaa"]]
     worst = min((r["ratio"] for r in rows), default=0)
     check("every text element passes WCAG AA", not aa,
           "%d of %d fail" % (len(aa), len(rows)) if aa else
-          "%d elements" % len(rows))
+          "%d elements, all views" % len(rows))
     check("every text element passes WCAG AAA", not aaa,
           "worst: %.2f:1 %r" % (aaa[0]["ratio"], aaa[0]["t"]) if aaa else
-          "lowest %.2f:1" % worst)
+          "lowest %.2f:1 across all views" % worst)
 
     check("no uncaught JS errors", not errors, "; ".join(errors[:2]))
 

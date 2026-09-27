@@ -26,10 +26,19 @@
     rssiWord
   } from '$lib/format.js';
   import { ICONS } from '$lib/icons.js';
+  import Nav from '$lib/Nav.svelte';
   import { onMount } from 'svelte';
 
   let showSettings = $state(false);
   let draft = $state({ ...DEFAULTS });
+  let view = $state('status');
+
+  const VIEWS = [
+    { id: 'status', label: 'Status', icon: 'gauge' },
+    { id: 'readings', label: 'Readings', icon: 'drop' },
+    { id: 'tuning', label: 'Thresholds', icon: 'sliders' },
+    { id: 'health', label: 'Health', icon: 'pulse' }
+  ];
 
   onMount(() => {
     // First run on this browser: ask for the broker rather than dialling
@@ -175,164 +184,303 @@
       </p>
     </div>
   {:else}
-    <!-- What is it doing, and is it about to do something -->
-    <section class="hero card" class:dimmed={!live}>
-      <div class="gauge">
-        <svg viewBox="0 0 184 108" role="img" aria-label="Humidity above baseline">
-          <path d={arc(-180, 0)} class="track" />
-          <path d={arc(angle(G_MIN), angle(cfg.RH_FALL_OFF ?? 3))} class="band calm" />
-          <path
-            d={arc(angle(cfg.RH_FALL_OFF ?? 3), angle(cfg.RH_RISE_ON ?? 8))}
-            class="band warn"
-          />
-          <path d={arc(angle(cfg.RH_RISE_ON ?? 8), angle(G_MAX))} class="band hot" />
-          <line
-            x1="92"
-            y1="92"
-            x2={92 + (R - 13) * Math.cos((angle(t.exc) * Math.PI) / 180)}
-            y2={92 + (R - 13) * Math.sin((angle(t.exc) * Math.PI) / 180)}
-            class="needle"
-          />
-          <circle cx="92" cy="92" r="4.5" class="hub" />
-        </svg>
-        <div class="reading tone-{excTone}">{num(t.exc, 1, '%')}</div>
-        <div class="reading-sub">above baseline</div>
+    <div class="shell">
+      <div class="nav-slot">
+        <Nav
+          items={VIEWS}
+          current={view}
+          onSelect={(id) => (view = id)}
+          alert={t.fault ? 'status' : null}
+        />
       </div>
 
-      <div class="hero-state">
-        <p class="eyebrow">Controller</p>
-        <p class="state tone-{tone}">{state}</p>
-        <p class="blurb">{STATE_BLURB[state] ?? ''}</p>
-        {#if state === 'BOOST' && t.boost_left > 0}
-          <p class="blurb tone-active">{dur(t.boost_left)} remaining</p>
+      <main>
+        {#if view === 'status'}
+          <section class="hero card" class:dimmed={!live}>
+            <div class="gauge">
+              <svg viewBox="0 0 184 108" role="img" aria-label="Humidity above baseline">
+                <path d={arc(-180, 0)} class="track" />
+                <path d={arc(angle(G_MIN), angle(cfg.RH_FALL_OFF ?? 3))} class="band calm" />
+                <path
+                  d={arc(angle(cfg.RH_FALL_OFF ?? 3), angle(cfg.RH_RISE_ON ?? 8))}
+                  class="band warn"
+                />
+                <path d={arc(angle(cfg.RH_RISE_ON ?? 8), angle(G_MAX))} class="band hot" />
+                <line
+                  x1="92"
+                  y1="92"
+                  x2={92 + (R - 13) * Math.cos((angle(t.exc) * Math.PI) / 180)}
+                  y2={92 + (R - 13) * Math.sin((angle(t.exc) * Math.PI) / 180)}
+                  class="needle"
+                />
+                <circle cx="92" cy="92" r="4.5" class="hub" />
+              </svg>
+              <div class="reading tone-{excTone}">{num(t.exc, 1, '%')}</div>
+              <div class="reading-sub">above baseline</div>
+            </div>
+
+            <div class="hero-state">
+              <p class="eyebrow">Controller</p>
+              <p class="state tone-{tone}">{state}</p>
+              <p class="blurb">{STATE_BLURB[state] ?? ''}</p>
+              {#if state === 'BOOST' && t.boost_left > 0}
+                <p class="blurb tone-active">{dur(t.boost_left * 60)} remaining</p>
+              {/if}
+              {#if t.reason}
+                <p class="reason">{t.reason}</p>
+              {/if}
+            </div>
+
+            <div class="hero-facts">
+              <span class={t.fan_on ? 'tone-active' : 'tone-dim'}>
+                Fan {t.fan_on ? `running · ${int(t.rpm)} rpm` : 'off'}
+              </span>
+              <span class={t.light_on ? 'tone-warn' : 'tone-dim'}>
+                Light {t.light_on ? 'on' : 'off'}
+              </span>
+              <span class={t.fault ? 'tone-bad' : 'tone-dim'}>
+                {t.fault ? 'Fault' : 'No fault'}
+              </span>
+            </div>
+          </section>
+
+          <h2>Control</h2>
+          <div class="controls">
+            <button class="primary" onclick={() => command('boost')} disabled={!live}>
+              Boost {dur(cfg.BOOST_S)}
+            </button>
+            <button onclick={() => command('cancel')} disabled={!live || state !== 'BOOST'}>
+              Cancel boost
+            </button>
+            <button onclick={() => command('relearn')} disabled={!live}>
+              Relearn baseline
+            </button>
+            <button onclick={() => command('clear')} disabled={!live || !t.fault}>
+              Clear fault
+            </button>
+          </div>
+
+          <div class="card mode">
+            <label for="mode">Mode</label>
+            <select
+              id="mode"
+              value={cfg.MODE ?? 'Auto'}
+              disabled={!live}
+              onchange={(e) => setParam('MODE', e.currentTarget.value)}
+            >
+              {#each MODES as m (m)}
+                <option value={m}>{m}</option>
+              {/each}
+            </select>
+            <p class="sub">
+              Force on and Force off override the humidity logic until set back
+              to Auto.
+            </p>
+          </div>
         {/if}
-        {#if t.reason}
-          <p class="reason">{t.reason}</p>
+
+        {#if view === 'readings'}
+          <h2>Humidity</h2>
+          <div class="grid">
+            <div class="stat">
+              <span class="chip icon-blue"
+                ><svg viewBox="0 0 16 16">{@html ICONS.humidity}</svg></span
+              >
+              <span class="k">Humidity</span>
+              <span class="v">{num(t.rh, 1, '%')}</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-blue"
+                ><svg viewBox="0 0 16 16">{@html ICONS.gauge}</svg></span
+              >
+              <span class="k">Baseline</span>
+              <span class="v">{num(t.base, 1, '%')}</span>
+              <span class="sub">what this room sits at</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-teal"
+                ><svg viewBox="0 0 16 16">{@html ICONS.pulse}</svg></span
+              >
+              <span class="k">Excess</span>
+              <span class="v tone-{excTone}">{num(t.exc, 1, '%')}</span>
+              <span class="sub">fan starts at {num(cfg.RH_RISE_ON, 1, '%')}</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-orange"
+                ><svg viewBox="0 0 16 16">{@html ICONS.temp}</svg></span
+              >
+              <span class="k">Temperature</span>
+              <span class="v">{num(t.temp, 1, '°C')}</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-orange"
+                ><svg viewBox="0 0 16 16">{@html ICONS.drop}</svg></span
+              >
+              <span class="k">Dew point</span>
+              <span class="v">{num(t.dp, 1, '°C')}</span>
+            </div>
+          </div>
+
+          <h2>Light</h2>
+          <div class="grid">
+            <div class="stat">
+              <span class="chip icon-purple"
+                ><svg viewBox="0 0 16 16">{@html ICONS.light}</svg></span
+              >
+              <span class="k">Light level</span>
+              <span class="v">{num(t.light_pc, 1, '%')}</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-purple"
+                ><svg viewBox="0 0 16 16">{@html ICONS.sliders}</svg></span
+              >
+              <span class="k">Raw reading</span>
+              <span class="v mono-v">{int(t.light)}</span>
+              <span class="sub">on above {int(cfg.LIGHT_ON)}</span>
+            </div>
+            <div class="stat">
+              <span class="chip {t.light_on ? 'icon-orange' : 'icon-blue'}">
+                <svg viewBox="0 0 16 16">{@html ICONS.power}</svg>
+              </span>
+              <span class="k">Reads as</span>
+              <span class="v">{t.light_on ? 'On' : 'Off'}</span>
+            </div>
+          </div>
+
+          <h2>Fan</h2>
+          <div class="grid">
+            <div class="stat">
+              <span class="chip icon-teal"><svg viewBox="0 0 16 16">{@html ICONS.fan}</svg></span>
+              <span class="k">Fan speed</span>
+              <span class="v">{int(t.rpm)}</span>
+              <span class="sub">rpm</span>
+            </div>
+            <div class="stat">
+              <span class="chip {t.fan_on ? 'icon-teal' : 'icon-blue'}">
+                <svg viewBox="0 0 16 16">{@html ICONS.power}</svg>
+              </span>
+              <span class="k">Running</span>
+              <span class="v">{t.fan_on ? 'Yes' : 'No'}</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-green"
+                ><svg viewBox="0 0 16 16">{@html ICONS.clock}</svg></span
+              >
+              <span class="k">Run today</span>
+              <span class="v">{durMin(t.run_min)}</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-teal"
+                ><svg viewBox="0 0 16 16">{@html ICONS.uptime}</svg></span
+              >
+              <span class="k">Boost remaining</span>
+              <span class="v">{t.boost_left > 0 ? dur(t.boost_left * 60) : '—'}</span>
+              <span class="sub">{state === 'BOOST' ? 'boosting now' : 'not boosting'}</span>
+            </div>
+          </div>
         {/if}
-      </div>
 
-      <div class="hero-facts">
-          <span class={t.fan_on ? 'tone-active' : 'tone-dim'}>
-            Fan {t.fan_on ? `running · ${int(t.rpm)} rpm` : 'off'}
-          </span>
-          <span class={t.light_on ? 'tone-warn' : 'tone-dim'}>
-            Light {t.light_on ? 'on' : 'off'}
-          </span>
-        {#if t.fault}<span class="tone-bad">Fault</span>{/if}
-      </div>
-    </section>
+        {#if view === 'tuning'}
+          <h2>Thresholds</h2>
+          <p class="hint">
+            The device validates every value against its own ranges and rejects
+            anything outside them. A change only counts once it comes back in
+            the next reading.
+          </p>
+          <div class="grid">
+            {#each TUNABLES as p (p.key)}
+              <div class="stat tune">
+                <label class="k" for={p.key}>{p.label}</label>
+                <input
+                  id={p.key}
+                  type="number"
+                  step={p.step}
+                  disabled={!live}
+                  value={cfg[p.key] ?? ''}
+                  onchange={(e) => writeParam(p.key, e.currentTarget.value)}
+                />
+                <span class="sub">{p.unit ? `${p.unit} · ` : ''}{p.hint}</span>
+              </div>
+            {/each}
+          </div>
 
-    <h2>Control</h2>
-    <div class="controls">
-      <button class="primary" onclick={() => command('boost')} disabled={!live}>
-        Boost {dur(cfg.BOOST_S)}
-      </button>
-      <button onclick={() => command('cancel')} disabled={!live || state !== 'BOOST'}>
-        Cancel boost
-      </button>
-      <button onclick={() => command('relearn')} disabled={!live}>Relearn baseline</button>
-      <button onclick={() => command('clear')} disabled={!live || !t.fault}>Clear fault</button>
-    </div>
+          <h2>Mode</h2>
+          <div class="card mode">
+            <label for="mode-t">Mode</label>
+            <select
+              id="mode-t"
+              value={cfg.MODE ?? 'Auto'}
+              disabled={!live}
+              onchange={(e) => setParam('MODE', e.currentTarget.value)}
+            >
+              {#each MODES as m (m)}
+                <option value={m}>{m}</option>
+              {/each}
+            </select>
+            <p class="sub">
+              Force on and Force off override the humidity logic until set back
+              to Auto.
+            </p>
+          </div>
+        {/if}
 
-    <div class="card mode">
-      <label for="mode">Mode</label>
-      <select
-        id="mode"
-        value={cfg.MODE ?? 'Auto'}
-        disabled={!live}
-        onchange={(e) => setParam('MODE', e.currentTarget.value)}
-      >
-        {#each MODES as m (m)}
-          <option value={m}>{m}</option>
-        {/each}
-      </select>
-      <p class="sub">
-        Force on and Force off override the humidity logic until set back to
-        Auto.
-      </p>
-    </div>
+        {#if view === 'health'}
+          <h2>Link</h2>
+          <div class="grid">
+            <div class="stat">
+              <span class="chip icon-teal"><svg viewBox="0 0 16 16">{@html ICONS.wifi}</svg></span>
+              <span class="k">Wi-Fi</span>
+              <span class="v">{rssiWord(t.rssi)}</span>
+              <span class="sub">{int(t.rssi)} dBm</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-orange"><svg viewBox="0 0 16 16">{@html ICONS.link}</svg></span>
+              <span class="k">Reconnects</span>
+              <span class="v">{int(t.reconn)}</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-orange"
+                ><svg viewBox="0 0 16 16">{@html ICONS.clock}</svg></span
+              >
+              <span class="k">Last outage</span>
+              <span class="v">{dur(t.outage_s)}</span>
+            </div>
+          </div>
 
-    <h2>Readings</h2>
-    <div class="grid">
-      <div class="stat">
-        <span class="chip icon-blue"><svg viewBox="0 0 16 16">{@html ICONS.humidity}</svg></span>
-        <span class="k">Humidity</span>
-        <span class="v">{num(t.rh, 1, '%')}</span>
-        <span class="sub">baseline {num(t.base, 1, '%')}</span>
-      </div>
-      <div class="stat">
-        <span class="chip icon-orange"><svg viewBox="0 0 16 16">{@html ICONS.temp}</svg></span>
-        <span class="k">Temperature</span>
-        <span class="v">{num(t.temp, 1, '°C')}</span>
-        <span class="sub">dew point {num(t.dp, 1, '°C')}</span>
-      </div>
-      <div class="stat">
-        <span class="chip icon-purple"><svg viewBox="0 0 16 16">{@html ICONS.light}</svg></span>
-        <span class="k">Light</span>
-        <span class="v">{num(t.light_pc, 1, '%')}</span>
-        <span class="sub">raw {int(t.light)}</span>
-      </div>
-      <div class="stat">
-        <span class="chip icon-teal"><svg viewBox="0 0 16 16">{@html ICONS.fan}</svg></span>
-        <span class="k">Fan speed</span>
-        <span class="v">{int(t.rpm)}</span>
-        <span class="sub">rpm</span>
-      </div>
-      <div class="stat">
-        <span class="chip icon-green"><svg viewBox="0 0 16 16">{@html ICONS.clock}</svg></span>
-        <span class="k">Run today</span>
-        <span class="v">{durMin(t.run_min)}</span>
-      </div>
-      <div class="stat">
-        <span class="chip icon-blue"><svg viewBox="0 0 16 16">{@html ICONS.uptime}</svg></span>
-        <span class="k">Uptime</span>
-        <span class="v">{durMin(t.up_min)}</span>
-        <span class="sub">since {t.boot}</span>
-      </div>
-    </div>
-
-    <h2>Thresholds</h2>
-    <p class="hint">
-      The device validates every value against its own ranges and rejects
-      anything outside them. A change only counts once it comes back in the
-      next reading.
-    </p>
-    <div class="grid">
-      {#each TUNABLES as p (p.key)}
-        <div class="stat tune">
-          <label class="k" for={p.key}>{p.label}</label>
-          <input
-            id={p.key}
-            type="number"
-            step={p.step}
-            disabled={!live}
-            value={cfg[p.key] ?? ''}
-            onchange={(e) => writeParam(p.key, e.currentTarget.value)}
-          />
-          <span class="sub">{p.unit ? `${p.unit} · ` : ''}{p.hint}</span>
-        </div>
-      {/each}
-    </div>
-
-    <h2>Health</h2>
-    <div class="grid">
-      <div class="stat">
-        <span class="chip icon-teal"><svg viewBox="0 0 16 16">{@html ICONS.wifi}</svg></span>
-        <span class="k">Wi-Fi</span>
-        <span class="v">{rssiWord(t.rssi)}</span>
-        <span class="sub">{int(t.rssi)} dBm</span>
-      </div>
-      <div class="stat">
-        <span class="chip icon-purple"><svg viewBox="0 0 16 16">{@html ICONS.build}</svg></span>
-        <span class="k">Build</span>
-        <span class="v mono-v">{t.fw ?? '—'}</span>
-      </div>
-      <div class="stat">
-        <span class="chip icon-orange"><svg viewBox="0 0 16 16">{@html ICONS.link}</svg></span>
-        <span class="k">Reconnects</span>
-        <span class="v">{int(t.reconn)}</span>
-        <span class="sub">last outage {dur(t.outage_s)}</span>
-      </div>
+          <h2>Device</h2>
+          <div class="grid">
+            <div class="stat">
+              <span class="chip icon-blue"
+                ><svg viewBox="0 0 16 16">{@html ICONS.uptime}</svg></span
+              >
+              <span class="k">Uptime</span>
+              <span class="v">{durMin(t.up_min)}</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-blue"
+                ><svg viewBox="0 0 16 16">{@html ICONS.power}</svg></span
+              >
+              <span class="k">Last restart</span>
+              <span class="v small-v">{t.boot ?? '—'}</span>
+            </div>
+            <div class="stat">
+              <span class="chip icon-purple"
+                ><svg viewBox="0 0 16 16">{@html ICONS.build}</svg></span
+              >
+              <span class="k">Build</span>
+              <span class="v mono-v">{t.fw ?? '—'}</span>
+            </div>
+            <div class="stat">
+              <span class="chip {t.fault ? 'icon-red' : 'icon-green'}">
+                <svg viewBox="0 0 16 16">{@html ICONS.pulse}</svg>
+              </span>
+              <span class="k">Fault</span>
+              <span class="v">{t.fault ? 'Yes' : 'None'}</span>
+              {#if t.reason}<span class="sub">{t.reason}</span>{/if}
+            </div>
+          </div>
+        {/if}
+      </main>
     </div>
   {/if}
 
@@ -389,7 +537,7 @@
     justify-content: space-between;
     gap: 14px;
     flex-wrap: wrap;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
 
   .brand {
@@ -447,6 +595,43 @@
     border-color: var(--border-strong);
     color: var(--text);
   }
+
+  /* --- shell ----------------------------------------------------------- */
+
+  .nav-slot {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--bg);
+    padding: 6px 0 9px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  main > :global(h2:first-child) {
+    margin-top: 20px;
+  }
+
+  @media (min-width: 960px) {
+    .shell {
+      display: grid;
+      grid-template-columns: 196px 1fr;
+      gap: 30px;
+      align-items: start;
+    }
+    .nav-slot {
+      top: 22px;
+      padding: 0;
+      margin: 6px 0 0;
+      border-bottom: 0;
+      background: transparent;
+    }
+    main > :global(h2:first-child) {
+      margin-top: 0;
+    }
+  }
+
+  /* --- banners --------------------------------------------------------- */
 
   .banner {
     border-radius: var(--radius);
@@ -602,16 +787,13 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px 14px;
-    margin-top: 14px;
     font-family: var(--mono);
     font-size: 0.72rem;
   }
 
-  /* Wide enough for three columns: the facts become their own column
-     against the right edge instead of leaving half the hero empty. */
   @media (min-width: 720px) {
     .hero {
-      gap: 32px;
+      gap: 30px;
     }
     .hero-state {
       flex: 1 1 auto;
@@ -620,7 +802,7 @@
       flex-direction: column;
       align-items: flex-end;
       text-align: right;
-      gap: 8px;
+      gap: 9px;
       margin: 0 0 0 auto;
       flex: none;
       padding-left: 26px;
@@ -724,6 +906,10 @@
     font-family: var(--mono);
     font-size: 1.05rem;
     letter-spacing: -0.01em;
+  }
+  .small-v {
+    font-size: 1rem;
+    line-height: 1.3;
   }
 
   .sub {
