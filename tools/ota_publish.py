@@ -52,6 +52,44 @@ def sha256(path):
     return h.hexdigest()
 
 
+def fingerprint():
+    """The same calculation the device runs, so the two can be compared.
+
+    TRACKED is read out of telemetry.py rather than duplicated here. Two
+    copies of a list like this drift, and a drifted copy reports a mismatch
+    that is not one — worse than having no check at all.
+    """
+    src = io.open(os.path.join(ROOT, "telemetry.py"), encoding="utf-8").read()
+    m = re.search(r"TRACKED = [(]([^)]*)[)]", src, re.S)
+    names = sorted(re.findall(r'"([^"]+)"', m.group(1))) if m else sorted(SHIP)
+    outer = hashlib.sha256()
+    for name in names:
+        path = os.path.join(ROOT, name)
+        digest = sha256(path) if os.path.exists(path) else "-"
+        outer.update((name + digest).encode())
+    return outer.hexdigest()[:8]
+
+
+def device_build():
+    """What build the device says it is running, via Home Assistant.
+
+    The only way to know what is on a device in a ceiling without going to
+    get it.
+    """
+    try:
+        import urllib.request
+        env = io.open(os.path.join(ROOT, ".env"), encoding="utf-8").read()
+        tok = re.search(r'HASS_LLAT\s*=\s*"?([^"\s]+)', env).group(1)
+        req = urllib.request.Request(
+            "http://192.168.0.5:8123/api/states/"
+            "sensor.bathroom_fan_controller_build",
+            headers={"Authorization": "Bearer " + tok})
+        with urllib.request.urlopen(req, timeout=8) as f:
+            return json.load(f)["state"]
+    except Exception:
+        return None
+
+
 def build_manifest():
     files = {}
     for name in SHIP:
@@ -155,6 +193,16 @@ def main():
         else:
             mark, note = " ", "same"
         print("  %s %-16s %6d B  %s" % (mark, name, meta["size"], note))
+
+    want = fingerprint()
+    have = device_build()
+    print()
+    if have is None:
+        print("  build   local %s   device unreachable" % want)
+    elif have == want:
+        print("  build   local %s   device %s   MATCH" % (want, have))
+    else:
+        print("  build   local %s   device %s   DIFFERS" % (want, have))
 
     if on_device and not changed:
         print("\nnothing to update")

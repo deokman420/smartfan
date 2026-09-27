@@ -253,6 +253,21 @@ the board resets, and after two failed attempts `boot.py` restores the
 An update is only *kept* once the new code has run for 60 seconds without
 faulting. Until then the rollback is still armed.
 
+### Knowing what is actually on it
+
+```
+build   local 8e669867   device 8e669867   MATCH
+```
+
+The device hashes its own tracked files at boot and publishes the result as
+a **Build** entity. `ota_publish.py` computes the same hash locally and
+compares. Without this, the only way to know what an update really put on a
+device in a ceiling is to go and get it.
+
+`TRACKED` lives in `telemetry.py` and the publisher reads it from there
+rather than keeping its own copy — two lists like that drift, and a drifted
+copy reports a mismatch that is not one.
+
 **`boot.py` and `ota.py` are never sent over the air.** They are the recovery
 path, and a recovery path you can break remotely is not one. Flash those over
 USB. `secrets.py` and `settings.json` are excluded too — they belong to the

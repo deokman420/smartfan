@@ -120,3 +120,5 @@ def leds(seconds=20):
         time.sleep_ms(20)
     ok.value(0)
     run.value(0)
+
+# OTA marker: 19:54:17 (pushed with the device in the bathroom)

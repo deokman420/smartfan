@@ -88,9 +88,9 @@ states = {e["entity_id"]: e for e in api("/api/states")}
 PREFIX = "bathroom_fan_controller"
 mine = {k: v for k, v in states.items() if PREFIX in k}
 check("device discovered in HA", len(mine) > 0, "%d entities" % len(mine))
-check("expected entity count", len(mine) >= 30, "%d found" % len(mine))
+check("expected entity count", len(mine) >= 31, "%d found" % len(mine))
 
-for kind, n in (("sensor.", 15), ("binary_sensor.", 3), ("button.", 3),
+for kind, n in (("sensor.", 16), ("binary_sensor.", 3), ("button.", 3),
                 ("number.", 8), ("select.", 1)):
     got = sum(1 for k in mine if k.startswith(kind))
     check("%s entities" % kind.rstrip("."), got >= n, "%d/%d" % (got, n))
@@ -118,7 +118,7 @@ val("wifi_signal", -90, -20)
 val("uptime", 0, 100000)
 
 # 2c diagnostics: an outage must be reported, not silently papered over.
-for key in ("link_reconnects", "last_outage", "last_boot_reason"):
+for key in ("link_reconnects", "last_outage", "last_boot_reason", "build"):
     e = states.get("sensor.%s_%s" % (PREFIX, key))
     check("diagnostic present: %s" % key, e is not None,
           e["state"] if e else "missing")

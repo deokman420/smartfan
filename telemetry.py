@@ -22,7 +22,38 @@ import time
 
 from settings import SPECS, MODES
 
-FW_VERSION = "2c.1"
+FW_VERSION = "2c.2"
+
+# Files whose content defines "what build is running". Hashed together into
+# a short fingerprint so the installed code can be identified over the
+# network -- without it, the only way to know what an OTA actually put on a
+# device in a ceiling is to go and get it.
+TRACKED = ("main.py", "config.py", "settings.py", "telemetry.py",
+           "net.py", "mqtt.py", "ringbuf.py", "calibrate.py")
+
+
+def fingerprint():
+    """Short hash of the tracked files. Computed once, at construction."""
+    try:
+        import hashlib
+        import binascii
+        outer = hashlib.sha256()
+        for name in sorted(TRACKED):
+            h = hashlib.sha256()
+            try:
+                with open(name, "rb") as f:
+                    while True:
+                        b = f.read(512)
+                        if not b:
+                            break
+                        h.update(b)
+                digest = binascii.hexlify(h.digest()).decode()
+            except OSError:
+                digest = "-"
+            outer.update((name + digest).encode())
+        return binascii.hexlify(outer.digest()).decode()[:8]
+    except Exception:
+        return "unknown"
 
 # Sensors: key -> (label, json field, unit, device_class, state_class, icon)
 _SENSORS = (
@@ -41,6 +72,7 @@ _SENSORS = (
     ("reconnects",  "Link reconnects",   "reconn",   None,      None,          "total_increasing", "mdi:lan-connect"),
     ("last_outage", "Last outage",       "outage_s", "s",       "duration",    None,               "mdi:lan-disconnect"),
     ("boot_reason", "Last boot reason",  "boot",     None,      None,          None,               "mdi:restart"),
+    ("build",       "Build",             "fw",       None,      None,          None,               "mdi:package-variant"),
 )
 
 # Buttons: key -> (label, payload sent on press, icon)
@@ -81,6 +113,9 @@ class Telemetry:
         self._announced = False
         self._last_pub = None
         self._last_sig = None
+
+        self.fw = fingerprint()
+        self._log("telemetry: build %s" % self.fw)
 
         self._run_ms = 0                # fan runtime accumulator, today
         self._run_since = None
@@ -163,7 +198,7 @@ class Telemetry:
             if icon:
                 cfgd["icon"] = icon
             if key in ("rssi", "uptime", "reconnects", "last_outage",
-                       "boot_reason"):
+                       "boot_reason", "build"):
                 cfgd["entity_category"] = "diagnostic"
             ok &= self.link.publish(
                 "homeassistant/sensor/%s/%s/config" % (self.cfg.DEVICE_ID, key),
@@ -270,6 +305,7 @@ class Telemetry:
             "reconn":   self.link.connects,
             "outage_s": self.link.outage_s,
             "boot":     getattr(c, "boot_reason", "unknown"),
+            "fw":       self.fw,
             "cfg":      c.st.as_dict(),
         }
 
