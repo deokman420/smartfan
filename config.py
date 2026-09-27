@@ -38,7 +38,13 @@ BASELINE_A  = 0.002  # EMA weight; ~15 min to settle at 2 s samples
 # --- Timing, seconds --------------------------------------------------
 SAMPLE_S     = 2     # DHT22 cannot be read faster than every 2 s
 MIN_RUN_S    = 180   # never short-cycle the fan
-MAX_RUN_S    = 1800  # hard stop after 30 min no matter what
+MAX_RUN_S    = 2700  # hard stop after 45 min no matter what
+                     # Was 30. A real shower measured here peaked at +38.5 %RH
+                     # and the room took longer than half an hour to come back
+                     # within RH_FALL_OFF -- so the cap, not the drying logic,
+                     # was ending every run. It does reach +2.1 % eventually,
+                     # which is what makes a longer window the right fix rather
+                     # than a looser stop condition.
 POST_LIGHT_S = 120   # keep running at least this long after lights out
 BOOST_S      = 900   # manual button boost
 LONG_PRESS_S = 2.0   # hold this long to relearn the baseline

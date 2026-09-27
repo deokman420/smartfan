@@ -81,7 +81,7 @@ relearn the baseline.
 - Fan starts on light-on, or at `RH_RISE_ON` (+8 %) above baseline.
 - After the light goes out it keeps running until humidity falls within
   `RH_FALL_OFF` (+3 %) of baseline.
-- Bounded by a 3-minute minimum, a 2-minute post-light minimum and a 30-minute
+- Bounded by a 3-minute minimum, a 2-minute post-light minimum and a 45-minute
   hard stop.
 - A stall fault latches, counts to 3, and backs off 5 minutes between retries —
   it does not clear just because the humidity sensor is healthy.
@@ -143,9 +143,11 @@ Measured in the room, 40 mm fan:
 | Slow phase | −1 %/min, then −0.5 %/min as surfaces evaporate |
 | Plateau | **68–69 %, about +15 %**, and it stops falling |
 
-The plateau is the finding. This fan removes moisture at roughly the rate wet
-surfaces release it — it holds the line but cannot win, so `RH_FALL_OFF` of
-3 % is unreachable and `MAX_RUN_S` becomes the only thing that ends a run.
+The plateau is the finding — but it is not permanent. Left alone the room
+does come back: it was measured at **+2.1 %** later the same evening, inside
+`RH_FALL_OFF`. So the drying logic works; it simply needs longer than half an
+hour, which is why `MAX_RUN_S` moved from 30 to 45 minutes rather than the
+stop condition being loosened.
 
 That is not a tuning problem. A 0.25 W, 40 mm fan stirs air; it does not
 extract it. The number to design phase 3 against: **pull the room from 91 %
