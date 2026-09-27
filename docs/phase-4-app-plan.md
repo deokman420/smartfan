@@ -102,6 +102,9 @@ listener 9001
 protocol websockets
 ```
 
+**Deferred to later on purpose** (2026-09-27), tracked in `docs/TODO.md`.
+The app is built and its UI exercised without it; only live data waits.
+
 Per-device MQTT credentials were already decided in phase 2, so the app
 authenticates as the owner rather than as the device.
 
@@ -137,11 +140,13 @@ Probed 192.168.0.16 on 2026-09-27:
 | 2375, 2376 | closed, no Docker socket |
 | `/graphql` | absent, Unraid's own API not exposed |
 
-**No reachable container-management API.** Deploying there needs either an
+**No reachable container-management API.** Deploying there would need an
 Unraid API key (Settings, Management Access, API keys) or an explanation of
-what the `:5000` service is and whether it is the intended host. Until then
-the app builds to a static bundle any container can serve, so only the
-deploy step is blocked — none of the work below.
+what the `:5000` service is.
+
+**Superseded:** serving from the dev machine instead, so 4f no longer waits
+on any of this. Revisit only if the app should outlive that machine.
+Tracked in `docs/TODO.md`.
 
 ## Work order
 
@@ -194,7 +199,8 @@ Manifest, fingerprint comparison, banner, trigger.
 
 ### 4f — Deploy
 
-Container on Tower, once access is sorted.
+Served from here. Tower revisited only if the app should outlive this
+machine — see `docs/TODO.md`.
 
 ## Things that will bite
 

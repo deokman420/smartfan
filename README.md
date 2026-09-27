@@ -42,6 +42,10 @@ The fan is switched on the **low side**, on/off only. PWM would chop the
 tachometer's reference and make the RPM reading meaningless — and a working
 tach is the only thing that notices a fan that has died in a ceiling.
 
+## Deferred work
+
+Parked items, each with what unblocks it: [`docs/TODO.md`](docs/TODO.md).
+
 ## Files
 
 | File | |
