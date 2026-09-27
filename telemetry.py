@@ -29,7 +29,8 @@ FW_VERSION = "2c.2"
 # network -- without it, the only way to know what an OTA actually put on a
 # device in a ceiling is to go and get it.
 TRACKED = ("main.py", "config.py", "settings.py", "telemetry.py",
-           "net.py", "mqtt.py", "ringbuf.py", "calibrate.py")
+           "net.py", "mqtt.py", "ringbuf.py", "calibrate.py",
+           "provision.py", "improv.py")
 
 
 def fingerprint():

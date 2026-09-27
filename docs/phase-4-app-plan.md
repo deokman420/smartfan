@@ -166,9 +166,23 @@ both as regressions.
 Still untested in the iOS Captive Network Assistant specifically -- that
 needs the firmware on a board and a phone.
 
-### 4c — Improv Serial
+### 4c — Improv Serial. Done.
 
-Over USB, at flash time and for recovery.
+`improv.py`, over USB, at flash time and for recovery. Transport-agnostic
+by design: the codec and state machine take bytes in and hand bytes back,
+so the protocol is fully testable on a host.
+
+Both provisioning routes land on the same `_attempt()`, so there is one
+join path and one place that writes credentials.
+
+No `dupterm` surgery is needed — while `main.py` is executing the REPL is
+not reading stdin, so the bytes arrive directly. Ctrl-C interception does
+have to be disabled for the window: `0x03` occurs freely inside packet
+data, and a `KeyboardInterrupt` raised out of a credential would drop the
+board to the REPL mid-setup.
+
+Untested against the real improv-wifi.com Web Serial client; that needs a
+board.
 
 ### 4d — The app
 

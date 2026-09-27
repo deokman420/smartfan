@@ -4,6 +4,8 @@ Three layers, each catching what the one below cannot. Every suite exits
 non-zero on failure, so any of them can gate a flash or a deploy.
 
 ```bash
+python tests/test_manifest.py        # host only, no board needed
+python tests/test_improv.py          # host only, no board needed
 python tests/test_provision.py       # host only, no board needed
 python tests/test_device.py [COM5]   # hardware, needs the Pico attached
 python tests/test_ha.py              # integration, needs HA + device online
@@ -16,7 +18,31 @@ back before asserting anything.
 
 ## What each layer is for
 
-**`test_provision.py` — 34 checks.** Host-only, with MicroPython stubbed,
+**`test_manifest.py` — 12 checks.** That `telemetry.TRACKED` and
+`ota_publish.SHIP` agree with each other and with the repo.
+
+A module missing from `SHIP` is never delivered. A module missing from
+`TRACKED` is worse: the fingerprint does not change when that file changes,
+so `ota_publish` prints **MATCH** and the device goes on running old code.
+Nothing breaks, nothing is reported, and it is invisible from outside.
+
+Both lists have already drifted here — `provision.py` reached `SHIP` and not
+`TRACKED`, because the edit meant to add it did not match and `str.replace`
+does not raise when it changes nothing.
+
+**`test_improv.py` — 34 checks.** The Improv Serial codec and state machine.
+`improv.py` holds no transport on purpose, so all of it is reachable here.
+
+The framing is anchored to a **hand-computed byte string**, not to whatever
+`build()` emits. A test that encodes with the same function it decodes with
+passes just as cheerfully when both are wrong.
+
+The rest are protocol traps: a corrupt checksum must be dropped without
+wedging the stream, a packet split across two reads must not answer early
+(which is what a serial port actually does), and the network list must end
+with an empty result or the browser waits for more until it times out.
+
+**`test_provision.py` — 41 checks.** Host-only, with MicroPython stubbed,
 so it needs no board and touches none. The radio cannot be exercised here,
 but everything that decides whether provisioning is *correct* can be: the
 derived AP credentials, form decoding, the `secrets.py` it writes, and the
