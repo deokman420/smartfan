@@ -88,7 +88,7 @@ controls. Rename a heading in `tools/build_dashboard.py` and this suite fails
 until the rename is deliberate. Screenshots land in `tests/screenshots/`
 (gitignored) for eyeballing after a change.
 
-**`test_app.py` — 31 checks.** The app, served from `app/build` so it
+**`test_app.py` — 42 checks.** The app, served from `app/build` so it
 tests the artefact that would actually be deployed, against the live broker
 and the live fan.
 

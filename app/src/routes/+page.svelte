@@ -27,17 +27,87 @@
   } from '$lib/format.js';
   import { ICONS } from '$lib/icons.js';
   import Nav from '$lib/Nav.svelte';
+  import Chart from '$lib/Chart.svelte';
+  import { history, since, stats, F } from '$lib/history.js';
   import { onMount } from 'svelte';
 
   let showSettings = $state(false);
   let draft = $state({ ...DEFAULTS });
   let view = $state('status');
+  let detail = $state(null);
+  let range = $state(6);
 
   const VIEWS = [
     { id: 'status', label: 'Status', icon: 'gauge' },
     { id: 'readings', label: 'Readings', icon: 'drop' },
     { id: 'tuning', label: 'Thresholds', icon: 'sliders' },
+    { id: 'charts', label: 'Charts', icon: 'chart' },
     { id: 'health', label: 'Health', icon: 'pulse' }
+  ];
+
+  // Chart definitions, shared by the grid and the detail view so the small
+  // card and the expanded one can never drift into showing different
+  // series for the same title.
+  const CHARTS = [
+    {
+      id: 'humidity',
+      title: 'Humidity against its baseline',
+      blurb: 'The fan runs on the gap between the two, not on humidity itself.',
+      unit: '%',
+      bands: F.fan,
+      series: [
+        { field: F.rh, label: 'Humidity', color: 'var(--blue)', fill: true },
+        { field: F.base, label: 'Baseline', color: 'var(--purple)' }
+      ]
+    },
+    {
+      // Excess sits at 0-30 while humidity sits at 62-92. Sharing one axis
+      // stretched the scale from -12 to 104 and flattened both lines into
+      // nothing. Its own chart, with the thresholds drawn on, answers the
+      // question the reader actually has: was the fan about to run.
+      id: 'excess',
+      title: 'Excess above baseline',
+      blurb: 'The number the control loop acts on, against its thresholds.',
+      unit: '%',
+      bands: F.fan,
+      refs: () => [
+        { value: Number(cfg.RH_RISE_ON), label: 'starts' },
+        { value: Number(cfg.RH_FALL_OFF), label: 'stops' }
+      ],
+      series: [{ field: F.exc, label: 'Excess', color: 'var(--accent)', fill: true }]
+    },
+    {
+      id: 'climate',
+      title: 'Temperature and dew point',
+      blurb: 'Condensation forms when a surface reaches the dew point.',
+      unit: '°C',
+      series: [
+        { field: F.temp, label: 'Temperature', color: 'var(--orange)' },
+        { field: F.dp, label: 'Dew point', color: 'var(--blue)' }
+      ]
+    },
+    {
+      id: 'light',
+      title: 'Light level',
+      blurb: 'Occupancy is inferred from the room light.',
+      unit: '%',
+      bands: F.lit,
+      series: [{ field: F.light, label: 'Light', color: 'var(--purple)', fill: true }]
+    },
+    {
+      id: 'fan',
+      title: 'Fan speed',
+      blurb: 'Measured by the tachometer, not by what the fan was told.',
+      unit: 'rpm',
+      bands: F.fan,
+      series: [{ field: F.rpm, label: 'Fan speed', color: 'var(--accent)', fill: true }]
+    }
+  ];
+
+  const RANGES = [
+    { hours: 1, label: '1 h' },
+    { hours: 6, label: '6 h' },
+    { hours: 24, label: '24 h' }
   ];
 
   onMount(() => {
@@ -59,6 +129,10 @@
   // device's own retained availability. Either one down makes the readings
   // history rather than status.
   let live = $derived($link === 'online' && $deviceOnline && !$stale);
+
+  let cardRows = $derived(since($history, 6));
+  let detailRows = $derived(since($history, range));
+  let detailChart = $derived(detail ? CHARTS.find((c) => c.id === detail) : null);
 
   function openSettings() {
     draft = { ...$settings };
@@ -109,6 +183,14 @@
     return `M ${x1} ${y1} A ${R} ${R} 0 0 1 ${x2} ${y2}`;
   }
 </script>
+
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key !== 'Escape') return;
+    if (detail) detail = null;
+    else if (showSettings) showSettings = false;
+  }}
+/>
 
 <svelte:head>
   <title>Smartfan</title>
@@ -424,6 +506,45 @@
           </div>
         {/if}
 
+        {#if view === 'charts'}
+          <h2>Charts</h2>
+          <p class="hint">
+            Collected while this app is open, and kept in this browser for 24
+            hours. Periods nobody recorded are drawn as breaks rather than a
+            straight line across them. Tap a chart for detail.
+          </p>
+          <div class="chart-grid">
+            {#each CHARTS as c (c.id)}
+              <div
+                class="chart-card card"
+                role="button"
+                tabindex="0"
+                aria-label="{c.title} — open detail"
+                onclick={() => (detail = c.id)}
+                onkeydown={(e) =>
+                  (e.key === 'Enter' || e.key === ' ') &&
+                  (e.preventDefault(), (detail = c.id))}
+              >
+                <div class="chart-head">
+                  <h3>{c.title}</h3>
+                  <span class="expand" aria-hidden="true">
+                    <svg viewBox="0 0 16 16">{@html ICONS.expand}</svg>
+                  </span>
+                </div>
+                <Chart
+                  rows={cardRows}
+                  series={c.series}
+                  bands={c.bands}
+                  refs={c.refs ? c.refs() : []}
+                  unit={c.unit}
+                  height={132}
+                  compact
+                />
+              </div>
+            {/each}
+          </div>
+        {/if}
+
         {#if view === 'health'}
           <h2>Link</h2>
           <div class="grid">
@@ -484,15 +605,71 @@
     </div>
   {/if}
 
+  {#if detailChart}
+    <!-- The backdrop is decoration, not a control. Giving it a role and a
+         label put a second "Close chart" in the accessibility tree next to
+         the real button, so a screen reader announced two identical
+         controls. Keyboard users close with Escape or the button. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="scrim" aria-hidden="true" onclick={() => (detail = null)}></div>
+    <div class="sheet wide card" role="dialog" aria-label={detailChart.title}>
+      <div class="detail-head">
+        <div>
+          <h3>{detailChart.title}</h3>
+          <p class="sub">{detailChart.blurb}</p>
+        </div>
+        <button class="icon" onclick={() => (detail = null)} aria-label="Close chart">
+          Close
+        </button>
+      </div>
+
+      <div class="ranges" role="group" aria-label="Time range">
+        {#each RANGES as r (r.hours)}
+          <button class:on={range === r.hours} onclick={() => (range = r.hours)}>
+            {r.label}
+          </button>
+        {/each}
+      </div>
+
+      <Chart
+        rows={detailRows}
+        series={detailChart.series}
+        bands={detailChart.bands}
+        refs={detailChart.refs ? detailChart.refs() : []}
+        unit={detailChart.unit}
+        height={230}
+      />
+
+      <div class="stats">
+        {#each detailChart.series as sdef (sdef.field)}
+          {@const st = stats(detailRows, sdef.field)}
+          <div class="statrow">
+            <span class="name"><i style="background:{sdef.color}"></i>{sdef.label}</span>
+            {#if st}
+              <span class="nums">
+                <b>{st.last.toFixed(1)}</b>
+                <span>min {st.min.toFixed(1)}</span>
+                <span>avg {st.mean.toFixed(1)}</span>
+                <span>max {st.max.toFixed(1)}</span>
+              </span>
+            {:else}
+              <span class="nums"><span>no data in this range</span></span>
+            {/if}
+          </div>
+        {/each}
+        <p class="sub samples">
+          {detailRows.length} sample{detailRows.length === 1 ? '' : 's'} in the
+          last {range} h
+        </p>
+      </div>
+    </div>
+  {/if}
+
   {#if showSettings}
-    <div
-      class="scrim"
-      role="button"
-      tabindex="-1"
-      aria-label="Close settings"
-      onclick={() => (showSettings = false)}
-      onkeydown={(e) => e.key === 'Escape' && (showSettings = false)}
-    ></div>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="scrim" aria-hidden="true" onclick={() => (showSettings = false)}></div>
     <div class="sheet card" role="dialog" aria-label="Connection settings">
       <h3>Connection</h3>
       <p class="sub">
@@ -916,6 +1093,133 @@
     font-size: 0.78rem;
     color: var(--text-dim);
     margin: 0;
+  }
+
+  /* --- charts ----------------------------------------------------------- */
+
+  .chart-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+
+  .chart-card {
+    padding: 16px 16px 12px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, transform 0.2s;
+  }
+  .chart-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-strong);
+    transform: translateY(-2px);
+  }
+  .chart-card:hover .expand {
+    color: var(--accent);
+  }
+
+  .chart-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .chart-head h3 {
+    font-size: 0.92rem;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .expand {
+    color: var(--text-dim);
+    flex: none;
+    transition: color 0.2s;
+  }
+  .expand svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .detail-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .detail-head h3 {
+    margin: 0 0 3px;
+  }
+
+  .ranges {
+    display: flex;
+    gap: 6px;
+    margin: 14px 0 4px;
+  }
+  .ranges button {
+    background: var(--bg-card-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+  }
+  .ranges button.on {
+    background: var(--accent-dim);
+    border-color: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .stats {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .statrow {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 5px 0;
+  }
+  .statrow .name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+  }
+  .statrow .name i {
+    width: 9px;
+    height: 3px;
+    border-radius: 2px;
+  }
+  .statrow .nums {
+    display: inline-flex;
+    gap: 12px;
+    align-items: baseline;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .statrow .nums b {
+    font-size: 0.95rem;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .samples {
+    margin-top: 8px;
+  }
+
+  .sheet.wide {
+    width: min(720px, 100%);
   }
 
   /* --- settings sheet -------------------------------------------------- */

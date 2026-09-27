@@ -15,6 +15,7 @@
  */
 import mqtt from 'mqtt';
 import { writable, derived, get } from 'svelte/store';
+import { record } from '$lib/history.js';
 
 const SETTINGS_KEY = 'smartfan.settings';
 
@@ -140,8 +141,12 @@ export function connect() {
     }
     if (topic !== t.state) return;
     try {
-      telemetry.set(JSON.parse(body));
+      const payload = JSON.parse(body);
+      telemetry.set(payload);
       lastSeen.set(Date.now());
+      // Charts are fed from the same stream that drives the readings, so
+      // there is no second source that can disagree with the tiles.
+      record(payload);
     } catch {
       /* a malformed payload is not a reason to tear the link down */
     }

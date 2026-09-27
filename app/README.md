@@ -57,6 +57,32 @@ outage under Reconnects, baseline under Humidity — and boost remaining was
 rendered only while boosting, so the one time you wanted to check it was
 the only time it existed.
 
+## Charts
+
+Five charts on their own view, each expanding to a detail with 1 / 6 / 24
+hour ranges and min / average / max.
+
+History is a rolling 24 hours kept **in this browser**, fed from the same
+MQTT stream that drives the tiles — so the charts can never disagree with
+the readings. Home Assistant's recorder already holds 30 days and was the
+obvious alternative; it was rejected because it would add a second
+credential, a second service that has to be up, and a dependency on the
+very thing the app is meant to work without.
+
+The honest cost: history only covers time this browser has had the app
+open. It survives reloads, and gaps are drawn as **breaks rather than a
+confident straight line** across a period nobody recorded.
+
+Excess has its own chart rather than sharing the humidity one. Humidity
+sits at 62–92 % and excess at 0–30 %, so one shared axis stretched the
+scale from −12 to 104 and flattened both lines into nothing. On its own
+scale, with `RH_RISE_ON` and `RH_FALL_OFF` drawn as reference lines, it
+answers the question the reader actually has: was the fan about to run.
+
+Drawn by hand in SVG. The app is served over a LAN with no route out, so a
+CDN chart library is a blank chart, and bundling one to draw a few lines is
+hundreds of kilobytes for something `Chart.svelte` does in eighty.
+
 ## Design
 
 The palette, type pairing and card idioms come from phbeks.com. The `:root`

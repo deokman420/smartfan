@@ -98,6 +98,9 @@ try:
 except ImportError as e:
     bail("missing dependency: %s" % e)
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from seed_history import build as build_history            # noqa: E402
+
 os.makedirs(SHOTS, exist_ok=True)
 print("app regression against %s\n" % secrets.MQTT_HOST)
 
@@ -168,9 +171,15 @@ with sync_playwright() as pw:
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("console",
             lambda m: errors.append(m.text) if m.type == "error" else None)
+    # Charts are fed from a buffer this browser accumulates, so a fresh
+    # profile has nothing to draw. Seed a shower shaped like the one this
+    # bathroom actually produces, rather than testing the empty state and
+    # calling the charts covered.
     page.add_init_script(
-        "localStorage.setItem('smartfan.settings', %s)"
-        % json.dumps(json.dumps(cfg)))
+        "localStorage.setItem('smartfan.settings', %s);"
+        "localStorage.setItem('smartfan.history', %s);"
+        % (json.dumps(json.dumps(cfg)),
+           json.dumps(json.dumps(build_history()))))
 
     page.goto("http://127.0.0.1:%d/" % PORT, wait_until="load")
 
@@ -195,7 +204,7 @@ with sync_playwright() as pw:
         page.get_by_role("button", name=label, exact=True).first.click()
         page.wait_for_timeout(250)
 
-    for label in ("Status", "Readings", "Thresholds", "Health"):
+    for label in ("Status", "Readings", "Thresholds", "Charts", "Health"):
         check("section reachable: %s" % label,
               page.get_by_role("button", name=label, exact=True).count() > 0)
 
@@ -236,6 +245,51 @@ with sync_playwright() as pw:
     check("thresholds match the device's own config",
           float(rise) == float(p["cfg"]["RH_RISE_ON"]),
           "%s vs %s" % (rise, p["cfg"]["RH_RISE_ON"]))
+
+    # --- charts -----------------------------------------------------------
+    go("Charts")
+    cards = page.locator(".chart-card")
+    check("every chart renders", cards.count() == 5, "%d cards" % cards.count())
+    # A chart that silently falls back to the empty state still "renders".
+    check("charts actually draw data",
+          page.locator(".chart-card svg path.line").count() >= 5,
+          "%d lines" % page.locator(".chart-card svg path.line").count())
+    check("no chart is stuck on the empty state",
+          page.locator(".chart-card .nodata").count() == 0)
+
+    cards.nth(1).click()          # Excess, the one carrying thresholds
+    page.wait_for_timeout(400)
+    check("tapping a chart opens detail",
+          page.get_by_role("dialog", name="Excess above baseline").count() > 0)
+    # The thresholds are the whole point of that chart: without them the
+    # reader sees the shape but not whether it mattered.
+    check("detail draws the fan's thresholds",
+          page.locator(".sheet svg line.ref").count() == 2,
+          "%d lines" % page.locator(".sheet svg line.ref").count())
+    check("detail reports min, average and max",
+          "avg" in page.locator(".stats").inner_text())
+
+    six = page.locator(".samples").inner_text()
+    page.get_by_role("button", name="1 h", exact=True).click()
+    page.wait_for_timeout(300)
+    one = page.locator(".samples").inner_text()
+    check("range buttons change the window", six != one, "%s -> %s" % (six, one))
+
+    # Exactly one control announces as "Close chart". The backdrop used to
+    # carry the same role and label, which put two identical controls in
+    # the accessibility tree.
+    closers = page.get_by_role("button", name="Close chart")
+    check("only one control is labelled Close chart", closers.count() == 1,
+          "%d found" % closers.count())
+    closers.click()
+    page.wait_for_timeout(250)
+    check("detail closes", page.locator(".sheet.wide").count() == 0)
+
+    cards.nth(0).click()
+    page.wait_for_timeout(300)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    check("escape closes the detail", page.locator(".sheet.wide").count() == 0)
 
     go("Status")
 
@@ -286,7 +340,7 @@ with sync_playwright() as pw:
     # fails when it lands on a different surface, and the palette is
     # deliberately divergent from the brand's on exactly this point.
     rows = []
-    for label in ("Status", "Readings", "Thresholds", "Health"):
+    for label in ("Status", "Readings", "Thresholds", "Charts", "Health"):
         go(label)
         rows += page.evaluate(CONTRAST_AUDIT)
     go("Status")
