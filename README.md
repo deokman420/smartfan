@@ -1,4 +1,4 @@
-# Bathroom fan controller — Pico 2 W
+# Bathroom Smartfan — Pico 2 W
 
 A humidity- and occupancy-driven extractor fan controller. The room light is the
 occupancy signal; humidity decides how long the fan keeps running after the room

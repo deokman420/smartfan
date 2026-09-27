@@ -162,8 +162,8 @@ class Telemetry:
     def _device(self):
         return {
             "identifiers": [self.cfg.DEVICE_ID],
-            "name": "%s fan controller" % self.cfg.ROOM_NAME,
-            "model": "Pico 2 W humidity fan controller",
+            "name": self.cfg.DEVICE_NAME,
+            "model": "Smartfan controller (Pico 2 W)",
             "manufacturer": "deokman420",
             "sw_version": FW_VERSION,
         }

@@ -106,6 +106,15 @@ ROOM       = "bathroom"        # topic segment: lowercase, no spaces
 ROOM_NAME  = "Bathroom"        # display name in Home Assistant
 DEVICE_ID  = "fan_bathroom"    # unique_id prefix; must be unique per device
 
+# Display name only -- what Home Assistant shows on the device card and
+# prefixes onto every friendly name. Safe to change at any time.
+#
+# DEVICE_ID above is the identity and must NOT follow it. Home Assistant
+# keys the device off `identifiers`, so renaming here keeps all 31 entities,
+# their entity_ids and their recorded history; changing DEVICE_ID would
+# orphan the lot and start a second device beside the first.
+DEVICE_NAME = "Bathroom Smartfan"
+
 # --- Telemetry --------------------------------------------------------
 # 30 s keeps history readable without flooding the recorder. Any change of
 # state, fan, light or fault publishes immediately regardless, so a 20 s

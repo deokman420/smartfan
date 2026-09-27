@@ -11,6 +11,9 @@ import io, json, re, sys
 import websocket
 
 HA_WS = "ws://192.168.0.5:8123/api/websocket"
+# Deliberately NOT renamed alongside the display title. This script
+# creates-or-updates by url_path, so changing it would leave the old
+# dashboard orphaned beside a new one -- and break the bookmark.
 URL_PATH = "bathroom-fan"
 
 import os
@@ -89,7 +92,7 @@ def only_when(card, entity, state):
 
 CONFIG = {
     "views": [{
-        "title": "Bathroom fan",
+        "title": "Bathroom Smartfan",
         "path": "main",
         "icon": "mdi:fan",
         "type": "sections",
@@ -264,7 +267,7 @@ def main():
         print("updating dashboard '%s'" % URL_PATH)
     else:
         r = send({"type": "lovelace/dashboards/create",
-                  "url_path": URL_PATH, "title": "Bathroom Fan",
+                  "url_path": URL_PATH, "title": "Bathroom Smartfan",
                   "icon": "mdi:fan", "mode": "storage",
                   "show_in_sidebar": True, "require_admin": False})
         if not r.get("success"):
