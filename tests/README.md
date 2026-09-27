@@ -4,6 +4,7 @@ Three layers, each catching what the one below cannot. Every suite exits
 non-zero on failure, so any of them can gate a flash or a deploy.
 
 ```bash
+python tests/test_provision.py       # host only, no board needed
 python tests/test_device.py [COM5]   # hardware, needs the Pico attached
 python tests/test_ha.py              # integration, needs HA + device online
 python tests/test_ui.py [--headed]   # browser, needs HA reachable
@@ -14,6 +15,22 @@ it resets the board on the way out; `test_ha.py` waits for the device to come
 back before asserting anything.
 
 ## What each layer is for
+
+**`test_provision.py` — 34 checks.** Host-only, with MicroPython stubbed,
+so it needs no board and touches none. The radio cannot be exercised here,
+but everything that decides whether provisioning is *correct* can be: the
+derived AP credentials, form decoding, the `secrets.py` it writes, and the
+escaping of network names it did not choose.
+
+Two of those earn their keep on their own. **"PSK meets the WPA2
+minimum"** — anything under 8 characters makes the AP come up *open*, which
+is the exact hole the WPA2 setup AP exists to close, and it fails silently.
+And **"hostile SSID is escaped, not executed"** — nearby network names are
+attacker-controlled strings rendered into a captive sheet on the owner's
+phone. An AP named `'><script>` is a one-line attack on setup.
+
+It also writes into a temp directory, because `_write_secrets` writes
+`secrets.py` into the working directory and the repo has a real one.
 
 **`test_device.py` — 33 checks.** Firmware version, module presence, free RAM,
 every sensor reading inside a plausible range, and the full fan on/off/on cycle

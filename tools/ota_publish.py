@@ -34,7 +34,7 @@ ROOT = os.path.dirname(HERE)
 # the recovery path, and a recovery path you can break remotely is not one.
 # Push those over USB when they genuinely change.
 SHIP = ("main.py", "config.py", "settings.py", "telemetry.py",
-        "net.py", "mqtt.py", "ringbuf.py", "calibrate.py")
+        "net.py", "mqtt.py", "ringbuf.py", "calibrate.py", "provision.py")
 
 EXCLUDE_REASON = {
     "boot.py": "recovery path -- flash over USB",

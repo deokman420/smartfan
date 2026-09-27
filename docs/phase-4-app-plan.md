@@ -145,16 +145,26 @@ deploy step is blocked — none of the work below.
 
 ## Work order
 
-### 4a — Provisioning firmware
+### 4a — Provisioning firmware. Done.
 
 AP mode, DNS responder, HTTP server, scan and join, credential write. Must
 cooperate with the existing watchdog and must never run while the control
 loop is live.
 
-### 4b — The setup portal
+### 4b — The setup portal. Done.
 
-Single inlined page. Scan list, password field, progress, and failure states
-that say what to do next. Tested in the iOS captive sheet specifically.
+Single inlined page, `provision.py`. Scan list, password field, progress,
+and failure states that say what to do next. 2.9 KB against a 20 KB budget,
+no external requests, one screen at 393 px with no scrolling.
+
+The SSID list is rendered with event delegation reading `textContent`, not
+an inline `onclick` carrying the name. Nearby SSIDs are chosen by other
+people: one named `a\` breaks out of a quoted JS string argument, and one
+named `'><script>` out of the attribute. `tests/test_provision.py` holds
+both as regressions.
+
+Still untested in the iOS Captive Network Assistant specifically -- that
+needs the firmware on a board and a phone.
 
 ### 4c — Improv Serial
 

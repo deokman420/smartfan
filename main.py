@@ -717,6 +717,18 @@ if __name__ == "__main__":
         print(" release the button, or remove %s, then reset" % cfg.SAFE_MODE_FILE)
         print("=" * 52)
     else:
+        # Provisioning, before anything else drives a pin. Wrapped like every
+        # other additive subsystem: a failure here must still leave a working
+        # fan, and an un-provisioned controller runs offline perfectly well.
+        # It only triggers when there is nothing usable to connect with, so
+        # the normal boot path never touches it.
+        try:
+            import provision
+            if provision.needs_provisioning():
+                provision.run()          # resets on success
+        except Exception as e:
+            print("provision: skipped (%s)" % e)
+
         controller = Controller()
         try:
             controller.run()
