@@ -88,7 +88,7 @@ controls. Rename a heading in `tools/build_dashboard.py` and this suite fails
 until the rename is deliberate. Screenshots land in `tests/screenshots/`
 (gitignored) for eyeballing after a change.
 
-**`test_app.py` — 21 checks.** The app, served from `app/build` so it
+**`test_app.py` — 23 checks.** The app, served from `app/build` so it
 tests the artefact that would actually be deployed, against the live broker
 and the live fan.
 
@@ -100,6 +100,12 @@ screen — otherwise the app marks its own homework.
 It also opens the app in a **fresh browser context** with no
 `localStorage`, because the first run is the one screen every new user sees
 and the one no developer ever sees twice.
+
+And it measures **contrast on the rendered page**, not against the token
+list — a token that passes in isolation still fails on a different surface.
+The audit walks up for the first opaque ancestor, because an element's own
+background is usually transparent and scoring text against transparent
+silently passes everything.
 
 It drives the real fan for a few seconds and puts it back.
 

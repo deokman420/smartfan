@@ -25,7 +25,7 @@
     int,
     rssiWord
   } from '$lib/format.js';
-
+  import { ICONS } from '$lib/icons.js';
   import { onMount } from 'svelte';
 
   let showSettings = $state(false);
@@ -83,7 +83,7 @@
   // gauge so the two never disagree about where the fan starts.
   const G_MIN = -5;
   const G_MAX = 20;
-  const R = 68;
+  const R = 70;
 
   function angle(v) {
     const clamped = Math.max(G_MIN, Math.min(G_MAX, Number(v) || 0));
@@ -93,7 +93,7 @@
   function arc(from, to) {
     const p = (deg) => {
       const rad = (deg * Math.PI) / 180;
-      return [90 + R * Math.cos(rad), 90 + R * Math.sin(rad)];
+      return [92 + R * Math.cos(rad), 92 + R * Math.sin(rad)];
     };
     const [x1, y1] = p(from);
     const [x2, y2] = p(to);
@@ -107,9 +107,14 @@
 
 <div class="wrap">
   <header>
-    <div class="titles">
-      <p class="eyebrow">{$settings.room}</p>
-      <h1>Smartfan</h1>
+    <div class="brand">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 16 16">{@html ICONS.fan}</svg>
+      </span>
+      <div>
+        <p class="eyebrow">{$settings.room}</p>
+        <h1>Smartfan</h1>
+      </div>
     </div>
     <div class="head-right">
       {#if $link === 'online' && $deviceOnline && !$stale}
@@ -154,18 +159,16 @@
 
   {#if !t && !$configured}
     <div class="card empty">
-      <p>Connect to your broker to get started.</p>
+      <p class="lead">Connect to your broker to get started.</p>
       <p class="sub">
         Everything stays on your network. The app talks straight to MQTT —
         there is no account and no server in between.
       </p>
-      <button class="primary setup" onclick={openSettings}>
-        Set up connection
-      </button>
+      <button class="primary setup" onclick={openSettings}>Set up connection</button>
     </div>
   {:else if !t}
     <div class="card empty">
-      <p>Waiting for the first reading…</p>
+      <p class="lead">Waiting for the first reading…</p>
       <p class="sub">
         The fan reports every 30 seconds. If nothing arrives, check the broker
         settings.
@@ -175,22 +178,22 @@
     <!-- What is it doing, and is it about to do something -->
     <section class="hero card" class:dimmed={!live}>
       <div class="gauge">
-        <svg viewBox="0 0 180 104" role="img" aria-label="Humidity above baseline">
+        <svg viewBox="0 0 184 108" role="img" aria-label="Humidity above baseline">
           <path d={arc(-180, 0)} class="track" />
           <path d={arc(angle(G_MIN), angle(cfg.RH_FALL_OFF ?? 3))} class="band calm" />
           <path
             d={arc(angle(cfg.RH_FALL_OFF ?? 3), angle(cfg.RH_RISE_ON ?? 8))}
             class="band warn"
           />
-          <path d={arc(angle(cfg.RH_RISE_ON ?? 8), angle(G_MAX))} class="band active" />
+          <path d={arc(angle(cfg.RH_RISE_ON ?? 8), angle(G_MAX))} class="band hot" />
           <line
-            x1="90"
-            y1="90"
-            x2={90 + (R - 12) * Math.cos((angle(t.exc) * Math.PI) / 180)}
-            y2={90 + (R - 12) * Math.sin((angle(t.exc) * Math.PI) / 180)}
+            x1="92"
+            y1="92"
+            x2={92 + (R - 13) * Math.cos((angle(t.exc) * Math.PI) / 180)}
+            y2={92 + (R - 13) * Math.sin((angle(t.exc) * Math.PI) / 180)}
             class="needle"
           />
-          <circle cx="90" cy="90" r="4" class="hub" />
+          <circle cx="92" cy="92" r="4.5" class="hub" />
         </svg>
         <div class="reading tone-{excTone}">{num(t.exc, 1, '%')}</div>
         <div class="reading-sub">above baseline</div>
@@ -206,15 +209,16 @@
         {#if t.reason}
           <p class="reason">{t.reason}</p>
         {/if}
-        <div class="hero-facts">
+      </div>
+
+      <div class="hero-facts">
           <span class={t.fan_on ? 'tone-active' : 'tone-dim'}>
             Fan {t.fan_on ? `running · ${int(t.rpm)} rpm` : 'off'}
           </span>
           <span class={t.light_on ? 'tone-warn' : 'tone-dim'}>
             Light {t.light_on ? 'on' : 'off'}
           </span>
-          {#if t.fault}<span class="tone-bad">Fault</span>{/if}
-        </div>
+        {#if t.fault}<span class="tone-bad">Fault</span>{/if}
       </div>
     </section>
 
@@ -251,30 +255,36 @@
     <h2>Readings</h2>
     <div class="grid">
       <div class="stat">
+        <span class="chip icon-blue"><svg viewBox="0 0 16 16">{@html ICONS.humidity}</svg></span>
         <span class="k">Humidity</span>
         <span class="v">{num(t.rh, 1, '%')}</span>
         <span class="sub">baseline {num(t.base, 1, '%')}</span>
       </div>
       <div class="stat">
+        <span class="chip icon-orange"><svg viewBox="0 0 16 16">{@html ICONS.temp}</svg></span>
         <span class="k">Temperature</span>
         <span class="v">{num(t.temp, 1, '°C')}</span>
         <span class="sub">dew point {num(t.dp, 1, '°C')}</span>
       </div>
       <div class="stat">
+        <span class="chip icon-purple"><svg viewBox="0 0 16 16">{@html ICONS.light}</svg></span>
         <span class="k">Light</span>
         <span class="v">{num(t.light_pc, 1, '%')}</span>
         <span class="sub">raw {int(t.light)}</span>
       </div>
       <div class="stat">
+        <span class="chip icon-teal"><svg viewBox="0 0 16 16">{@html ICONS.fan}</svg></span>
         <span class="k">Fan speed</span>
         <span class="v">{int(t.rpm)}</span>
         <span class="sub">rpm</span>
       </div>
       <div class="stat">
+        <span class="chip icon-green"><svg viewBox="0 0 16 16">{@html ICONS.clock}</svg></span>
         <span class="k">Run today</span>
         <span class="v">{durMin(t.run_min)}</span>
       </div>
       <div class="stat">
+        <span class="chip icon-blue"><svg viewBox="0 0 16 16">{@html ICONS.uptime}</svg></span>
         <span class="k">Uptime</span>
         <span class="v">{durMin(t.up_min)}</span>
         <span class="sub">since {t.boot}</span>
@@ -307,15 +317,18 @@
     <h2>Health</h2>
     <div class="grid">
       <div class="stat">
+        <span class="chip icon-teal"><svg viewBox="0 0 16 16">{@html ICONS.wifi}</svg></span>
         <span class="k">Wi-Fi</span>
         <span class="v">{rssiWord(t.rssi)}</span>
         <span class="sub">{int(t.rssi)} dBm</span>
       </div>
       <div class="stat">
+        <span class="chip icon-purple"><svg viewBox="0 0 16 16">{@html ICONS.build}</svg></span>
         <span class="k">Build</span>
         <span class="v mono-v">{t.fw ?? '—'}</span>
       </div>
       <div class="stat">
+        <span class="chip icon-orange"><svg viewBox="0 0 16 16">{@html ICONS.link}</svg></span>
         <span class="k">Reconnects</span>
         <span class="v">{int(t.reconn)}</span>
         <span class="sub">last outage {dur(t.outage_s)}</span>
@@ -372,19 +385,46 @@
 <style>
   header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 14px;
     flex-wrap: wrap;
-    margin-bottom: 18px;
+    margin-bottom: 20px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .mark {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    border: 1px solid var(--accent-soft);
+  }
+  .mark svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   h1 {
-    font-family: var(--cond);
-    font-size: 28px;
-    font-weight: 700;
-    margin: 2px 0 0;
-    letter-spacing: -0.01em;
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 1px 0 0;
+    letter-spacing: -0.025em;
   }
 
   .head-right {
@@ -394,217 +434,286 @@
   }
 
   button.icon {
-    background: var(--raised);
-    border: 1px solid var(--line);
-    color: var(--ink-mid);
-    border-radius: 8px;
-    padding: 6px 12px;
-    font-size: 13px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 10px;
+    padding: 7px 14px;
+    font-size: 0.82rem;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+  }
+  button.icon:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-strong);
+    color: var(--text);
   }
 
   .banner {
-    border-radius: 10px;
-    padding: 11px 14px;
-    margin: 0 0 16px;
-    font-size: 14px;
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin: 0 0 18px;
+    font-size: 0.9rem;
     border: 1px solid;
   }
   .banner.bad {
-    background: #2a1619;
-    border-color: #6b2b31;
-    color: #ffb4ba;
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.35);
+    color: #fca5a5;
   }
   .banner.warn {
-    background: #2a2316;
-    border-color: #6b552b;
-    color: #ffd9a0;
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.35);
+    color: #fcd34d;
   }
-
-  .empty {
-    text-align: center;
-    color: var(--ink-mid);
+  .banner p {
+    margin: 0;
   }
-  .empty p {
-    margin: 4px 0;
-  }
-  .empty .setup {
-    margin-top: 14px;
-    border-radius: 10px;
-    padding: 12px 20px;
-    border: 1px solid #2f6577;
-    font-size: 14px;
-    font-weight: 500;
-  }
-
   .banner-sub {
-    font-size: 13px;
-    opacity: 0.8;
-    margin: 6px 0 10px !important;
+    font-size: 0.82rem;
+    opacity: 0.85;
+    margin: 6px 0 11px !important;
   }
   .banner button {
     background: transparent;
     border: 1px solid currentColor;
     color: inherit;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 7px 14px;
-    font-size: 13px;
+    font-size: 0.82rem;
   }
+
+  .empty {
+    text-align: center;
+    padding: 44px 24px;
+  }
+  .empty .lead {
+    margin: 0 0 6px;
+    font-size: 1.05rem;
+    font-weight: 500;
+  }
+  .empty .sub {
+    max-width: 44ch;
+    margin: 0 auto;
+  }
+  .empty .setup {
+    margin-top: 18px;
+    padding: 12px 22px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  /* --- hero ------------------------------------------------------------ */
 
   .hero {
     display: flex;
-    gap: 22px;
+    gap: 26px;
     align-items: center;
     flex-wrap: wrap;
+    padding: 22px;
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 0% 0%, rgba(0, 212, 170, 0.07), transparent 60%),
+      var(--bg-card);
   }
   .hero.dimmed {
-    opacity: 0.55;
+    opacity: 0.5;
   }
 
   .gauge {
     position: relative;
     flex: none;
-    width: 180px;
+    width: 184px;
     text-align: center;
   }
   .gauge svg {
-    width: 180px;
-    height: 104px;
+    width: 184px;
+    height: 108px;
     display: block;
+    overflow: visible;
   }
   .track {
     fill: none;
-    stroke: var(--line-soft);
-    stroke-width: 13;
+    stroke: var(--bg-card-2);
+    stroke-width: 12;
     stroke-linecap: round;
   }
   .band {
     fill: none;
-    stroke-width: 13;
+    stroke-width: 12;
+    stroke-linecap: butt;
   }
   .band.calm {
-    stroke: var(--ok);
+    stroke: var(--good);
   }
   .band.warn {
     stroke: var(--warn);
   }
-  .band.active {
+  .band.hot {
     stroke: var(--bad);
   }
   .needle {
-    stroke: var(--ink);
-    stroke-width: 3;
+    stroke: var(--text);
+    stroke-width: 2.6;
     stroke-linecap: round;
+    transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .hub {
-    fill: var(--ink);
+    fill: var(--text);
   }
   .reading {
-    font-family: var(--cond);
-    font-size: 30px;
-    font-weight: 700;
+    font-size: 2rem;
+    font-weight: 600;
     line-height: 1;
-    margin-top: -10px;
+    margin-top: -12px;
+    letter-spacing: -0.03em;
     font-variant-numeric: tabular-nums;
   }
   .reading-sub {
-    font-size: 12px;
-    color: var(--ink-dim);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 3px;
   }
 
   .hero-state {
-    flex: 1 1 220px;
+    flex: 1 1 210px;
     min-width: 0;
   }
   .state {
-    font-family: var(--cond);
-    font-size: 34px;
+    font-size: 2.1rem;
     font-weight: 700;
     line-height: 1;
-    margin: 4px 0 6px;
+    margin: 5px 0 7px;
+    letter-spacing: -0.035em;
   }
   .blurb {
-    margin: 0 0 4px;
-    color: var(--ink-mid);
-    font-size: 14px;
+    margin: 0 0 3px;
+    color: var(--text-dim);
+    font-size: 0.88rem;
   }
   .reason {
-    margin: 8px 0 0;
-    color: var(--ink-dim);
-    font-size: 13px;
+    margin: 9px 0 0;
+    color: var(--text-dim);
+    font-size: 0.8rem;
     font-style: italic;
   }
   .hero-facts {
     display: flex;
     flex-wrap: wrap;
-    gap: 14px;
-    margin-top: 12px;
+    gap: 6px 14px;
+    margin-top: 14px;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 0.72rem;
   }
+
+  /* Wide enough for three columns: the facts become their own column
+     against the right edge instead of leaving half the hero empty. */
+  @media (min-width: 720px) {
+    .hero {
+      gap: 32px;
+    }
+    .hero-state {
+      flex: 1 1 auto;
+    }
+    .hero-facts {
+      flex-direction: column;
+      align-items: flex-end;
+      text-align: right;
+      gap: 8px;
+      margin: 0 0 0 auto;
+      flex: none;
+      padding-left: 26px;
+      border-left: 1px solid var(--border);
+      align-self: stretch;
+      justify-content: center;
+      font-size: 0.78rem;
+    }
+  }
+
+  /* --- controls -------------------------------------------------------- */
 
   .controls {
     display: grid;
     gap: 10px;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(162px, 1fr));
   }
   .controls button,
   .sheet-actions button {
-    background: var(--raised);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 13px 14px;
-    font-size: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    font-size: 0.9rem;
     font-weight: 500;
+    transition: background 0.2s, border-color 0.2s, transform 0.2s;
+  }
+  .controls button:hover:not(:disabled),
+  .sheet-actions button:hover:not(:disabled) {
+    background: var(--bg-card-hover);
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
   }
   .controls button:disabled,
   .sheet-actions button:disabled {
-    opacity: 0.4;
+    opacity: 0.35;
     cursor: not-allowed;
   }
+
   button.primary {
-    background: #1d3a44;
-    border-color: #2f6577;
-    color: #bfe8f2;
+    background: var(--accent-dim);
+    border-color: var(--accent-soft);
+    color: var(--accent);
+  }
+  button.primary:hover:not(:disabled) {
+    background: var(--accent-soft);
+    border-color: var(--accent);
   }
 
   .mode {
-    margin-top: var(--gap);
+    margin-top: 12px;
     display: grid;
     gap: 8px;
   }
   .mode label {
     font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.12em;
+    font-size: 0.63rem;
+    letter-spacing: 0.11em;
     text-transform: uppercase;
-    color: var(--ink-dim);
+    color: var(--text-dim);
   }
 
   select,
   input {
-    background: var(--raised);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 10px 12px;
+    background: var(--bg-card-2);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 11px 13px;
     /* 16px stops iOS zooming the page when a field takes focus. */
     font-size: 16px;
     width: 100%;
+    transition: border-color 0.2s;
+  }
+  select:hover,
+  input:hover {
+    border-color: var(--border-strong);
   }
   input:disabled,
   select:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
   }
 
   .hint {
-    color: var(--ink-dim);
-    font-size: 13px;
-    margin: -4px 0 12px;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    margin: -6px 0 14px;
     max-width: 62ch;
   }
 
   .tune {
     display: grid;
     gap: 6px;
+    align-content: start;
   }
   .tune input {
     font-family: var(--mono);
@@ -613,19 +722,23 @@
 
   .mono-v {
     font-family: var(--mono);
-    font-size: 17px;
+    font-size: 1.05rem;
+    letter-spacing: -0.01em;
   }
 
   .sub {
-    font-size: 12px;
-    color: var(--ink-dim);
+    font-size: 0.78rem;
+    color: var(--text-dim);
     margin: 0;
   }
+
+  /* --- settings sheet -------------------------------------------------- */
 
   .scrim {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(5, 7, 11, 0.72);
+    backdrop-filter: blur(2px);
     border: 0;
     z-index: 10;
   }
@@ -635,31 +748,34 @@
     left: 50%;
     transform: translateX(-50%);
     bottom: 0;
-    width: min(460px, 100%);
+    width: min(468px, 100%);
     max-height: 88vh;
     overflow-y: auto;
-    border-radius: 14px 14px 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow);
     display: grid;
-    gap: 8px;
+    gap: 7px;
     align-content: start;
   }
   .sheet h3 {
-    font-family: var(--cond);
-    font-size: 20px;
+    font-size: 1.15rem;
+    font-weight: 600;
     margin: 0;
+    letter-spacing: -0.02em;
   }
   .sheet label {
     font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.12em;
+    font-size: 0.63rem;
+    letter-spacing: 0.11em;
     text-transform: uppercase;
-    color: var(--ink-dim);
-    margin-top: 6px;
+    color: var(--text-dim);
+    margin-top: 8px;
   }
   .sheet-actions {
     display: flex;
     gap: 10px;
-    margin-top: 16px;
+    margin-top: 18px;
   }
   .sheet-actions button {
     flex: 1;
@@ -670,7 +786,7 @@
       bottom: auto;
       top: 50%;
       transform: translate(-50%, -50%);
-      border-radius: 14px;
+      border-radius: var(--radius-lg);
     }
   }
 </style>

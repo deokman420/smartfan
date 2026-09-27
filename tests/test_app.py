@@ -38,6 +38,40 @@ HEADED = "--headed" in sys.argv
 
 results = []
 
+CONTRAST_AUDIT = """() => {
+  const lum = (r,g,b) => { const c=[r,g,b].map(v=>{v/=255;
+    return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4);});
+    return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2]; };
+  const parse = s => (s.match(/[0-9.]+/g)||[]).map(Number);
+  // Walk up for the first opaque ancestor: the element's own background is
+  // usually transparent, and scoring text against transparent silently
+  // passes everything.
+  const bgOf = el => { let n = el;
+    while (n) { const p = parse(getComputedStyle(n).backgroundColor);
+      if (p.length >= 3 && (p.length < 4 || p[3] > 0.5)) return p;
+      n = n.parentElement; }
+    return [12,15,22]; };
+  const out = [];
+  document.querySelectorAll('.wrap *').forEach(el => {
+    if (!el.offsetParent) return;
+    const direct = [...el.childNodes].some(
+      n => n.nodeType === 3 && n.textContent.trim().length > 1);
+    if (!direct) return;
+    const cs = getComputedStyle(el);
+    const fg = parse(cs.color), bg = bgOf(el);
+    if (fg.length < 3) return;
+    const l1 = lum(fg[0],fg[1],fg[2]), l2 = lum(bg[0],bg[1],bg[2]);
+    const ratio = (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05);
+    const px = parseFloat(cs.fontSize);
+    const large = px >= 24 || (px >= 18.66 && parseInt(cs.fontWeight) >= 700);
+    out.push({ t: el.textContent.trim().slice(0,34), ratio: +ratio.toFixed(2),
+               px: +px.toFixed(1),
+               aa: ratio >= (large?3:4.5), aaa: ratio >= (large?4.5:7) });
+  });
+  return out;
+}"""
+
+
 
 def check(name, ok, detail=""):
     results.append((name, bool(ok), detail))
@@ -215,6 +249,21 @@ with sync_playwright() as pw:
     check("settings shows the port in use",
           page.locator("#port").input_value() == "1884")
     page.get_by_role("button", name="Cancel", exact=True).click()
+
+    # --- contrast, measured on the rendered page ---------------------
+    # Not against the token list: a token that passes in isolation still
+    # fails when it lands on a different surface, and the palette is
+    # deliberately divergent from the brand's on exactly this point.
+    rows = page.evaluate(CONTRAST_AUDIT)
+    aa = [r for r in rows if not r["aa"]]
+    aaa = [r for r in rows if not r["aaa"]]
+    worst = min((r["ratio"] for r in rows), default=0)
+    check("every text element passes WCAG AA", not aa,
+          "%d of %d fail" % (len(aa), len(rows)) if aa else
+          "%d elements" % len(rows))
+    check("every text element passes WCAG AAA", not aaa,
+          "worst: %.2f:1 %r" % (aaa[0]["ratio"], aaa[0]["t"]) if aaa else
+          "lowest %.2f:1" % worst)
 
     check("no uncaught JS errors", not errors, "; ".join(errors[:2]))
 

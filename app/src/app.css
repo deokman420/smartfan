@@ -1,34 +1,75 @@
-/* Shares the palette with build-sheet.html and troubleshoot.html so the
-   app, the build sheet and the diagnostics read as one product rather than
-   three tools that happened to be written by the same person. */
+/* ========================================================================
+   Smartfan app — phbeks.com design system.
+
+   The :root block mirrors phbeks-site/design-tokens/tokens.css. Keep it in
+   sync if the canonical tokens change; do not invent values here.
+   ======================================================================== */
 
 :root {
   color-scheme: dark;
 
-  --bg: #0d1114;
-  --surface: #141a1f;
-  --raised: #1b2329;
-  --line: #2a343c;
-  --line-soft: #202a31;
+  /* Surfaces */
+  --bg: #0c0f16;
+  --bg-card: #141820;
+  --bg-card-2: #1a1f2b;
+  --bg-card-hover: #1f2530;
 
-  --ink: #e4ebf0;
-  --ink-mid: #9fb0bc;
-  --ink-dim: #7c8d99;
+  /* Borders */
+  --border: #1e2530;
+  --border-strong: #2a3140;
 
-  --accent: #d9bd96;
-  --accent-dk: #ae815b;
+  /* Accent (teal) */
+  --accent: #00d4aa;
+  --accent-dim: rgba(0, 212, 170, 0.12);
+  --accent-soft: rgba(0, 212, 170, 0.18);
 
-  --ok: #5fb37a;
-  --warn: #e0a33c;
-  --bad: #e35f62;
-  --info: #6fa8d6;
-  --active: #6fc2d6;
+  /* Secondary hues */
+  --blue: #3b82f6;
+  --purple: #a855f7;
+  --orange: #f59e0b;
+  --green: #22c55e;
 
-  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
-  --cond: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
-  --body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  /* Semantic */
+  --good: #10b981;
+  --warn: #f59e0b;
+  --bad: #ef4444;
 
-  --gap: 14px;
+  /* Text.
+
+     Two of the three brand text tones are deliberately altered here, and
+     the canonical values are recorded so the divergence is visible rather
+     than accidental:
+
+       --text-dim    brand #8492a6 -> 5.62:1 on --bg-card. AA, not AAA.
+       --text-muted  brand #4a5568 -> 2.36:1. Fails AA outright.
+
+     On phbeks.com those carry decorative card tags. Here they were carrying
+     the field name and the qualifier on every stat card, which is content,
+     in a room that is often steamy and badly lit.
+
+     #9faab9 is the same hue and saturation as --text-dim, walked up in
+     lightness only, to the first value clearing 7:1 against --bg,
+     --bg-card AND --bg-card-2: 8.15 / 7.56 / 7.00. Every piece of text in
+     the app now passes AAA.
+
+     --text-muted is kept at its brand value and used for nothing that has
+     to be read. */
+  --text: #e2e8f0;
+  --text-dim: #9faab9;
+  --text-muted: #4a5568;
+
+  /* Type */
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+
+  /* Shape */
+  --radius: 12px;
+  --radius-lg: 16px;
+  --shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+
+  --backdrop: linear-gradient(180deg, rgba(0, 212, 170, 0.05) 0%, transparent 42%),
+    radial-gradient(90% 60% at 100% 0%, rgba(59, 130, 246, 0.05) 0%, transparent 55%),
+    var(--bg);
 }
 
 * {
@@ -37,15 +78,17 @@
 
 html {
   color-scheme: dark;
+  background: var(--bg);
 }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  font-family: var(--body);
+  background: var(--backdrop);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font);
   font-size: 15px;
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   /* Home-screen installs run under the notch. */
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
@@ -64,98 +107,173 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--info);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }
 
 .wrap {
-  max-width: 900px;
+  max-width: 940px;
   margin: 0 auto;
-  padding-inline: 16px;
-  padding-block: 18px 56px;
+  padding-inline: 18px;
+  padding-block: 22px 64px;
+}
+
+/* --- section headings --------------------------------------------------- */
+
+h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 34px 0 14px;
+}
+
+h2::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
 }
 
 .eyebrow {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.16em;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--ink-dim);
+  color: var(--accent);
   margin: 0;
 }
 
-h2 {
-  font-family: var(--cond);
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
-  margin: 30px 0 12px;
-}
+/* --- cards -------------------------------------------------------------- */
 
 .card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
 }
 
 .grid {
   display: grid;
-  gap: var(--gap);
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  /* 180, not 158. At the 940px max width 158 packs five columns, which
+     leaves the sixth reading orphaned alone on its own row; 180 gives four
+     and fills both rows. */
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .stat {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s;
+}
+
+.stat:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+}
+
+/* The site's card-icon pattern: a tinted chip that colour-codes the row at
+   a glance, so the grid is scannable without reading a single label. */
+.chip {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 9px;
+}
+
+.chip svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-teal {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.icon-blue {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--blue);
+}
+.icon-purple {
+  background: rgba(168, 85, 247, 0.12);
+  color: var(--purple);
+}
+.icon-orange {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--orange);
+}
+.icon-green {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--green);
+}
+.icon-red {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--bad);
 }
 
 .stat .k {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
   display: block;
-  margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: 0.63rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 3px;
 }
 
 .stat .v {
   /* Block, or the .sub span below flows inline after it and reads as one
      run-on value: "62.6% baseline 62.3%". */
   display: block;
-  font-family: var(--cond);
-  font-size: 23px;
+  font-size: 1.45rem;
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .stat .sub {
   display: block;
-  font-size: 12px;
-  color: var(--ink-dim);
+  font-size: 0.76rem;
+  color: var(--text-dim);
   margin-top: 2px;
 }
 
+/* --- tone ---------------------------------------------------------------- */
+
 .tone-ok,
 .tone-calm {
-  color: var(--ok);
+  color: var(--good);
 }
 .tone-active {
-  color: var(--active);
+  color: var(--accent);
 }
 .tone-warn {
   color: var(--warn);
@@ -164,29 +282,50 @@ h2 {
   color: var(--bad);
 }
 .tone-info {
-  color: var(--info);
+  color: var(--blue);
 }
 .tone-dim {
-  color: var(--ink-dim);
+  color: var(--text-dim);
 }
+
+/* --- pills --------------------------------------------------------------- */
 
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  padding: 3px 10px;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  padding: 5px 12px;
   border-radius: 999px;
   border: 1px solid currentColor;
+  background: rgba(255, 255, 255, 0.02);
   white-space: nowrap;
 }
 
 .dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
   flex: none;
+}
+
+/* Only the healthy state pulses. A blinking error is a distraction; a
+   blinking heartbeat is information. */
+.pill.tone-ok .dot {
+  animation: beat 2.4s ease-in-out infinite;
+}
+
+@keyframes beat {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 var(--accent-soft);
+  }
+  50% {
+    opacity: 0.65;
+    box-shadow: 0 0 0 4px transparent;
+  }
 }

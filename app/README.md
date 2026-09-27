@@ -38,6 +38,29 @@ cannot start working on its own, and bury the reason.
 > engineered away. Give the app account the narrowest access that works and
 > treat it as a LAN credential, not a secret.
 
+## Design
+
+The palette, type pairing and card idioms come from phbeks.com. The `:root`
+block in `src/app.css` mirrors that site's canonical tokens — keep it in
+sync rather than inventing values.
+
+**Two text tones are deliberately altered**, and the brand values are
+recorded in the file so the divergence is visible rather than accidental:
+
+| Token | Brand | On `--bg-card` |
+|---|---|---|
+| `--text-dim` | `#8492a6` | 5.62:1 — AA, not AAA |
+| `--text-muted` | `#4a5568` | **2.36:1 — fails AA** |
+
+On phbeks.com those carry decorative card tags. Here they were carrying the
+field name and the qualifier on every stat card — content, in a room that
+is often steamy and badly lit. `--text-dim` is raised to `#9faab9`: the same
+hue and saturation, lightness only, at the first value clearing 7:1 against
+all three surfaces.
+
+Every text element in the app now passes **WCAG AAA**, asserted on the
+rendered page by `tests/test_app.py`.
+
 ## Why Svelte, and why a PWA
 
 One store per topic, and the UI follows it with no diffing in between —
