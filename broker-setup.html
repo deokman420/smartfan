@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="MQTT broker reference for the Smartfan: which listeners the Home Assistant Mosquitto add-on already exposes, why the app needs WebSockets, the topic map, and how to verify it yourself.">
+<link rel="icon" href="data:,">
+<title>Smartfan Broker Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: dark;
+  --bg:        #0d1114;
+  --surface:   #141a1f;
+  --raised:    #1b2329;
+  --line:      #2a343c;
+  --line-soft: #202a31;
+
+  --ink:       #e4ebf0;
+  --ink-mid:   #9fb0bc;
+  --ink-dim:   #7c8d99;
+
+  --accent:    #d9bd96;
+  --accent-dk: #ae815b;
+
+  --ok:     #5fb37a;
+  --warn:   #e0a33c;
+  --bad:    #e35f62;
+  --info:   #6fa8d6;
+
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 30px 70px; }
+
+header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 26px; }
+.eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--accent-dk); margin: 0 0 9px;
+}
+.eyebrow b { color: var(--accent); font-weight: 500; }
+h1 {
+  font-family: var(--cond); font-weight: 700;
+  font-size: clamp(28px, 5vw, 40px); line-height: 1.08;
+  margin: 0 0 10px; letter-spacing: -.01em; text-wrap: balance;
+}
+.lede { color: var(--ink-mid); max-width: 66ch; margin: 0; font-size: 16px; }
+
+h2 {
+  font-family: var(--cond); font-weight: 700; font-size: 22px;
+  margin: 42px 0 14px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft); text-wrap: balance;
+}
+h3 {
+  font-family: var(--cond); font-weight: 600; font-size: 17px;
+  margin: 26px 0 8px; color: var(--ink);
+}
+p { max-width: 70ch; }
+a { color: var(--info); }
+
+code, kbd {
+  font-family: var(--mono); font-size: .88em;
+  background: var(--raised); border: 1px solid var(--line-soft);
+  border-radius: 4px; padding: 1px 5px; color: var(--accent);
+}
+pre {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-dk);
+  border-radius: 6px; padding: 14px 16px; overflow-x: auto;
+  font-family: var(--mono); font-size: 13px; line-height: 1.5;
+  color: var(--ink); margin: 14px 0;
+}
+pre code { background: none; border: 0; padding: 0; color: inherit; }
+
+.verdict {
+  display: flex; gap: 14px; align-items: flex-start;
+  background: linear-gradient(180deg, #16241b, #131c17);
+  border: 1px solid #2f5c3c; border-radius: 10px;
+  padding: 16px 18px; margin: 22px 0;
+}
+.verdict .tick { color: var(--ok); font-size: 22px; line-height: 1; flex: none; }
+.verdict p { margin: 0; }
+.verdict strong { color: var(--ok); }
+
+.note {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--info);
+  border-radius: 6px; padding: 13px 16px; margin: 18px 0;
+}
+.note.warn { border-left-color: var(--warn); }
+.note p { margin: 0; }
+.note b { color: var(--ink); }
+
+.tablewrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+th, td {
+  text-align: left; padding: 9px 12px;
+  border-bottom: 1px solid var(--line-soft); vertical-align: top;
+}
+th {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-dim); font-weight: 500;
+  border-bottom-color: var(--line);
+}
+td code { font-size: .86em; }
+tbody tr:last-child td { border-bottom: 0; }
+.num { font-variant-numeric: tabular-nums; }
+
+.pill {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid currentColor;
+}
+.pill.on   { color: var(--ok); }
+.pill.off  { color: var(--ink-dim); }
+.pill.tls  { color: var(--warn); }
+
+footer {
+  margin-top: 54px; padding-top: 18px; border-top: 1px solid var(--line);
+  color: var(--ink-dim); font-size: 13px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Smartfan &middot; <b>Phase 4d</b> &middot; App transport</p>
+  <h1>MQTT broker reference</h1>
+  <p class="lede">What the app connects to, why it has to be WebSockets, and
+  what is already running on your Home Assistant host. Short version: nothing
+  needs changing.</p>
+</header>
+
+<div class="verdict">
+  <span class="tick">&#10003;</span>
+  <p><strong>No broker configuration is required.</strong> The Home Assistant
+  Mosquitto add-on already serves MQTT over WebSocket on port <code>1884</code>.
+  Verified on 2026-09-27 with a real handshake &mdash; the server returned
+  <code>101 Switching Protocols</code> and negotiated
+  <code>Sec-WebSocket-Protocol: mqtt</code>. The <code>listener 9001</code>
+  block written into the phase&nbsp;4 plan is not needed.</p>
+</div>
+
+<h2>Why the app cannot use port 1883</h2>
+
+<p>The device talks to the broker over plain TCP on 1883, and so does Home
+Assistant. The app cannot. <b>A browser has no API for opening a raw TCP
+socket</b> &mdash; not for security theatre reasons, but because the sandbox
+simply does not expose one. Everything a page can open is HTTP, WebSocket,
+WebRTC or WebTransport.</p>
+
+<p>MQTT solves this with a defined WebSocket binding: the same MQTT packets,
+framed inside WebSocket messages, with the subprotocol negotiated as
+<code>mqtt</code> during the handshake. It is the same protocol and the same
+broker, reached through a door the browser is allowed to use.</p>
+
+<div class="note">
+  <p><b>This is why the app is a client of the broker, not of the device.</b>
+  There is no server in between, which is what makes &ldquo;local first&rdquo;
+  literal. It also means that if the broker is down the app goes stale while
+  the fan keeps running on its own logic &mdash; the app is never in the
+  control path.</p>
+</div>
+
+<h2>What is actually listening</h2>
+
+<p>Probed directly on <code>192.168.0.5</code>:</p>
+
+<div class="tablewrap">
+<table>
+  <thead>
+    <tr><th>Port</th><th>State</th><th>Protocol</th><th>Used by</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="num"><code>1883</code></td>
+      <td><span class="pill on">open</span></td>
+      <td>MQTT over TCP</td>
+      <td>The Pico, Home Assistant, <code>ota_publish.py</code></td>
+    </tr>
+    <tr>
+      <td class="num"><code>1884</code></td>
+      <td><span class="pill on">open</span></td>
+      <td>MQTT over WebSocket</td>
+      <td><b>The app.</b> Confirmed to negotiate <code>mqtt</code></td>
+    </tr>
+    <tr>
+      <td class="num"><code>8883</code></td>
+      <td><span class="pill off">closed</span></td>
+      <td>MQTT over TLS</td>
+      <td>Not enabled</td>
+    </tr>
+    <tr>
+      <td class="num"><code>8884</code></td>
+      <td><span class="pill off">closed</span></td>
+      <td>MQTT over WebSocket + TLS</td>
+      <td>Not enabled</td>
+    </tr>
+    <tr>
+      <td class="num"><code>9001</code></td>
+      <td><span class="pill off">closed</span></td>
+      <td>&mdash;</td>
+      <td>The conventional Mosquitto WebSocket port. The add-on uses 1884
+          instead, so nothing needs to be added here</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>1883 and 1884 are the add-on&rsquo;s defaults. You had already enabled them;
+they were simply never confirmed from the app&rsquo;s side.</p>
+
+<h2>Verify it yourself</h2>
+
+<p>The port being open proves a socket is bound. It does not prove the thing
+behind it speaks MQTT. This does:</p>
+
+<pre><code>python - &lt;&lt;'EOF'
+import base64, os, socket
+key = base64.b64encode(os.urandom(16)).decode()
+s = socket.create_connection(("192.168.0.5", 1884), timeout=6)
+s.sendall((
+    "GET / HTTP/1.1\r\nHost: 192.168.0.5:1884\r\n"
+    "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+    "Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n"
+    "Sec-WebSocket-Protocol: mqtt\r\n\r\n" % key).encode())
+print(s.recv(512).decode())
+EOF</code></pre>
+
+<p>A healthy broker answers:</p>
+
+<pre><code>HTTP/1.1 101 Switching Protocols
+Upgrade: WebSocket
+Connection: Upgrade
+Sec-WebSocket-Accept: &hellip;
+Sec-WebSocket-Protocol: mqtt</code></pre>
+
+<p>The last line is the one that matters. A <code>101</code> without
+<code>mqtt</code> means something is listening but it is not an MQTT broker,
+and a client would connect and then hang.</p>
+
+<h2>Authentication</h2>
+
+<p>The add-on accepts Home Assistant user accounts as broker logins, and also
+its own <code>logins:</code> list in the add-on configuration. Phase&nbsp;2
+settled on <b>one broker account per device</b> so a single misbehaving or
+compromised device can be revoked without touching the others.</p>
+
+<p>That principle extends to the app, which gets its own account rather than
+reusing the device&rsquo;s:</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Who</th><th>Account</th><th>Why separate</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>The Pico</td>
+      <td><code>pico-fan-bathroom</code></td>
+      <td>Publishes telemetry, subscribes to its own command topic</td>
+    </tr>
+    <tr>
+      <td>Home Assistant</td>
+      <td>its own</td>
+      <td>Discovery and state</td>
+    </tr>
+    <tr>
+      <td>The app</td>
+      <td>to be created</td>
+      <td>Read-mostly. Revoking it must never take the fan offline</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note warn">
+  <p><b>Credentials reach the browser.</b> Anything the app connects with is
+  readable by anyone who opens the page and its dev tools &mdash; that is true
+  of every browser MQTT client and cannot be engineered away. Give the app
+  account the narrowest ACL that still works, and treat it as a LAN
+  credential, not a secret.</p>
+</div>
+
+<h2>Topic map</h2>
+
+<p>The app subscribes to what the device already publishes. Nothing new is
+added on the firmware side.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Topic</th><th>Direction</th><th>Carries</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>fan/bathroom/state</code></td>
+      <td>device &rarr; app</td>
+      <td>The full telemetry payload, every 30&nbsp;s and on change</td>
+    </tr>
+    <tr>
+      <td><code>fan/bathroom/status</code></td>
+      <td>device &rarr; app</td>
+      <td>Retained availability, plus the last will on an ungraceful drop</td>
+    </tr>
+    <tr>
+      <td><code>fan/bathroom/cmd</code></td>
+      <td>app &rarr; device</td>
+      <td>Commands, including <code>update &lt;url&gt;</code> for OTA</td>
+    </tr>
+    <tr>
+      <td><code>homeassistant/&hellip;/config</code></td>
+      <td>device &rarr; broker</td>
+      <td>Retained discovery. The app can read it to learn the entity set
+          rather than hardcoding one</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>The room segment is deliberate. Multi-room topics were chosen in phase&nbsp;2
+&ldquo;while it is cheap&rdquo;, so a second unit is
+<code>fan/&lt;room&gt;/&hellip;</code> with no restructuring.</p>
+
+<h2>If you ever do need to change it</h2>
+
+<p>Nothing below is required today. It is here so the next person does not
+have to rediscover where the knobs are.</p>
+
+<h3>Custom Mosquitto configuration</h3>
+
+<p>The add-on reads extra config from <code>/share/mosquitto/</code> when told
+to. In the add-on&rsquo;s configuration:</p>
+
+<pre><code>customize:
+  active: true
+  folder: mosquitto</code></pre>
+
+<p>Then a file such as <code>/share/mosquitto/extra.conf</code> is included at
+startup. That is where an additional listener, per-topic ACLs or tuning would
+go. Restart the add-on for it to take effect.</p>
+
+<h3>TLS</h3>
+
+<p>8883 and 8884 are closed. On a home LAN, with the app, the broker and the
+device all on the same network, that is a defensible position rather than an
+oversight. It stops being defensible the moment any of the three is reachable
+from outside the LAN &mdash; at which point the app needs
+<code>wss://</code> on 8884, and a certificate the browser will accept, which
+is the genuinely awkward part on a private address.</p>
+
+<h3>Websocket path</h3>
+
+<p>Mosquitto serves the WebSocket at the root path. The app connects to
+<code>ws://192.168.0.5:1884/</code>. A client that defaults to
+<code>/mqtt</code> &mdash; several do &mdash; will fail the handshake and
+report it as a connection refusal, which sends you looking at the firewall
+instead of the path.</p>
+
+<h2>Troubleshooting</h2>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Symptom</th><th>Most likely cause</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Connects, then closes immediately</td>
+      <td>Bad credentials. Mosquitto accepts the socket, rejects
+          <code>CONNECT</code>, then disconnects &mdash; from the browser it
+          looks like an unstable network</td>
+    </tr>
+    <tr>
+      <td><code>101</code> but no MQTT ever flows</td>
+      <td>Subprotocol not negotiated. The client must ask for
+          <code>mqtt</code> in the handshake</td>
+    </tr>
+    <tr>
+      <td>Handshake fails outright</td>
+      <td>Wrong path. Try <code>/</code> rather than <code>/mqtt</code></td>
+    </tr>
+    <tr>
+      <td>Works on the desktop, not the phone</td>
+      <td>Phone on guest Wi-Fi or cellular. The broker is LAN only by
+          design</td>
+    </tr>
+    <tr>
+      <td>Page served over HTTPS cannot reach <code>ws://</code></td>
+      <td>Mixed content. Browsers block insecure sockets from secure pages.
+          Serve the app over plain HTTP on the LAN, or move the broker to
+          <code>wss://</code></td>
+    </tr>
+    <tr>
+      <td>Two clients keep kicking each other off</td>
+      <td>Shared client ID. Each connection needs a unique one &mdash; this
+          looks exactly like a flaky network</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<footer>
+  Smartfan &middot; phase 4d transport reference &middot; findings verified
+  against 192.168.0.5 on 2026-09-27. See <code>docs/phase-4-app-plan.md</code>
+  for the architecture and <code>docs/TODO.md</code> for deferred work.
+</footer>
+
+</div>
+</body>
+</html>

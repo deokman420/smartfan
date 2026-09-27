@@ -95,15 +95,15 @@ same broker Home Assistant uses, subscribing to the topics the device
 already publishes. There is no application server in the middle. That is
 what makes "local first" literal rather than a slogan.
 
-Required broker change — Mosquitto needs a second listener:
+**No broker change is required.** This plan originally called for adding a
+`listener 9001` / `protocol websockets` block. That was wrong: the Home
+Assistant Mosquitto add-on already exposes MQTT over WebSocket on **1884**,
+verified on 2026-09-27 with a handshake that returned `101 Switching
+Protocols` and negotiated `Sec-WebSocket-Protocol: mqtt`.
 
-```
-listener 9001
-protocol websockets
-```
-
-**Deferred to later on purpose** (2026-09-27), tracked in `docs/TODO.md`.
-The app is built and its UI exercised without it; only live data waits.
+The app connects to `ws://192.168.0.5:1884/` — root path, not `/mqtt`, which
+is where several clients default and then report the failure as a refused
+connection. Full reference in `broker-setup.html`.
 
 Per-device MQTT credentials were already decided in phase 2, so the app
 authenticates as the owner rather than as the device.

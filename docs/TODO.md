@@ -1,5 +1,13 @@
 # Deferred work
 
+> **Resolved 2026-09-27 — the Mosquitto WebSocket listener.** It was on this
+> list as work for you to do. It turned out to need nothing: the Home
+> Assistant Mosquitto add-on already serves MQTT over WebSocket on port
+> **1884**, confirmed with a real handshake that returned `101 Switching
+> Protocols` and negotiated `Sec-WebSocket-Protocol: mqtt`. The
+> `listener 9001` block in the phase 4 plan was never needed. See
+> `broker-setup.html`.
+
 Things consciously parked, with what unblocks each. Not a wish list — if it
 is here it is because it was decided rather than forgotten.
 
@@ -8,25 +16,6 @@ Sorted by what is in the way, not by importance.
 ---
 
 ## Blocked on a change only you can make
-
-### Mosquitto WebSocket listener
-
-**Needed by:** 4d, the app — at runtime, not to build it.
-
-Browsers cannot open raw TCP, so the PWA speaks MQTT over WebSockets. The
-broker on the Home Assistant host needs a second listener:
-
-```
-listener 9001
-protocol websockets
-```
-
-The app will be built and tested against this. Until it exists the app can
-be developed and its UI exercised, but it cannot reach live device data.
-
-**Deferred on purpose** — 2026-09-27. Building 4d first, wiring later.
-
----
 
 ### OTA push so the device card reads "Bathroom Smartfan"
 
