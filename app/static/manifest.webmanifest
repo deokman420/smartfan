@@ -1,0 +1,19 @@
+{
+  "name": "Smartfan",
+  "short_name": "Smartfan",
+  "description": "Local-first control for the humidity-driven extractor fan.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0d1114",
+  "theme_color": "#0d1114",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

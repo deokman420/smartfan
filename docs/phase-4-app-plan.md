@@ -189,9 +189,21 @@ board to the REPL mid-setup.
 Untested against the real improv-wifi.com Web Serial client; that needs a
 board.
 
-### 4d — The app
+### 4d — The app. Done.
 
-SvelteKit, MQTT over WebSockets, the phase 2 entity set, installable.
+`app/`. SvelteKit built static by Vite, MQTT over WebSockets on 1884,
+installable as a PWA. 442 KB of JS, one screen, no horizontal scroll at
+393 px.
+
+Nothing on screen is optimistic: every value is the last one the device
+published, and a control publishes then waits for confirmation. A command
+that silently failed should look like one, not like a success that reverts
+30 seconds later.
+
+`tests/test_app.py` — 16 checks against the live broker and the live fan,
+serving `app/build` so it tests the deployable artefact. Boost round-trip
+is confirmed by an independent subscriber rather than by the app's own
+screen.
 
 ### 4e — Update surface
 

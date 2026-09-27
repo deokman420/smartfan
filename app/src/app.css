@@ -1,0 +1,192 @@
+/* Shares the palette with build-sheet.html and troubleshoot.html so the
+   app, the build sheet and the diagnostics read as one product rather than
+   three tools that happened to be written by the same person. */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0d1114;
+  --surface: #141a1f;
+  --raised: #1b2329;
+  --line: #2a343c;
+  --line-soft: #202a31;
+
+  --ink: #e4ebf0;
+  --ink-mid: #9fb0bc;
+  --ink-dim: #7c8d99;
+
+  --accent: #d9bd96;
+  --accent-dk: #ae815b;
+
+  --ok: #5fb37a;
+  --warn: #e0a33c;
+  --bad: #e35f62;
+  --info: #6fa8d6;
+  --active: #6fc2d6;
+
+  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --cond: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+  --body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+
+  --gap: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* Home-screen installs run under the notch. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.wrap {
+  max-width: 900px;
+  margin: 0 auto;
+  padding-inline: 16px;
+  padding-block: 18px 56px;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin: 0;
+}
+
+h2 {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin: 30px 0 12px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.grid {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.stat .k {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.stat .v {
+  /* Block, or the .sub span below flows inline after it and reads as one
+     run-on value: "62.6% baseline 62.3%". */
+  display: block;
+  font-family: var(--cond);
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat .sub {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-dim);
+  margin-top: 2px;
+}
+
+.tone-ok,
+.tone-calm {
+  color: var(--ok);
+}
+.tone-active {
+  color: var(--active);
+}
+.tone-warn {
+  color: var(--warn);
+}
+.tone-bad {
+  color: var(--bad);
+}
+.tone-info {
+  color: var(--info);
+}
+.tone-dim {
+  color: var(--ink-dim);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}

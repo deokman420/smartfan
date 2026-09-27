@@ -5,6 +5,7 @@ non-zero on failure, so any of them can gate a flash or a deploy.
 
 ```bash
 python tests/test_manifest.py        # host only, no board needed
+python tests/test_app.py             # the app, needs broker + device
 python tests/test_improv.py          # host only, no board needed
 python tests/test_provision.py       # host only, no board needed
 python tests/test_device.py [COM5]   # hardware, needs the Pico attached
@@ -86,6 +87,29 @@ section still screenshots beautifully — it is just missing a third of the
 controls. Rename a heading in `tools/build_dashboard.py` and this suite fails
 until the rename is deliberate. Screenshots land in `tests/screenshots/`
 (gitignored) for eyeballing after a change.
+
+**`test_app.py` — 16 checks.** The app, served from `app/build` so it
+tests the artefact that would actually be deployed, against the live broker
+and the live fan.
+
+What it proves that a screenshot cannot: the values on screen are the ones
+the device published, and pressing Boost reaches the fan. That last one is
+confirmed by **an independent MQTT subscriber**, not by the app's own
+screen — otherwise the app marks its own homework.
+
+It drives the real fan for a few seconds and puts it back.
+
+## Assertions must wait, not glance
+
+`is_visible()` answers instantly about right now, and
+`goto(wait_until="load")` returns before Svelte has hydrated. Used together
+they report FAIL on an app that renders perfectly well a moment later.
+
+Both of `test_app.py`'s first two checks failed that way on their first run
+while every check after them passed — because those later ones called
+`inner_text()` and `input_value()`, which auto-wait. **A failure at the top
+and passes below it is the signature of this mistake, not of a broken app.**
+Use `locator.wait_for(state="visible")`.
 
 ## Never verify after the final reset
 
