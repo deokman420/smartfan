@@ -38,8 +38,17 @@ import hashlib
 import machine
 import network
 import os
+import select
 import socket
+import sys
 import time
+
+try:
+    import micropython
+except ImportError:                                   # host, under test
+    micropython = None
+
+import improv
 
 import config as cfg
 
@@ -241,7 +250,12 @@ class Portal:
         self.ssid, self.psk = identity()
         self.error = ""
         self.networks = []
+        self.sta_ip = None
+        self.done = False
         self._ap = None
+        self._dns_sock = None
+        self._http_sock = None
+        self._improv = None
         self._led_ok = machine.Pin(cfg.PIN_LED_OK, machine.Pin.OUT)
         self._led_run = machine.Pin(cfg.PIN_LED_RUN, machine.Pin.OUT)
 
@@ -310,8 +324,8 @@ class Portal:
         t = time.ticks_ms()
         while time.ticks_diff(time.ticks_ms(), t) < JOIN_TIMEOUT_S * 1000:
             if sta.isconnected():
-                self.log("provision: joined %s as %s"
-                         % (ssid, sta.ifconfig()[0]))
+                self.sta_ip = sta.ifconfig()[0]
+                self.log("provision: joined %s as %s" % (ssid, self.sta_ip))
                 return True
             self._led_run.value(not self._led_run.value())
             time.sleep_ms(250)
@@ -407,6 +421,118 @@ class Portal:
                   b"\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n")
         conn.send(payload)
 
+    # --- Improv over the USB serial line ----------------------------------
+    # The REPL is not reading stdin while main.py is executing, so the bytes
+    # arrive here without any dupterm surgery. Ctrl-C interception does have
+    # to go: 0x03 occurs freely inside packet data, and a KeyboardInterrupt
+    # raised out of a credential would drop the board to the REPL mid-setup.
+
+    def _improv_begin(self):
+        try:
+            fw = __import__("telemetry").FW_VERSION
+        except Exception:
+            fw = "unknown"
+        info = ("Smartfan", fw, "RP2350",
+                getattr(cfg, "DEVICE_NAME", "Smartfan"))
+        self._improv = improv.Improv(
+            info, self._on_improv_wifi,
+            scan=lambda: self.networks,
+            identify=self._identify)
+        if micropython:
+            try:
+                micropython.kbd_intr(-1)
+            except Exception:
+                pass
+        try:
+            self._poll = select.poll()
+            self._poll.register(sys.stdin, select.POLLIN)
+        except Exception:
+            self._poll = None
+
+    def _improv_end(self):
+        if micropython:
+            try:
+                micropython.kbd_intr(3)
+            except Exception:
+                pass
+
+    def _identify(self):
+        for _ in range(6):
+            self._led_ok.value(1)
+            self._led_run.value(1)
+            time.sleep_ms(90)
+            self._led_ok.value(0)
+            self._led_run.value(0)
+            time.sleep_ms(90)
+
+    def _improv_step(self):
+        if not self._improv or not self._poll:
+            return
+        chunk = b""
+        try:
+            # One byte at a time, re-polling each time: a sized read on
+            # sys.stdin blocks until it has that many bytes, which would
+            # stall the portal whenever a packet arrived in pieces.
+            while self._poll.poll(0) and len(chunk) < 128:
+                b = sys.stdin.buffer.read(1)
+                if not b:
+                    break
+                chunk += b
+        except Exception:
+            return
+        if not chunk:
+            return
+        try:
+            out = self._improv.feed(chunk)
+            if out:
+                sys.stdout.buffer.write(out)
+        except Exception as e:
+            self.log("provision: improv %s" % e)
+
+    def _on_improv_wifi(self, ssid, psk):
+        """Improv's join callback. Returns the device URL, or None."""
+        self.log("provision: improv trying %s" % ssid)
+        if self._attempt(ssid, psk):
+            self.done = True
+            return "http://%s" % self.sta_ip
+        return None
+
+    # --- servers ----------------------------------------------------------
+    def _servers_up(self):
+        self._dns_sock, self._http_sock = self._dns(), self._http()
+
+    def _servers_down(self):
+        for s in (self._dns_sock, self._http_sock):
+            try:
+                if s:
+                    s.close()
+            except Exception:
+                pass
+        self._dns_sock = self._http_sock = None
+
+    def _attempt(self, ssid, psk):
+        """Try credentials, restoring the portal if they do not work.
+
+        Sequential by construction: the portal and the AP are gone before
+        the radio is asked to be a station, because the CYW43439 cannot
+        usefully be both at once.
+        """
+        self._led_ok.value(0)
+        self._servers_down()
+        self.ap_down()
+        if self.join(ssid, psk):
+            _write_secrets(ssid, psk)
+            self._led_ok.value(1)
+            self._led_run.value(0)
+            self.log("provision: saved, restarting")
+            return True
+        self.error = ("Could not join %s. Check the password, or move the "
+                      "fan closer to the router." % ssid)
+        self.log("provision: join failed, AP back up")
+        self.ap_up()
+        self._servers_up()
+        return False
+
     # --- the flow ---------------------------------------------------------
     def run(self, timeout_s=DEFAULT_PORTAL_S):
         """Serve until provisioned or timed out. True if credentials stuck."""
@@ -417,55 +543,43 @@ class Portal:
         self.log("   network  %s" % self.ssid)
         self.log("   password %s" % self.psk)
         self.log(" then open http://%s/ if it does not appear" % AP_IP)
+        self.log(" or provision over USB from improv-wifi.com")
         self.log("=" * 52)
 
         self.scan()
         self.log("provision: %d networks in range" % len(self.networks))
         self.ap_up()
-        dns, http = self._dns(), self._http()
+        self._servers_up()
+        self._improv_begin()
         started = time.ticks_ms()
         blink = time.ticks_ms()
 
         try:
             while time.ticks_diff(time.ticks_ms(), started) < timeout_s * 1000:
-                self._dns_step(dns)
-                try:
-                    conn, _ = http.accept()
-                except Exception:
-                    conn = None
+                if self._dns_sock:
+                    self._dns_step(self._dns_sock)
+                self._improv_step()
+                if self.done:
+                    return True
+
+                conn = None
+                if self._http_sock:
+                    try:
+                        conn, _ = self._http_sock.accept()
+                    except Exception:
+                        conn = None
                 if conn is not None:
                     creds = self._serve(conn)
-                    if creds:
-                        ssid, psk = creds
-                        self.log("provision: trying %s" % ssid)
-                        self._led_ok.value(0)
-                        # Sequential, never concurrent: the AP goes down
-                        # before the radio is asked to be a station.
-                        dns.close()
-                        http.close()
-                        self.ap_down()
-                        if self.join(ssid, psk):
-                            _write_secrets(ssid, psk)
-                            self._led_ok.value(1)
-                            self._led_run.value(0)
-                            self.log("provision: saved, restarting")
-                            return True
-                        self.error = ("Could not join %s. Check the password, "
-                                      "or move the fan closer to the router."
-                                      % ssid)
-                        self.log("provision: join failed, AP back up")
-                        self.ap_up()
-                        dns, http = self._dns(), self._http()
+                    if creds and self._attempt(creds[0], creds[1]):
+                        return True
+
                 # Slow green pulse: waiting for someone to set me up.
                 if time.ticks_diff(time.ticks_ms(), blink) > 700:
                     self._led_ok.value(not self._led_ok.value())
                     blink = time.ticks_ms()
         finally:
-            try:
-                dns.close()
-                http.close()
-            except Exception:
-                pass
+            self._improv_end()
+            self._servers_down()
             self.ap_down()
             self._led_ok.value(0)
             self._led_run.value(0)

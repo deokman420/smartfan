@@ -231,6 +231,48 @@ sock = _Sock(b"\x00\x01")                       # runt
 p._dns_step(sock)
 check("ignores a truncated query", sock.sent is None)
 
+# --- Improv shares the one join path ---------------------------------------
+# provision.py grew a second way in. Both routes must land on the same
+# _attempt(), or one of them writes credentials the other never validates.
+import improv                                                  # noqa: E402
+
+p2 = provision.Portal(log=lambda *a: None)
+p2.networks = [("Hollow Bastion", -41, True)]
+calls = []
+
+
+def fake_attempt(ssid, psk):
+    calls.append((ssid, psk))
+    p2.sta_ip = "192.168.0.42"
+    return psk == "right"
+
+
+p2._attempt = fake_attempt
+url = p2._on_improv_wifi("Hollow Bastion", "right")
+check("improv joins through the shared _attempt", calls == [
+    ("Hollow Bastion", "right")])
+check("improv reports the device URL back",
+      url == "http://192.168.0.42", str(url))
+check("a successful improv join ends the portal", p2.done is True)
+
+p2.done = False
+check("a failed improv join returns nothing",
+      p2._on_improv_wifi("Hollow Bastion", "wrong") is None)
+check("and does not end the portal", p2.done is False)
+
+p3 = provision.Portal(log=lambda *a: None)
+p3.networks = [("Hollow Bastion", -41, True), ("Guest", -70, False)]
+p3._improv = improv.Improv(("Smartfan", "t", "RP2350", "Smartfan"),
+                           p3._on_improv_wifi, scan=lambda: p3.networks)
+reply = p3._improv.feed(improv.build(
+    improv.TYPE_RPC_COMMAND,
+    bytes([improv.CMD_GET_WIFI_NETWORKS, 0])))
+check("improv serves the same scan the portal shows",
+      b"Hollow Bastion" in reply and b"Guest" in reply)
+
+check("improv step is inert before the portal arms it",
+      provision.Portal(log=lambda *a: None)._improv_step() is None)
+
 # --- summary ----------------------------------------------------------------
 passed = sum(1 for _, ok, _ in results if ok)
 print("\n%d/%d passed" % (passed, len(results)))
