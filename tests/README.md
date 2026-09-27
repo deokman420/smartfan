@@ -15,7 +15,7 @@ back before asserting anything.
 
 ## What each layer is for
 
-**`test_device.py` — 26 checks.** Firmware version, module presence, free RAM,
+**`test_device.py` — 33 checks.** Firmware version, module presence, free RAM,
 every sensor reading inside a plausible range, and the full fan on/off/on cycle
 measured by tachometer. Most of these encode faults that actually happened
 during the build.
@@ -25,7 +25,7 @@ fitted where an NPN belongs conducts regardless of its base, so it reads
 identically in both states. That cost most of an evening and two destroyed
 parts. It is now one assertion.
 
-**`test_ha.py` — 23 checks.** Discovery still produces the entities the
+**`test_ha.py` — 37 checks.** Discovery still produces the entities the
 dashboard references, values are numeric and in range rather than merely
 present, every card points at something real, and a command round-trips from
 Home Assistant to the fan and back.
@@ -34,9 +34,14 @@ It also checks that the gauge's severity bands still equal `RH_RISE_ON` and
 `RH_FALL_OFF` in `config.py`. Retune the firmware and forget the dashboard, and
 the gauge quietly lies about when the fan runs — which is worse than no gauge.
 
-**`test_ui.py` — 19 checks.** That it renders, that a tile click reaches the
-fan, that the countdown and cancel appear only while boosting, and that nothing
-scrolls sideways at 400 px. Screenshots land in `tests/screenshots/`
+**`test_ui.py` — 20 checks.** That all eight sections render, that a tile
+click reaches the fan, that the countdown and cancel appear only while
+boosting, and that nothing scrolls sideways at 400 px.
+
+The section-heading checks exist because a dashboard rebuild that drops a
+section still screenshots beautifully — it is just missing a third of the
+controls. Rename a heading in `tools/build_dashboard.py` and this suite fails
+until the rename is deliberate. Screenshots land in `tests/screenshots/`
 (gitignored) for eyeballing after a change.
 
 ## Never verify after the final reset

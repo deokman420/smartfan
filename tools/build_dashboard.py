@@ -93,70 +93,91 @@ CONFIG = {
         "path": "main",
         "icon": "mdi:fan",
         "type": "sections",
-        "max_columns": 3,
+        # Four. Three was tried: Home Assistant caps a column's width, so
+        # three columns at 2560px drew a 1220px grid stranded in the middle
+        # of the screen with a dead margin down the left. Four fills it.
+        "max_columns": 4,
         "sections": [
 
-            # ---- 1. state at a glance ---------------------------------
+            # Home Assistant's sections view is a ROW GRID, not masonry: every
+            # section in a row is as tall as the tallest one in it. A
+            # four-tile section beside one carrying a graph gets padded out
+            # with dead space, which is what made this look sparse.
+            #
+            # So the sections are grouped by height, not only by topic: the
+            # four tile-only ones fill row 1, the four graph-bearing ones fill
+            # row 2, and within each row the contents are shuffled until the
+            # heights are close. That is why Fan speed and Run today sit with
+            # the activity graph rather than under "Right now".
+            #
+            # Prose lives in the README. A dashboard is glanced at, and long
+            # notes turn a section into a tall thin column with a gap beside
+            # it -- and an endless scroll on a phone.
+
+            # ---- row 1: tiles only ------------------------------------
             {"type": "grid", "cards": [
                 heading("Right now", "mdi:eye-outline"),
                 tile(E["state"], "Controller", icon="mdi:state-machine",
                      color="blue"),
                 tile(E["fan_on"], "Fan", icon="mdi:fan", color="cyan"),
-                tile(E["light_on"], "Bathroom light", color="amber"),
+                tile(E["light_on"], "Light", color="amber"),
                 tile(E["fault"], "Fault", color="red"),
-                tile(E["rpm"], "Fan speed", icon="mdi:speedometer"),
-                note(
-                    "**IDLE** waiting &nbsp;·&nbsp; **RUN** extracting "
-                    "&nbsp;·&nbsp; **BOOST** manual &nbsp;·&nbsp; "
-                    "**LEARN** first minute after a restart "
-                    "&nbsp;·&nbsp; **FAULT** needs a look" + NL + NL +
-                    "Fan speed reads 0 whenever the fan is off. The "
-                    "tachometer is only meaningful while it is turning."
-                ),
+                tile(E["mode"], "Mode", icon="mdi:tune",
+                     features=[{"type": "select-options"}]),
             ]},
 
-            # ---- 2. manual control ------------------------------------
             {"type": "grid", "cards": [
-                heading("Manual control", "mdi:gesture-tap-button"),
+                heading("Control", "mdi:gesture-tap-button"),
                 tile(E["btn_boost"], "Boost 15 min", icon="mdi:fan-plus",
                      color="cyan", tap_action={"action": "toggle"}),
+                tile(E["boost_dur"], "Boost length",
+                     icon="mdi:timer-cog-outline"),
                 only_when(tile(E["boost_left"], "Time remaining",
                                icon="mdi:timer-sand", color="cyan"),
                           E["state"], "BOOST"),
-                only_when(tile(E["btn_cancel"], "Cancel boost",
-                               icon="mdi:fan-off", color="red",
-                               tap_action={"action": "toggle"}),
+                only_when(tile(E["btn_cancel"], "Cancel boost", icon="mdi:fan-off",
+                               color="red", tap_action={"action": "toggle"}),
                           E["state"], "BOOST"),
-                tile(E["mode"], "Mode", icon="mdi:tune",
-                     features=[{"type": "select-options"}]),
-                note(
-                    "**Boost** runs the fan for 15 minutes whatever the "
-                    "light and humidity are doing, then hands back to "
-                    "automatic." + NL + NL +
-                    "**Force off** stops it without cutting power — for a "
-                    "long bath, or to silence a misbehaving sensor while "
-                    "you are away. **Force on** airs the room out. Both "
-                    "override everything except a fault."
-                ),
+                tile(E["btn_relearn"], "Relearn base", icon="mdi:refresh",
+                     tap_action={"action": "toggle"}),
             ]},
 
-            # ---- 3. the number it decides on ---------------------------
-            {"type": "grid", "column_span": 2, "cards": [
-                heading("The decision", "mdi:water-percent"),
+            {"type": "grid", "cards": [
+                heading("Thresholds", "mdi:tune-vertical"),
+                tile(E["rh_on"], "Start at"),
+                tile(E["rh_off"], "Stop below"),
+                tile(E["l_on"], "Light on"),
+                tile(E["l_off"], "Light off"),
+                tile(E["min_run"], "Min run"),
+                tile(E["max_run"], "Max run"),
+                tile(E["post_light"], "After lights"),
+            ]},
+
+            {"type": "grid", "cards": [
+                heading("Health", "mdi:heart-pulse"),
+                tile(E["build"], "Build", icon="mdi:package-variant"),
+                tile(E["uptime"], "Uptime"),
+                tile(E["rssi"], "WiFi"),
+                tile(E["boot"], "Last restart", icon="mdi:restart"),
+                tile(E["reconn"], "Reconnects", icon="mdi:lan-connect"),
+                tile(E["outage"], "Last outage", icon="mdi:lan-disconnect"),
+            ]},
+
+            # ---- row 2: each carries exactly one graph -----------------
+            {"type": "grid", "cards": [
+                heading("Humidity", "mdi:water-percent"),
                 {
                     "type": "gauge",
                     "entity": E["exc"],
-                    "name": "Excess above baseline",
-                    "min": -5,
-                    "max": 20,
-                    "needle": True,
-                    # Bands mirror the thresholds below. Green settled,
-                    # amber would keep a run going, red would start one.
+                    "name": "Above baseline",
+                    "min": -5, "max": 20, "needle": True,
                     "severity": {"green": -5, "yellow": 3, "red": 8},
                 },
+                tile(E["rh"], "Now"),
+                tile(E["base"], "Baseline"),
                 {
                     "type": "history-graph",
-                    "title": "Humidity against its learned baseline",
+                    "title": "Humidity against its baseline",
                     "hours_to_show": 24,
                     "entities": [
                         {"entity": E["rh"], "name": "Humidity"},
@@ -164,31 +185,12 @@ CONFIG = {
                         {"entity": E["exc"], "name": "Excess"},
                     ],
                 },
-                sub("Thresholds in force"),
-                tile(E["rh_on"], "Start at"),
-                tile(E["rh_off"], "Stop below"),
-                tile(E["btn_relearn"], "Relearn baseline",
-                     icon="mdi:refresh", tap_action={"action": "toggle"}),
-                note(
-                    "Humidity alone means nothing — a muggy August day sits "
-                    "at 65 % by itself. What matters is the **rise above "
-                    "what this room normally sits at**, which the controller "
-                    "learns continuously while idle and dark." + NL + NL +
-                    "It will not learn while the light is on or the fan is "
-                    "running, so a shower can never teach it that steam is "
-                    "normal." + NL + NL +
-                    "**Relearn** snaps the baseline to whatever the room "
-                    "reads this instant. Useful after a window has been open "
-                    "for a day. Avoid it while the room is damp — it would "
-                    "take the wet reading as normal, and roughly an hour of "
-                    "idle, dark time to walk back down." + NL + NL +
-                    "*A real shower here peaked at +38.5 %.*"
-                ),
             ]},
 
-            # ---- 4. what it has been doing -----------------------------
-            {"type": "grid", "column_span": 2, "cards": [
+            {"type": "grid", "cards": [
                 heading("Activity", "mdi:chart-timeline-variant"),
+                tile(E["rpm"], "Fan speed", icon="mdi:speedometer"),
+                tile(E["runtime"], "Run today", icon="mdi:timer-outline"),
                 {
                     "type": "history-graph",
                     "title": "Fan, light and state",
@@ -199,23 +201,25 @@ CONFIG = {
                         {"entity": E["state"], "name": "State"},
                     ],
                 },
-                tile(E["runtime"], "Run time today",
-                     icon="mdi:timer-outline"),
-                note(
-                    "A healthy run: light on, fan starts, light goes out, "
-                    "fan **keeps going** until the room is dry or the "
-                    "45-minute ceiling is reached." + NL + NL +
-                    "A run ending exactly on 45 minutes means the room had "
-                    "not dried in time — worth watching if it becomes the "
-                    "usual outcome rather than the exception."
-                ),
             ]},
 
-            # ---- 5. climate --------------------------------------------
+            {"type": "grid", "cards": [
+                heading("Light", "mdi:brightness-6"),
+                tile(E["light"], "Level"),
+                tile(E["light_on"], "Reads as"),
+                {
+                    "type": "history-graph",
+                    "title": "Light level",
+                    "hours_to_show": 12,
+                    "entities": [{"entity": E["light"], "name": "Light"}],
+                },
+                note("Calibrated in place: dark 4,800–6,225, "
+                     "lit 30,000–32,500 raw."),
+            ]},
+
             {"type": "grid", "cards": [
                 heading("Climate", "mdi:thermometer"),
                 tile(E["temp"], "Temperature"),
-                tile(E["rh"], "Humidity"),
                 tile(E["dp"], "Dew point"),
                 {
                     "type": "history-graph",
@@ -226,76 +230,6 @@ CONFIG = {
                         {"entity": E["dp"], "name": "Dew point"},
                     ],
                 },
-            ]},
-
-            # ---- 6. light sensing, calibrated --------------------------
-            {"type": "grid", "cards": [
-                heading("Light sensing", "mdi:brightness-6"),
-                tile(E["light"], "Light level"),
-                tile(E["light_on"], "Reads as"),
-                sub("Thresholds in force"),
-                tile(E["l_on"], "On above"),
-                tile(E["l_off"], "Off below"),
-                {
-                    "type": "history-graph",
-                    "title": "Light level",
-                    "hours_to_show": 12,
-                    "entities": [{"entity": E["light"], "name": "Light"}],
-                },
-                note(
-                    "**Calibrated in place.** Measured with the sensor where "
-                    "it now sits: dark **4,800–6,225**, lit "
-                    "**30,000–32,500** raw." + NL + NL +
-                    "Thresholds sit at roughly one third and two thirds of "
-                    "that span, leaving about 7,800 counts of clearance "
-                    "either side. The wide gap between them is deliberate — "
-                    "it stops a flickering LED bulb chattering the fan." + NL + NL +
-                    "*A bathroom is never truly dark. An earlier bench "
-                    "calibration put the off-threshold inside the dark-state "
-                    "noise and the fan ran indefinitely. Recalibrate from "
-                    "this graph if the fixture or the sensor moves.*"
-                ),
-            ]},
-
-            # ---- 7. timings ---------------------------------------------
-            {"type": "grid", "cards": [
-                heading("Timings", "mdi:timer-cog-outline"),
-                tile(E["min_run"], "Minimum run"),
-                tile(E["max_run"], "Maximum run"),
-                tile(E["post_light"], "After lights out"),
-                tile(E["boost_dur"], "Boost length"),
-                note(
-                    "Changes apply immediately and survive a restart — they "
-                    "are written to the device, not held in Home "
-                    "Assistant." + NL + NL +
-                    "Every value is also clamped in firmware, and paired "
-                    "settings are kept in order: raising *stop below* past "
-                    "*start at* pushes the other out of the way rather than "
-                    "leaving a fan that starts and stops on the same breath."
-                ),
-            ]},
-
-            # ---- 8. health ----------------------------------------------
-            {"type": "grid", "column_span": 2, "cards": [
-                heading("Health", "mdi:heart-pulse"),
-                tile(E["build"], "Build", icon="mdi:package-variant"),
-                tile(E["uptime"], "Uptime"),
-                tile(E["rssi"], "WiFi signal"),
-                tile(E["boot"], "Last restart", icon="mdi:restart"),
-                tile(E["reconn"], "Reconnects", icon="mdi:lan-connect"),
-                tile(E["outage"], "Last outage", icon="mdi:lan-disconnect"),
-                note(
-                    "**Build** is a hash of the code actually running. It is "
-                    "how an over-the-air update is confirmed without going "
-                    "to fetch the device." + NL + NL +
-                    "**Reconnects** and **last outage** report gaps honestly "
-                    "rather than papering over them — readings taken while "
-                    "offline are not replayed, because they would land at "
-                    "the wrong time and corrupt the history." + NL + NL +
-                    "A restart reason of *watchdog or reset* is normal after "
-                    "an update. Repeated ones with no update are not: the "
-                    "watchdog only fires when the control loop has stopped."
-                ),
             ]},
         ],
     }],

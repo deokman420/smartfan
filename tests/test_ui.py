@@ -110,8 +110,12 @@ with sync_playwright() as pw:
             return False
 
     # Section headings prove the view rendered, not just that HA loaded.
-    for hd in ("Right now", "Manual control", "The decision", "Activity",
-               "Climate", "Health", "Light sensing", "Timings"):
+    # These are the eight in tools/build_dashboard.py. Rename one there and
+    # this fails, which is the point: a dashboard rebuild that silently drops
+    # a section looks fine in a screenshot and is missing a third of the
+    # controls.
+    for hd in ("Right now", "Control", "Thresholds", "Health",
+               "Humidity", "Activity", "Light", "Climate"):
         check("section renders: %s" % hd, seen(hd))
 
     # Entity values reaching the DOM means the whole chain painted.
@@ -119,7 +123,7 @@ with sync_playwright() as pw:
     check("controller state on screen", bool(live) and seen(live, exact=True),
           live or "entity unreachable")
     check("a humidity reading is shown", seen("Humidity"))
-    check("gauge legend present", seen("Excess above baseline"))
+    check("gauge legend present", seen("Above baseline"))
 
     page.screenshot(path=os.path.join(SHOTS, "dashboard.png"), full_page=True)
     print("     -> screenshots/dashboard.png")
