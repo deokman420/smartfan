@@ -26,6 +26,13 @@ Mosquitto add-on already serves. Full reference in `../broker-setup.html`.
 Connection settings live in the app, under Settings, and persist in that
 browser. Defaults are `192.168.0.5:1884`, room `bathroom`.
 
+**A username and password are required.** The Home Assistant Mosquitto
+add-on does not allow anonymous connections, so the app asks for them on
+first run rather than dialling out with nothing and reporting the refusal
+as a fault. A credential the broker has already refused is not retried —
+the default reconnect loop would hammer the broker with a login that
+cannot start working on its own, and bury the reason.
+
 > Credentials entered here are readable by anyone who opens the page and its
 > dev tools. That is true of every browser MQTT client and cannot be
 > engineered away. Give the app account the narrowest access that works and

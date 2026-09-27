@@ -6,6 +6,9 @@
     deviceOnline,
     stale,
     settings,
+    configured,
+    saveSettings,
+    authFailed,
     connect,
     command,
     setParam,
@@ -23,8 +26,16 @@
     rssiWord
   } from '$lib/format.js';
 
+  import { onMount } from 'svelte';
+
   let showSettings = $state(false);
   let draft = $state({ ...DEFAULTS });
+
+  onMount(() => {
+    // First run on this browser: ask for the broker rather than dialling
+    // out with nothing and reporting the refusal as if it were a fault.
+    if (!$configured) openSettings();
+  });
 
   // Nothing here is optimistic. Every value shown is the last one the
   // device actually reported, so a command that silently failed looks like
@@ -46,7 +57,7 @@
   }
 
   function applySettings() {
-    settings.set({ ...draft, port: Number(draft.port) || DEFAULTS.port });
+    saveSettings({ ...draft, port: Number(draft.port) || DEFAULTS.port });
     showSettings = false;
     connect();
   }
@@ -118,7 +129,16 @@
     </div>
   </header>
 
-  {#if $linkError}
+  {#if $linkError && $authFailed}
+    <div class="banner bad">
+      <p>{$linkError}</p>
+      <p class="banner-sub">
+        The Home Assistant Mosquitto add-on does not allow anonymous
+        connections, so a username and password are required.
+      </p>
+      <button onclick={openSettings}>Open settings</button>
+    </div>
+  {:else if $linkError}
     <p class="banner bad">{$linkError}</p>
   {:else if $link === 'online' && !$deviceOnline}
     <p class="banner bad">
@@ -132,7 +152,18 @@
     </p>
   {/if}
 
-  {#if !t}
+  {#if !t && !$configured}
+    <div class="card empty">
+      <p>Connect to your broker to get started.</p>
+      <p class="sub">
+        Everything stays on your network. The app talks straight to MQTT —
+        there is no account and no server in between.
+      </p>
+      <button class="primary setup" onclick={openSettings}>
+        Set up connection
+      </button>
+    </div>
+  {:else if !t}
     <div class="card empty">
       <p>Waiting for the first reading…</p>
       <p class="sub">
@@ -395,6 +426,28 @@
   }
   .empty p {
     margin: 4px 0;
+  }
+  .empty .setup {
+    margin-top: 14px;
+    border-radius: 10px;
+    padding: 12px 20px;
+    border: 1px solid #2f6577;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .banner-sub {
+    font-size: 13px;
+    opacity: 0.8;
+    margin: 6px 0 10px !important;
+  }
+  .banner button {
+    background: transparent;
+    border: 1px solid currentColor;
+    color: inherit;
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 13px;
   }
 
   .hero {

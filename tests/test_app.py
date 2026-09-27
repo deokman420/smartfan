@@ -217,6 +217,32 @@ with sync_playwright() as pw:
     page.get_by_role("button", name="Cancel", exact=True).click()
 
     check("no uncaught JS errors", not errors, "; ".join(errors[:2]))
+
+    # --- first run on a browser that has never seen this app -------------
+    # A fresh context, so no localStorage. The app shipped connecting with
+    # blank credentials against a broker that requires them, which greeted
+    # every new user with an authentication failure as the first thing on
+    # screen -- "broken" rather than "not set up yet".
+    fresh = browser.new_context(viewport={"width": 393, "height": 852})
+    first = fresh.new_page()
+    first_errors = []
+    first.on("pageerror", lambda e: first_errors.append(str(e)))
+    first.goto("http://127.0.0.1:%d/" % PORT, wait_until="load")
+    first.wait_for_timeout(4000)
+
+    first_body = first.locator(".wrap").inner_text()
+    check("first run opens settings", first.locator("#host").is_visible())
+    check("first run offers setup, not an error",
+          "Set up connection" in first_body or
+          "Connect to your broker" in first_body)
+    check("first run shows no broker rejection",
+          "reject" not in first_body.lower(), first_body[:60])
+    check("first run prefills the defaults",
+          first.locator("#port").input_value() == "1884")
+    check("no JS errors on first run", not first_errors,
+          "; ".join(first_errors[:2]))
+    fresh.close()
+
     browser.close()
 
 httpd.shutdown()

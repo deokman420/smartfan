@@ -88,7 +88,7 @@ controls. Rename a heading in `tools/build_dashboard.py` and this suite fails
 until the rename is deliberate. Screenshots land in `tests/screenshots/`
 (gitignored) for eyeballing after a change.
 
-**`test_app.py` — 16 checks.** The app, served from `app/build` so it
+**`test_app.py` — 21 checks.** The app, served from `app/build` so it
 tests the artefact that would actually be deployed, against the live broker
 and the live fan.
 
@@ -96,6 +96,10 @@ What it proves that a screenshot cannot: the values on screen are the ones
 the device published, and pressing Boost reaches the fan. That last one is
 confirmed by **an independent MQTT subscriber**, not by the app's own
 screen — otherwise the app marks its own homework.
+
+It also opens the app in a **fresh browser context** with no
+`localStorage`, because the first run is the one screen every new user sees
+and the one no developer ever sees twice.
 
 It drives the real fan for a few seconds and puts it back.
 

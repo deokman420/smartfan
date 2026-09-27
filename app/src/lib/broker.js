@@ -26,12 +26,17 @@ export const DEFAULTS = {
   password: ''
 };
 
+let hadSaved = false;
+
 function loadSettings() {
   // Any of this can throw or come back empty -- private windows, cleared
   // site data, a thumbnailer. Never let it stop the app booting.
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    if (raw) {
+      hadSaved = true;
+      return { ...DEFAULTS, ...JSON.parse(raw) };
+    }
   } catch {
     /* fall through to defaults */
   }
@@ -40,17 +45,32 @@ function loadSettings() {
 
 export const settings = writable(loadSettings());
 
-settings.subscribe((v) => {
+/**
+ * Whether anyone has ever saved connection settings on this browser.
+ *
+ * Deliberately NOT a subscription that writes on every change: an
+ * auto-persisting store saves the defaults during module init, so the very
+ * first load would look configured and the app would greet a new user with
+ * a broker rejection instead of asking for credentials.
+ */
+export const configured = writable(hadSaved);
+
+export function saveSettings(next) {
+  settings.set(next);
+  configured.set(true);
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(v));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
   } catch {
     /* nothing we can do, and nothing that should break the page */
   }
-});
+}
 
 /** 'idle' | 'connecting' | 'online' | 'error' */
 export const link = writable('idle');
 export const linkError = writable('');
+
+/** The error was an authentication refusal, not a network fault. */
+export const authFailed = writable(false);
 
 /** Last parsed telemetry payload, or null before the first one arrives. */
 export const telemetry = writable(null);
@@ -90,6 +110,7 @@ export function connect() {
 
   link.set('connecting');
   linkError.set('');
+  authFailed.set(false);
 
   // A client id must be unique on the broker. Two clients sharing one
   // disconnect each other in a loop that looks exactly like a flaky
@@ -131,10 +152,25 @@ export function connect() {
     // credentials, so this arrives looking like a network fault. Say what
     // it probably is rather than echoing the raw message.
     const msg = String(err?.message || err);
-    linkError.set(/not authorized|bad user|unauthor/i.test(msg)
-      ? 'Rejected by the broker — check the username and password.'
+    const auth = /not authorized|bad user|unauthor/i.test(msg);
+    linkError.set(auth
+      ? 'The broker rejected these credentials.'
       : msg);
+    authFailed.set(auth);
     link.set('error');
+
+    // Stop retrying a credential the broker has already refused. The
+    // default is to reconnect every few seconds forever, which hammers the
+    // broker with a login that cannot start working on its own and buries
+    // the real reason in a reconnect loop.
+    if (auth && client) {
+      try {
+        client.end(true);
+      } catch {
+        /* already gone */
+      }
+      client = null;
+    }
   });
 
   client.on('close', () => {
