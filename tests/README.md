@@ -9,6 +9,7 @@ python tests/test_httpd.py           # host only, no board needed
 python tests/test_device_app.py      # host only, the app with no broker
 python tests/test_appicon.py         # host only, the tab icon and status bar
 python tests/test_theme.py           # host only, light / dark / system
+python tests/test_units.py           # host only, celsius / fahrenheit
 node   tests/test_dryrate.mjs        # host only, no browser at all
 python tests/test_app.py             # the app, needs broker + device
 python tests/test_improv.py          # host only, no board needed
@@ -205,6 +206,23 @@ deliberately implausible now.
 The HTTP contract lives in `test_httpd.py` instead: which status code a shut
 window gives, that the provisioner is never even asked, and that a password
 containing `:,# =` is not mangled by the newline-separated body.
+
+**`test_units.py` — 23 checks.** Celsius and Fahrenheit, everywhere a
+temperature is printed. A browser rather than a unit test of the arithmetic,
+because the arithmetic is two lines and nobody gets it wrong twice — what
+goes wrong is a temperature printed from a path the conversion does not
+reach, and that only shows up rendered. Both bugs found while building it
+were exactly that shape: the chart card's headline read `23.6 °F` beside an
+axis reading 75, and `Chart.svelte` decided whether to narrate the
+temperature/dew-point gap by testing `unit === '°C'`.
+
+The check that matters most is that the dew-point margin is **not** converted
+as an absolute. A temperature and a temperature difference convert
+differently — 1.8 °F per °C with no offset — and the absolute conversion
+turns a 3.9 degree margin into 39.0, which is a different claim about whether
+the mirror is about to fog rather than a rounding error.
+
+It also asserts the fan is never told: changing units issues no POST.
 
 **`test_provision.py` — 62 checks.** Host-only, with MicroPython stubbed,
 so it needs no board and touches none. The radio cannot be exercised here,

@@ -30,23 +30,58 @@
     bandIdle = '',
     bandColor = 'var(--accent)',
     refs = [],
-    compact = false
+    compact = false,
+    /* Stored value -> displayed value, for a chart whose units are a viewer
+       preference. Applied once here rather than threaded through every read
+       site, and to the threshold lines as well, so an axis, a tooltip, a peak
+       label and a reference line cannot end up in different units. */
+    convert = null,
+    /* "These two series are worth comparing", for the narration below. This
+       used to be `unit === '°C'`, which was a type tag wearing a unit's
+       clothes and stopped being true the moment the unit could be °F too. */
+    compare = false
   } = $props();
 
   const uid = Math.random().toString(36).slice(2, 8);
 
-  let t0 = $derived(rows.length ? rows[0][F.t] : 0);
-  let t1 = $derived(rows.length ? rows[rows.length - 1][F.t] : 1);
+  /* Everything below reads `data`, never `rows`. One pass, only when a
+     conversion is actually in force, and the timestamp column is copied
+     untouched so segments and gaps behave exactly as before. */
+  let data = $derived.by(() => {
+    if (!convert) return rows;
+    const fields = series.map((s) => s.field);
+    return rows.map((r) => {
+      const c = r.slice();
+      for (const f of fields) {
+        if (c[f] !== null && c[f] !== undefined && Number.isFinite(c[f])) c[f] = convert(c[f]);
+      }
+      return c;
+    });
+  });
+
+  /* The threshold lines, in the same units as `data`. Named refValues
+     because refMarks below is already the positioned version of these. */
+  let refValues = $derived(
+    convert
+      ? refs.map((r) => (Number.isFinite(r.value) ? { ...r, value: convert(r.value) } : r))
+      : refs
+  );
+
+  let t0 = $derived(data.length ? data[0][F.t] : 0);
+  let t1 = $derived(data.length ? data[data.length - 1][F.t] : 1);
 
   let scale = $derived.by(() => {
     const vals = [];
     for (const s of series) {
-      for (const r of rows) {
+      for (const r of data) {
         const v = r[s.field];
         if (v !== null && v !== undefined && Number.isFinite(v)) vals.push(v);
       }
     }
-    for (const ref of refs) if (Number.isFinite(ref.value)) vals.push(ref.value);
+    // refValues, not refMarks: refMarks positions each line with yPct, which
+    // reads `scale` -- and this IS scale. The converted values are what the
+    // axis needs, and they do not depend on it.
+    for (const ref of refValues) if (Number.isFinite(ref.value)) vals.push(ref.value);
     if (!vals.length) return { lo: 0, hi: 1, ticks: [0, 1] };
 
     let lo0 = Math.min(...vals);
@@ -119,7 +154,7 @@
     const out = [];
     for (const s of series) {
       if (!s.fill) continue;
-      for (const seg of segments(rows, s.field)) {
+      for (const seg of segments(data, s.field)) {
         if (seg.length < 2) continue;
         const line = seg
           .map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`)
@@ -142,14 +177,14 @@
       field: s.field,
       color: s.color,
       dash: !!s.dash,
-      paths: segments(rows, s.field).map((seg) =>
+      paths: segments(data, s.field).map((seg) =>
         seg.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`).join(' ')
       )
     }))
   );
 
   let refMarks = $derived.by(() => {
-    const marks = refs
+    const marks = refValues
       .filter((r) => Number.isFinite(r.value))
       .map((r) => ({ ...r, pct: yPct(r.value) }));
     marks.sort((a, b) => a.pct - b.pct);
@@ -160,11 +195,11 @@
   });
 
   let rail = $derived.by(() => {
-    if (bands === null || bands === undefined || rows.length < 2) return [];
+    if (bands === null || bands === undefined || data.length < 2) return [];
     const out = [];
     let start = null;
     let prev = null;
-    for (const r of rows) {
+    for (const r of data) {
       const on = r[bands] === 1;
       const gap = prev !== null && r[F.t] - prev > GAP_MS;
       if (gap && start !== null) {
@@ -188,14 +223,14 @@
 
   let ends = $derived(
     series.map((s) => {
-      for (let i = rows.length - 1; i >= 0; i--) {
-        const v = rows[i][s.field];
+      for (let i = data.length - 1; i >= 0; i--) {
+        const v = data[i][s.field];
         if (v !== null && v !== undefined && Number.isFinite(v)) {
           return {
             field: s.field,
             color: s.color,
             v,
-            left: x(rows[i][F.t]) / 10,
+            left: x(data[i][F.t]) / 10,
             top: yPct(v)
           };
         }
@@ -208,13 +243,13 @@
     if (compact || !series.length) return null;
     const field = series[0].field;
     let best = null;
-    for (const r of rows) {
+    for (const r of data) {
       const v = r[field];
       if (v === null || v === undefined || !Number.isFinite(v)) continue;
       if (!best || v > best.v) best = { v, t: r[F.t] };
     }
     if (!best) return null;
-    const st = stats(rows, field);
+    const st = stats(data, field);
     if (!st || st.max - st.min < (unit === 'rpm' ? 80 : 1.5)) return null;
     return {
       v: best.v,
@@ -225,7 +260,7 @@
   });
 
   let xLabels = $derived.by(() => {
-    if (!rows.length || t1 === t0) return [];
+    if (!data.length || t1 === t0) return [];
     const n = compact ? 2 : 4;
     const out = [];
     const fresh = Date.now() - t1 < 3 * 60_000;
@@ -242,9 +277,9 @@
   });
 
   let summary = $derived.by(() => {
-    if (compact || rows.length < 2 || !series.length) return '';
+    if (compact || data.length < 2 || !series.length) return '';
     const field = series[0].field;
-    const st = stats(rows, field);
+    const st = stats(data, field);
     if (!st) return '';
     const suffix = unit === 'rpm' ? ' rpm' : unit;
     const steady = st.max - st.min < (unit === 'rpm' ? 80 : 1);
@@ -252,7 +287,10 @@
       ? `Steady near ${fmtVal(st.last)}${suffix}`
       : `Peaked at ${fmtVal(st.max)}${suffix}`;
     const parts = [];
-    const levels = refs.map((r) => r.value).filter((v) => Number.isFinite(v));
+    // refValues, not refs: this threshold is compared against converted data
+    // and then printed, so a raw ref would put the narration in one unit and
+    // the number it quotes in another.
+    const levels = refValues.map((r) => r.value).filter((v) => Number.isFinite(v));
     if (levels.length) {
       const start = Math.max(...levels);
       const above = durationWhere(field, (v) => v >= start);
@@ -268,11 +306,11 @@
       const on = durationWhere(bands, (v) => v === 1);
       parts.push(on >= 20_000 ? `${bandStory} for ${fmtDur(on)}.` : `${bandIdle || bandOff}.`);
     }
-    if (unit === '°C' && series.length >= 2) {
+    if (compare && series.length >= 2) {
       let closest = Infinity;
       const a = series[0].field;
       const b = series[1].field;
-      for (const r of rows) {
+      for (const r of data) {
         if (r[a] === null || r[b] === null || r[a] === undefined || r[b] === undefined) continue;
         const g = Math.abs(r[a] - r[b]);
         if (g < closest) closest = g;
@@ -292,17 +330,17 @@
     const p = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const target = t0 + p * (t1 - t0);
     let lo = 0;
-    let hi = rows.length - 1;
+    let hi = data.length - 1;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
-      if (rows[mid][F.t] < target) lo = mid + 1;
+      if (data[mid][F.t] < target) lo = mid + 1;
       else hi = mid;
     }
     let idx = lo;
-    if (idx > 0 && Math.abs(rows[idx - 1][F.t] - target) < Math.abs(rows[idx][F.t] - target)) {
+    if (idx > 0 && Math.abs(data[idx - 1][F.t] - target) < Math.abs(data[idx][F.t] - target)) {
       idx -= 1;
     }
-    const row = rows[idx];
+    const row = data[idx];
     if (!row) return;
     const span = Math.max(t1 - t0, 1);
     hover = {
@@ -330,7 +368,7 @@
       if (run.length > 1) polys.push(run);
       run = [];
     };
-    for (const r of rows) {
+    for (const r of data) {
       const a = r[fieldA];
       const b = r[fieldB];
       const broke = run.length && r[F.t] - run[run.length - 1][0] > GAP_MS;
@@ -355,10 +393,10 @@
 
   function durationWhere(field, pred) {
     let ms = 0;
-    for (let i = 0; i < rows.length - 1; i++) {
-      const dt = rows[i + 1][F.t] - rows[i][F.t];
+    for (let i = 0; i < data.length - 1; i++) {
+      const dt = data[i + 1][F.t] - data[i][F.t];
       if (dt <= 0 || dt > GAP_MS) continue;
-      const v = rows[i][field];
+      const v = data[i][field];
       if (v !== null && v !== undefined && pred(v)) ms += dt;
     }
     return ms;
@@ -389,8 +427,8 @@
   }
 
   function latest(field) {
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const v = rows[i][field];
+    for (let i = data.length - 1; i >= 0; i--) {
+      const v = data[i][field];
       if (v !== null && v !== undefined && Number.isFinite(v)) return fmtVal(v);
     }
     return '—';
@@ -414,7 +452,7 @@
   }
 </script>
 
-{#if rows.length < 2}
+{#if data.length < 2}
   <div class="nodata" style="height:{height}px">
     <p>Not enough history yet</p>
     <p class="hint">
@@ -459,7 +497,7 @@
         {/each}
       </defs>
 
-      {#each refs as r (r.label)}
+      {#each refMarks as r (r.label)}
         {#if Number.isFinite(r.value)}
           <line x1="0" y1={y(r.value)} x2="1000" y2={y(r.value)} class="ref" />
         {/if}
@@ -535,7 +573,7 @@
     {#each series as s (s.field)}
       <span><i style="background:{s.color}"></i>{s.label} <b>{latest(s.field)}{unit === 'rpm' ? '' : unit}</b></span>
     {/each}
-    {#each refs as r (r.label)}
+    {#each refMarks as r (r.label)}
       <span><i class="swatch-ref"></i>{r.label} {fmtVal(r.value)}</span>
     {/each}
     {#if bands !== null && bands !== undefined}

@@ -16,6 +16,7 @@
     DEFAULTS
   } from '$lib/link.js';
   import { theme, setTheme } from '$lib/theme.js';
+  import { units, setUnits, tempUnit, abs as toTemp, delta as toDelta } from '$lib/units.js';
   import {
     MODES,
     STATE_TONE,
@@ -53,7 +54,11 @@
   // Chart definitions, shared by the grid and the detail view so the small
   // card and the expanded one can never drift into showing different
   // series for the same title.
-  const CHARTS = [
+  //
+  // Derived rather than const: the climate chart's unit and conversion follow
+  // the temperature setting, and a plain const is evaluated once and would
+  // keep drawing Celsius on a Fahrenheit page until a reload.
+  let CHARTS = $derived([
     {
       id: 'humidity',
       title: 'Humidity against its baseline',
@@ -93,7 +98,16 @@
       id: 'climate',
       title: 'Temperature and dew point',
       blurb: 'Condensation forms when a surface reaches the dew point.',
-      unit: '°C',
+      unit: $tempUnit,
+      // Stored in Celsius, like everything on the wire and on the fan's
+      // flash. The conversion happens here, at the edge, so a week of
+      // history never has to know this setting exists.
+      convert: (c) => toTemp(c, $units),
+      // Explicitly "these two series are worth comparing", rather than the
+      // chart sniffing for unit === '°C' as it used to. That test was a type
+      // tag wearing a unit's clothes, and it stopped being true the moment
+      // the unit could also be °F.
+      compare: true,
       series: [
         { field: F.temp, label: 'Temperature', color: 'var(--orange)' },
         { field: F.dp, label: 'Dew point', color: 'var(--blue)' }
@@ -124,7 +138,7 @@
       bandIdle: 'The fan stayed off',
       series: [{ field: F.rpm, label: 'Fan speed', color: 'var(--accent)', fill: true }]
     }
-  ];
+  ]);
 
   const RANGES = [
     { hours: 1, label: '1 h' },
@@ -201,6 +215,14 @@
      reconnect, and that a Cancel silently reverts, is a worse control than
      no control. It applies on the press and persists on the press, which is
      also the only way to see what you are choosing. */
+  /* Units, beside the theme and for the same reason: a viewer preference,
+     not a device setting. The fan measures, stores and decides in Celsius
+     whatever this says, so two phones can disagree and both be right. */
+  const UNITS = [
+    { id: 'C', label: '°C' },
+    { id: 'F', label: '°F' }
+  ];
+
   const THEMES = [
     { id: 'system', label: 'System' },
     { id: 'light', label: 'Light' },
@@ -320,9 +342,27 @@
     return 1;
   }
 
+  /* A margin, not a temperature. toDelta, never toTemp: the 32 degree
+     offset belongs to the scale's zero point and not to the distance
+     between two readings, and applying it here would report a 4 degree
+     margin as 39 -- a different claim about the room, not a rounding
+     error. */
+  /* stats() reads the stored rows, which are Celsius whatever the setting
+     says. The chart converts its own copy, so these numbers -- printed as
+     the card's headline and as the detail view's min/avg/max -- have to make
+     the same trip or the headline reads "23.6 °F" beside an axis that reads
+     75. Every field here is an absolute temperature, so the absolute
+     conversion is the right one; a range would not be. */
+  function chartStats(rows, field, chart) {
+    const st = stats(rows, field);
+    if (!st || !chart?.convert) return st;
+    const f = chart.convert;
+    return { ...st, min: f(st.min), max: f(st.max), mean: f(st.mean), last: f(st.last) };
+  }
+
   let dewGap = $derived.by(() => {
     const gap = Number(t?.temp) - Number(t?.dp);
-    return Number.isFinite(gap) ? `${gap.toFixed(1)}°C` : '—';
+    return Number.isFinite(gap) ? `${toDelta(gap, $units).toFixed(1)}${$tempUnit}` : '—';
   });
 
   let lightPct = $derived(Math.max(0, Math.min(100, Number(t?.light_pc) || 0)));
@@ -619,7 +659,7 @@
               </div>
               <div class="glance-item">
                 <span class="k">Temperature</span>
-                <span class="v">{num(t.temp, 1, '°C')}</span>
+                <span class="v">{num(toTemp(t.temp, $units), 1, $tempUnit)}</span>
               </div>
               <div class="glance-item">
                 <span class="k">Light level</span>
@@ -693,11 +733,11 @@
               <div class="read-row">
                 <div>
                   <span class="k">Temperature</span>
-                  <span class="v">{num(t.temp, 1, '°C')}</span>
+                  <span class="v">{num(toTemp(t.temp, $units), 1, $tempUnit)}</span>
                 </div>
                 <div>
                   <span class="k">Dew point</span>
-                  <span class="v">{num(t.dp, 1, '°C')}</span>
+                  <span class="v">{num(toTemp(t.dp, $units), 1, $tempUnit)}</span>
                 </div>
                 <div>
                   <span class="k">Above dew point</span>
@@ -854,7 +894,7 @@
               <Activity rows={cardRows} compact />
             </div>
             {#each CHARTS as c (c.id)}
-              {@const st = stats(cardRows, c.series[0].field)}
+              {@const st = chartStats(cardRows, c.series[0].field, c)}
               <div
                 class="chart-card card"
                 role="button"
@@ -889,6 +929,8 @@
                   bandColor={c.bandColor ?? 'var(--accent)'}
                   refs={c.refs ? c.refs() : []}
                   unit={c.unit}
+                  convert={c.convert}
+                  compare={c.compare ?? false}
                   height={150}
                   compact
                 />
@@ -999,12 +1041,14 @@
         bandColor={detailChart.bandColor ?? 'var(--accent)'}
         refs={detailChart.refs ? detailChart.refs() : []}
         unit={detailChart.unit}
+        convert={detailChart.convert}
+        compare={detailChart.compare ?? false}
         height={250}
       />
 
       <div class="stats">
         {#each detailChart.series as sdef (sdef.field)}
-          {@const st = stats(detailRows, sdef.field)}
+          {@const st = chartStats(detailRows, sdef.field, detailChart)}
           <div class="statrow">
             <span class="name"><i style="background:{sdef.color}"></i>{sdef.label}</span>
             {#if st}
@@ -1100,6 +1144,22 @@
         and does not care, so another phone can be on a different one.
       </p>
 
+      <p class="setting-label">Temperature</p>
+      <div class="modes two" role="radiogroup" aria-label="Temperature units">
+        {#each UNITS as u (u.id)}
+          <button
+            class="mode"
+            class:active={$units === u.id}
+            role="radio"
+            aria-checked={$units === u.id}
+            onclick={() => setUnits(u.id)}
+          >
+            <span class="mode-name">{u.label}</span>
+          </button>
+        {/each}
+      </div>
+
+      <p class="setting-label">Colour scheme</p>
       <div class="modes three" role="radiogroup" aria-label="Colour scheme">
         {#each THEMES as opt (opt.id)}
           <button
@@ -2258,6 +2318,20 @@
      the connection modes keep their 2-up grid and their sentence of blurb. */
   .modes.three {
     grid-template-columns: repeat(3, 1fr);
+  }
+  .modes.two .mode {
+    justify-items: center;
+    text-align: center;
+    padding: 12px 8px;
+  }
+  /* Two controls in one section now, so each needs saying which it is. */
+  .setting-label {
+    margin: 14px 0 0;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
   }
   /* One word each, centred: the connection modes need a sentence to choose
      between them, System/Light/Dark do not, and three one-line blurbs at
