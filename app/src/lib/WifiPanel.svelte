@@ -8,6 +8,14 @@
   let api = $derived($mode === 'device' ? wifiApi() : null);
 
   let status = $state(null);
+  let broker = $state(null);
+  let bHost = $state('');
+  let bPort = $state(1883);
+  let bUser = $state('');
+  let bPass = $state('');
+  let bTouched = $state(false);
+  let bOutcome = $state(''); // '' | 'trying' | 'ok' | 'failed'
+  let bNote = $state('');
   let networks = $state(null);
   let scanning = $state(false);
   let ssid = $state('');
@@ -41,6 +49,29 @@
       const s = await api.status();
       if (!s) return;
       status = s;
+
+      const b = await api.brokerStatus();
+      if (b) {
+        broker = b;
+        // Only seed the fields from the device until the user starts
+        // typing. Refreshing every two seconds would otherwise delete a
+        // half-typed hostname under their fingers.
+        if (!bTouched) {
+          bHost = b.host ?? '';
+          bPort = b.port ?? 1883;
+          bUser = b.user ?? '';
+        }
+        if (bOutcome === 'trying' && s.kind === 'broker') {
+          if (s.state === 'ok') {
+            bOutcome = 'ok';
+            bNote = b.host ? `Connected to ${b.host}.` : 'The broker is off.';
+            bTouched = false;
+          } else if (s.state === 'failed') {
+            bOutcome = 'failed';
+            bNote = s.error || 'It could not reach that broker.';
+          }
+        }
+      }
       // The device answering at all means we are still on the same network
       // as it, so it did not move. Its own state field says whether that was
       // a rollback or a change that never started.
@@ -93,6 +124,38 @@
     } finally {
       sending = false;
       psk = '';
+    }
+  }
+
+  async function saveBroker() {
+    if (!api) return;
+    bOutcome = 'trying';
+    bNote = '';
+    try {
+      const r = await api.setBroker({
+        host: bHost.trim(),
+        port: Number(bPort) || 1883,
+        user: bUser,
+        password: bPass,
+        // An untouched box on a broker that already has a password means
+        // "leave it", not "clear it" -- which is exactly what the
+        // placeholder promises the reader.
+        keepPassword: !bPass && !!broker?.has_password
+      });
+      if (!r.ok) {
+        bOutcome = 'failed';
+        bNote = r.reason || `The fan refused that (${r.status}).`;
+      } else if (r.settled) {
+        // "No broker" is done the moment it is written; there is nothing to
+        // connect to and so nothing to wait for.
+        bOutcome = 'ok';
+        bNote = 'The broker is off. The fan and the app carry on without it.';
+        bTouched = false;
+      }
+      bPass = '';
+    } catch {
+      bOutcome = 'failed';
+      bNote = 'The fan did not answer.';
     }
   }
 
@@ -203,6 +266,88 @@
     <p class="sub tone-ok">{note}</p>
   {:else if outcome === 'failed'}
     <p class="sub tone-bad">{note}</p>
+  {/if}
+
+  <h3 class="section">Broker</h3>
+  <p class="sub">
+    Optional. With one, the fan appears in Home Assistant; without, everything
+    here still works — the fan, this app and its history are all local either
+    way.
+  </p>
+
+  {#if broker}
+    <p class="sub">
+      {#if broker.enabled}
+        Publishing to <strong>{broker.host}:{broker.port}</strong>
+        {#if broker.user}as <strong>{broker.user}</strong>{/if} — {broker.state}.
+      {:else}
+        No broker. The fan publishes nothing.
+      {/if}
+    </p>
+  {/if}
+
+  {#if !status?.open}
+    <p class="sub quiet">
+      Behind the same button hold. This one cannot lock you out — the fan stays
+      on wifi and this page keeps working whatever happens — but these are the
+      credentials that reach Home Assistant.
+    </p>
+  {:else}
+    <label for="b-host">Broker address</label>
+    <input
+      id="b-host"
+      bind:value={bHost}
+      oninput={() => (bTouched = true)}
+      placeholder="Leave empty for no broker"
+      autocapitalize="off"
+      autocorrect="off"
+      spellcheck="false"
+    />
+
+    <label for="b-port">Port</label>
+    <input id="b-port" type="number" bind:value={bPort} oninput={() => (bTouched = true)} />
+    <p class="sub">
+      1883 for plain MQTT, which is what the fan speaks. 1884 is the WebSocket
+      port and belongs in the connection settings above, not here.
+    </p>
+
+    <label for="b-user">Username</label>
+    <input
+      id="b-user"
+      bind:value={bUser}
+      oninput={() => (bTouched = true)}
+      autocapitalize="off"
+      autocorrect="off"
+      spellcheck="false"
+    />
+
+    <label for="b-pass">Password</label>
+    <input
+      id="b-pass"
+      type="password"
+      bind:value={bPass}
+      oninput={() => (bTouched = true)}
+      placeholder={broker?.has_password ? 'unchanged' : ''}
+    />
+    <p class="sub">
+      The fan connects before it saves, so a wrong password costs a retry and
+      changes nothing. Give this device its own broker account rather than the
+      Home Assistant login, so one fan can be revoked without touching the rest.
+    </p>
+
+    <div class="sheet-actions">
+      <button class="primary" onclick={saveBroker} disabled={bOutcome === 'trying'}>
+        {bOutcome === 'trying' ? 'Connecting…' : 'Save broker'}
+      </button>
+    </div>
+  {/if}
+
+  {#if bOutcome === 'trying'}
+    <p class="sub tone-active">Connecting to {bHost || '(none)'}…</p>
+  {:else if bOutcome === 'ok'}
+    <p class="sub tone-ok">{bNote}</p>
+  {:else if bOutcome === 'failed'}
+    <p class="sub tone-bad">{bNote}</p>
   {/if}
 {/if}
 

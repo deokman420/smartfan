@@ -238,6 +238,43 @@ export function create(getSettings, sink) {
         return res.json();
       },
 
+      async brokerStatus() {
+        const res = await ask(url('/api/broker'));
+        return res.ok ? res.json() : null;
+      },
+
+      async setBroker({ host, port, user, password, keepPassword }) {
+        // One field per line, as /api/wifi and /api/cmd already do: a
+        // password may contain any printable character, and a newline is the
+        // one thing it cannot.
+        //
+        // Three lines, not four, when the password box was left alone. A
+        // fourth empty line means "this broker wants no password", and
+        // sending one regardless would wipe the credential every time
+        // somebody corrected a typo in the hostname.
+        const fields = [host ?? '', String(port ?? 1883), user ?? ''];
+        if (!keepPassword) fields.push(password ?? '');
+        const body = fields.join('\n');
+        const res = await ask(url('/api/broker'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body
+        });
+        let payload = null;
+        try {
+          payload = await res.json();
+        } catch {
+          /* a body we cannot read is still a status code we can report */
+        }
+        // 200 saved outright ("no broker"), 202 still connecting.
+        return {
+          ok: res.status === 200 || res.status === 202,
+          settled: res.status === 200,
+          status: res.status,
+          ...(payload ?? {})
+        };
+      },
+
       async connect(ssid, psk, country) {
         // One field per line, matching /api/cmd's plain-text bodies. A
         // passphrase may contain any printable character, and a newline is

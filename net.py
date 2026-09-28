@@ -61,10 +61,9 @@ class Link:
         self.clock_ok = False
         self.ip = None
 
-        # An empty or absent MQTT_HOST is a statement, not an omission: run
-        # WiFi only. Before this, secrets.py without a broker meant the
-        # network layer failed on every pass and backed off forever.
-        self.mqtt_enabled = bool(getattr(secrets, "MQTT_HOST", ""))
+        # Broker settings to use INSTEAD of secrets.py, while wifi.py is
+        # trying a new one. Same shape and same reason as _try below.
+        self._try_broker = None
 
         self.state = OFFLINE
         self.client = None
@@ -108,6 +107,48 @@ class Link:
             return bool(self._wlan and self._wlan.isconnected())
         except Exception:
             return False
+
+    def broker(self, name, default=None):
+        """One broker setting, override first, then secrets.py."""
+        if self._try_broker is not None:
+            return self._try_broker.get(name, default)
+        return getattr(self._s, name, default)
+
+    @property
+    def mqtt_enabled(self):
+        """Whether there is a broker to talk to at all.
+
+        An empty or absent MQTT_HOST is a statement, not an omission: run
+        WiFi only. Before this the network layer failed on every pass and
+        backed off forever.
+
+        A property rather than a flag set once in __init__, because the app
+        can now add a broker to a device that had none, or take one away, and
+        a value captured at construction would have kept insisting on the
+        answer that was true at boot.
+        """
+        return bool(self.broker("MQTT_HOST", ""))
+
+    def try_broker(self, settings):
+        """Use these broker settings instead, starting now.
+
+        Unlike try_wifi this cannot strand the device -- WiFi stays up and
+        the app is still reachable over HTTP whatever happens -- but it is
+        built the same way so that a rejected broker leaves no trace and
+        needs nothing undone.
+        """
+        self._try_broker = dict(settings)
+        self.drop("trying broker %s" % (settings.get("MQTT_HOST") or "(none)"))
+
+    def stop_trying_broker(self):
+        if self._try_broker is None:
+            return
+        self._try_broker = None
+        self.drop("back to broker %s"
+                  % (getattr(self._s, "MQTT_HOST", "") or "(none)"))
+
+    def adopt_broker(self):
+        self._try_broker = None
 
     @property
     def ssid(self):
@@ -272,11 +313,11 @@ class Link:
     def _poll_mqtt(self):
         """The one genuinely blocking step, bounded and backoff-gated."""
         c = MQTTClient(
-            client_id=self._s.MQTT_CLIENT_ID,
-            server=self._s.MQTT_HOST,
-            port=getattr(self._s, "MQTT_PORT", 1883),
-            user=getattr(self._s, "MQTT_USER", None),
-            password=getattr(self._s, "MQTT_PASS", None),
+            client_id=self.broker("MQTT_CLIENT_ID", "pico-fan"),
+            server=self.broker("MQTT_HOST", ""),
+            port=self.broker("MQTT_PORT", 1883),
+            user=self.broker("MQTT_USER", None) or None,
+            password=self.broker("MQTT_PASS", None) or None,
             keepalive=60,
             will_topic=self.status_topic,
             will_msg="offline",

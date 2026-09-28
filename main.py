@@ -273,10 +273,16 @@ class Controller:
                                  hostname=getattr(cfg, "HOSTNAME", None))
                 # No broker configured is a supported setup, not a failure:
                 # WiFi comes up, the device serves its own app, and nothing
-                # publishes. Telemetry is only built when there is a link for
-                # it to publish over.
+                # publishes.
+                #
+                # Telemetry is built either way now. Its constructor does no
+                # I/O and publish() returns immediately while the link is
+                # offline, so an unused one costs a few topic strings -- and
+                # building it only when a broker existed AT BOOT meant adding
+                # one from the app brought MQTT up with nothing to publish
+                # over it until the next reboot.
+                self.telem = Telemetry(cfg, self.link, self.snap, log=print)
                 if self.link.mqtt_enabled:
-                    self.telem = Telemetry(cfg, self.link, self.snap, log=print)
                     print("net: enabled, room=%s" % cfg.ROOM)
                 else:
                     print("net: wifi only, no broker configured")

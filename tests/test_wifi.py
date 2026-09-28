@@ -102,14 +102,36 @@ import wifi  # noqa: E402
 
 
 class FakeLink:
-    """The four calls wifi.py may make, and a switch for whether it worked."""
+    """The calls wifi.py may make, and switches for whether they worked."""
 
     def __init__(self, ssid="old-net"):
         self._ssid = ssid
         self.wifi_ok = False
+        self.online = False          # MQTT session up
         self.trying = None
+        self.try_broker_args = None
         self.calls = []
         self.last_error = ""
+        self._broker = {"MQTT_HOST": "10.0.0.9", "MQTT_PORT": 1883,
+                        "MQTT_USER": "old-user", "MQTT_PASS": "old-pass"}
+
+    def broker(self, name, default=None):
+        if self.try_broker_args is not None:
+            return self.try_broker_args.get(name, default)
+        return self._broker.get(name, default)
+
+    def try_broker(self, settings):
+        self.try_broker_args = dict(settings)
+        self.calls.append("try-broker:%s" % (settings.get("MQTT_HOST") or "(none)"))
+
+    def stop_trying_broker(self):
+        self.try_broker_args = None
+        self.calls.append("broker-rollback")
+
+    def adopt_broker(self):
+        self._broker = dict(self.try_broker_args or {})
+        self.try_broker_args = None
+        self.calls.append("broker-adopt")
 
     @property
     def ssid(self):
@@ -265,6 +287,123 @@ check("changing the wifi keeps the broker settings",
       and saved.get("MQTT_USER") == "fixture-user",
       "%s / %s" % (saved.get("MQTT_HOST"), saved.get("MQTT_USER")))
 check("and still changes the wifi", saved.get("WIFI_SSID") == "third-net")
+
+# --- the broker --------------------------------------------------------------
+# Behind the same button, and built the same way. It cannot strand the device
+# -- wifi stays up and the app stays reachable -- but a rejected broker must
+# still leave no trace, so the failure is always "it did not work" and never
+# "it did not work and something changed".
+os.chdir(tmp)
+io.open("secrets.py", "w").write(
+    "WIFI_SSID = 'keep-me'\nWIFI_PASS = 'keep-pass'\nWIFI_COUNTRY = 'GB'\n"
+    "MQTT_HOST = '10.254.0.1'\nMQTT_USER = 'fixture-user'\n"
+    "MQTT_PASS = 'fixture-pass'\n")
+link, prov = fresh(tmp)
+check("a shut window refuses a broker change",
+      prov.start_broker("10.9.9.9")[0] is False)
+
+prov.open("test")
+ok, _ = prov.start_broker("10.9.9.9", 1883, "new-user", "new-pass")
+check("an open window accepts a broker", ok)
+check("it asks the link to try it", "try-broker:10.9.9.9" in link.calls)
+check("nothing is written while it is still connecting",
+      "10.9.9.9" not in io.open("secrets.py", encoding="utf-8").read())
+
+link.online = True
+prov.poll()
+saved = {}
+exec(io.open("secrets.py", encoding="utf-8").read(), saved)
+check("once connected, the broker is written", saved.get("MQTT_HOST") == "10.9.9.9")
+check("with its account", saved.get("MQTT_USER") == "new-user"
+      and saved.get("MQTT_PASS") == "new-pass")
+check("the link is told to keep it", "broker-adopt" in link.calls)
+
+# The reason there is one writer rather than two: changing the broker must
+# not quietly lose the wifi, and vice versa.
+check("changing the broker keeps the wifi credentials",
+      saved.get("WIFI_SSID") == "keep-me" and saved.get("WIFI_PASS") == "keep-pass",
+      str(saved.get("WIFI_SSID")))
+check("and keeps the country", saved.get("WIFI_COUNTRY") == "GB")
+
+# A broker that refuses.
+before = io.open("secrets.py", encoding="utf-8").read()
+link, prov = fresh(tmp)
+prov.open("test")
+prov.start_broker("10.9.9.250", 1883, "nope", "nope")
+link.online = False
+prov._started_at = wifi._now() - (wifi.BROKER_TRY_S + 1) * 1000
+prov.poll()
+check("a broker that never connects fails", prov.state == wifi.FAILED)
+check("and NOTHING is written", io.open("secrets.py", encoding="utf-8").read() == before)
+check("and the link is rolled back", link.calls[-1] == "broker-rollback")
+
+# Turning the broker off is a legitimate answer, not a missing field, and
+# there is nothing to connect to so it commits at once.
+link, prov = fresh(tmp)
+prov.open("test")
+ok, why = prov.start_broker("")
+check("an empty host is accepted as 'no broker'", ok and why == "saved", str(why))
+check("and settles immediately, with no connection attempted",
+      prov.state == wifi.OK and "try-broker" not in "".join(link.calls))
+saved = {}
+exec(io.open("secrets.py", encoding="utf-8").read(), saved)
+check("the empty host is written, not removed", saved.get("MQTT_HOST") == "")
+check("turning the broker off still keeps the wifi",
+      saved.get("WIFI_SSID") == "keep-me")
+
+# The password box left alone must not wipe the password. An absent field
+# means "keep it"; an empty one means "this broker wants none", and
+# conflating them wipes the credential whenever somebody fixes a typo in the
+# hostname -- a failure that only shows up later, as a broker that has
+# stopped accepting the fan.
+link, prov = fresh(tmp)
+link._broker = {"MQTT_HOST": "10.0.0.9", "MQTT_PORT": 1883,
+                "MQTT_USER": "u", "MQTT_PASS": "keep-this-one"}
+prov.open("test")
+prov.start_broker("10.0.0.9", 1883, "u")          # no password argument
+link.online = True
+prov.poll()
+saved = {}
+exec(io.open("secrets.py", encoding="utf-8").read(), saved)
+check("an absent password keeps the one already set",
+      saved.get("MQTT_PASS") == "keep-this-one", repr(saved.get("MQTT_PASS")))
+
+link, prov = fresh(tmp)
+link._broker = {"MQTT_HOST": "10.0.0.9", "MQTT_PORT": 1883,
+                "MQTT_USER": "u", "MQTT_PASS": "keep-this-one"}
+prov.open("test")
+prov.start_broker("10.0.0.9", 1883, "u", "")      # explicitly empty
+link.online = True
+prov.poll()
+saved = {}
+exec(io.open("secrets.py", encoding="utf-8").read(), saved)
+check("an explicitly empty password clears it", saved.get("MQTT_PASS") == "",
+      repr(saved.get("MQTT_PASS")))
+
+# Input it did not choose.
+link, prov = fresh(tmp)
+prov.open("test")
+check("a bad port is refused", prov.start_broker("h", "not-a-number")[0] is False)
+check("port 0 is refused", prov.start_broker("h", 0)[0] is False)
+check("port 70000 is refused", prov.start_broker("h", 70000)[0] is False)
+check("an over-long host is refused", prov.start_broker("x" * 121)[0] is False)
+
+# One at a time, whichever kind.
+link, prov = fresh(tmp)
+prov.open("test")
+prov.start("some-net", "pw")
+check("a wifi attempt blocks a broker attempt",
+      prov.start_broker("10.9.9.9")[0] is False)
+
+# The password is never handed back out.
+link, prov = fresh(tmp)
+st = prov.broker_status()
+check("broker_status reports the host", st["host"] == "10.0.0.9")
+check("broker_status reports the account", st["user"] == "old-user")
+check("broker_status NEVER returns the password",
+      "pass" not in " ".join(str(v) for v in st.values()).lower()
+      and "MQTT_PASS" not in st and "password" not in st)
+check("it says only whether one is set", st["has_password"] is True)
 
 # --- the scan ----------------------------------------------------------------
 _WLAN.scanned = [

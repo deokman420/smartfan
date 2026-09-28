@@ -1,5 +1,5 @@
 /**
- * Celsius or Fahrenheit, per browser.
+ * How readings are displayed: units of temperature, and of time.
  *
  * A viewer preference, like the colour scheme and unlike a threshold: the
  * fan measures, stores and decides in Celsius whatever this says, and two
@@ -75,4 +75,55 @@ export function delta(c, u) {
 /** The current units, for code that needs them once rather than as a store. */
 export function current() {
   return get(units);
+}
+
+/* ── The clock ─────────────────────────────────────────────────────────── */
+
+const CLOCK_KEY = 'smartfan.clock';
+
+export const CLOCK_CHOICES = ['24', '12'];
+
+function loadClock() {
+  try {
+    const saved = localStorage.getItem(CLOCK_KEY);
+    if (CLOCK_CHOICES.includes(saved)) return saved;
+  } catch {
+    /* fall through */
+  }
+  return '24';
+}
+
+/** '24' | '12'. */
+export const clock = writable(loadClock());
+
+export function setClock(next) {
+  if (!CLOCK_CHOICES.includes(next)) return;
+  clock.set(next);
+  try {
+    localStorage.setItem(CLOCK_KEY, next);
+  } catch {
+    /* applies to this session; it just will not survive it */
+  }
+}
+
+/**
+ * A timestamp as a wall clock.
+ *
+ * Deliberately not toLocaleTimeString: these are axis ticks and tooltip
+ * labels sitting in a monospace column, and the locale form adds seconds in
+ * some locales, a narrow no-break space before the meridiem in others, and
+ * changes width as the day goes on. The chart needs a stable width far more
+ * than it needs the reader's regional comma.
+ *
+ * Midnight and noon are the cases that catch a naive `h % 12`: both are 12,
+ * not 0.
+ */
+export function fmtClock(t, pref = '24') {
+  const d = new Date(t);
+  const h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, '0');
+  if (pref !== '12') return `${String(h).padStart(2, '0')}:${m}`;
+  const suffix = h < 12 ? 'am' : 'pm';
+  const twelve = h % 12 === 0 ? 12 : h % 12;
+  return `${twelve}:${m}${suffix}`;
 }

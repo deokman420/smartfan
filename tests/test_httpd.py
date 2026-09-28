@@ -116,6 +116,7 @@ class FakeProv:
     def __init__(self, is_open=False):
         self.is_open = is_open
         self.started = []
+        self.brokers = []
         self.state = "open" if is_open else "closed"
         self.scanned = 0
 
@@ -131,6 +132,15 @@ class FakeProv:
     def scan(self):
         self.scanned += 1
         return [{"ssid": "home", "rssi": -44, "secure": True}] if self.is_open else None
+
+    def broker_status(self):
+        # Shaped exactly like the real one, password-free by construction.
+        return {"host": "10.0.0.9", "port": 1883, "user": "fan",
+                "has_password": True, "enabled": True, "state": "online"}
+
+    def start_broker(self, host, port=1883, user="", password="", client_id=None):
+        self.brokers.append((host, port, user, password))
+        return True, "saved" if not host else "trying"
 
 
 class FakeController:
@@ -711,6 +721,46 @@ def test_wifi(tmp):
         before = len(c.prov.started)
         get(port, "/api/wifi")
         check("GET /api/wifi changes nothing", len(c.prov.started) == before)
+
+        # -- the broker, behind the same door ---------------------------
+        c.prov = FakeProv(is_open=False)
+        st, _, body = get(port, "/api/broker")
+        doc = json.loads(body.decode())
+        check("a shut window still reports the broker", st == 200)
+        check("it reports host, port and account",
+              doc["host"] == "10.0.0.9" and doc["port"] == 1883 and doc["user"] == "fan")
+        # The password must never come back out, the same way it never leaves
+        # the device over MQTT.
+        check("the password is never returned",
+              "MQTT_PASS" not in body.decode() and "password" not in doc,
+              body.decode()[:60])
+        check("it says only whether one is set", doc["has_password"] is True)
+
+        st, _, _ = get(port, "/api/broker", method="POST", body=b"10.9.9.9\n1883")
+        check("a shut window refuses a broker change with 403", st == 403,
+              "status %d" % st)
+        check("and the provisioner was never asked", c.prov.brokers == [])
+
+        c.prov = FakeProv(is_open=True)
+        st, _, body = get(port, "/api/broker", method="POST",
+                          body=b"10.9.9.9\n1884\nfan-user\np:a,s#s w=d")
+        check("an open window accepts a broker with 202", st == 202,
+              "status %d" % st)
+        # The port arrives as the text it was sent as: start_broker owns the
+        # parse and the range check, exactly as _set defers to Settings rather
+        # than validating a second time here. Two validators is how the API
+        # and the broker come to disagree about what a port is.
+        check("host, port, account and password arrive intact",
+              c.prov.brokers == [("10.9.9.9", "1884", "fan-user", "p:a,s#s w=d")],
+              str(c.prov.brokers))
+
+        # "No broker" is already done, so it is 200 rather than 202: there is
+        # nothing to poll for.
+        st, _, body = get(port, "/api/broker", method="POST", body=b"")
+        check("turning the broker off answers 200, not 202", st == 200,
+              "status %d" % st)
+        check("and reports itself as saved",
+              json.loads(body.decode())["state"] == "saved")
     finally:
         pump.stop()
         server.stop()

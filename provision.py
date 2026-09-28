@@ -203,22 +203,54 @@ def _write_identity(room):
     return slug
 
 
-def _write_secrets(ssid, psk, country=None):
-    """Write secrets.py. repr() keeps quotes and backslashes valid."""
-    keep = _carry_over()
-    if country and country.upper() in _COUNTRIES:
-        keep["WIFI_COUNTRY"] = country.upper()
-    lines = ['"""Written by provision.py. Edit by hand if you prefer."""',
-             "",
-             "WIFI_SSID = %r" % ssid,
-             "WIFI_PASS = %r" % psk,
-             'WIFI_COUNTRY = %r' % keep.get("WIFI_COUNTRY", "US"),
-             ""]
-    for k in ("MQTT_HOST", "MQTT_PORT", "MQTT_USER", "MQTT_PASS",
-              "MQTT_CLIENT_ID"):
-        if k in keep:
-            lines.append("%s = %r" % (k, keep[k]))
-    body = "\n".join(lines) + "\n"
+_WIFI_KEYS = ("WIFI_SSID", "WIFI_PASS", "WIFI_COUNTRY")
+_MQTT_KEYS = ("MQTT_HOST", "MQTT_PORT", "MQTT_USER", "MQTT_PASS",
+              "MQTT_CLIENT_ID")
+
+
+def _current():
+    """Every secret currently on flash, or {} if there is no file yet."""
+    out = {}
+    try:
+        import secrets
+        for k in _WIFI_KEYS + _MQTT_KEYS:
+            if hasattr(secrets, k):
+                out[k] = getattr(secrets, k)
+    except Exception:
+        pass
+    return out
+
+
+def update_secrets(**changes):
+    """Merge `changes` into secrets.py and write it atomically.
+
+    ONE writer for the whole file. There are two things that rewrite it now
+    -- the setup portal changing the WiFi, and the app changing the broker --
+    and two writers would each have to remember to carry the other's keys
+    through. That is exactly the bug that loses someone's broker password the
+    first time they change networks.
+
+    A key set to None is removed. A key set to "" is written as empty, which
+    is how MQTT_HOST says "no broker" rather than "never configured".
+
+    repr() keeps quotes and backslashes valid in a password.
+    """
+    vals = _current()
+    for k, v in changes.items():
+        if v is None:
+            vals.pop(k, None)
+        else:
+            vals[k] = v
+
+    lines = ['"""Written by provision.py. Edit by hand if you prefer."""', ""]
+    lines.append("WIFI_SSID = %r" % vals.get("WIFI_SSID", ""))
+    lines.append("WIFI_PASS = %r" % vals.get("WIFI_PASS", ""))
+    lines.append("WIFI_COUNTRY = %r" % vals.get("WIFI_COUNTRY", "US"))
+    lines.append("")
+    for k in _MQTT_KEYS:
+        if k in vals:
+            lines.append("%s = %r" % (k, vals[k]))
+    body = chr(10).join(lines) + chr(10)
 
     # Write to a temporary name and rename, so a power cut mid-write cannot
     # leave a half-written secrets.py that refuses to import.
@@ -229,6 +261,14 @@ def _write_secrets(ssid, psk, country=None):
     except OSError:
         pass
     os.rename("secrets.new", "secrets.py")
+
+
+def _write_secrets(ssid, psk, country=None):
+    """Change the WiFi, keeping everything else. See update_secrets."""
+    changes = {"WIFI_SSID": ssid, "WIFI_PASS": psk}
+    if country and country.upper() in _COUNTRIES:
+        changes["WIFI_COUNTRY"] = country.upper()
+    update_secrets(**changes)
 
 
 def _unquote(s):

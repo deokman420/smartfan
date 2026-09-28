@@ -16,7 +16,15 @@
     DEFAULTS
   } from '$lib/link.js';
   import { theme, setTheme } from '$lib/theme.js';
-  import { units, setUnits, tempUnit, abs as toTemp, delta as toDelta } from '$lib/units.js';
+  import {
+    units,
+    setUnits,
+    tempUnit,
+    abs as toTemp,
+    delta as toDelta,
+    clock as clockPref,
+    setClock
+  } from '$lib/units.js';
   import {
     MODES,
     STATE_TONE,
@@ -41,7 +49,29 @@
   let draft = $state({ ...DEFAULTS });
   let view = $state('status');
   let detail = $state(null);
-  let range = $state(6);
+  /* The chart range, remembered. It reset to 6 h on every load, so anyone
+     who habitually looks at a day re-chose it every single time. Same
+     per-browser storage as the theme and the units, and the same
+     defensiveness -- a private window can make either call throw. */
+  const RANGE_KEY = 'smartfan.range';
+  function loadRange() {
+    try {
+      const saved = Number(localStorage.getItem(RANGE_KEY));
+      if ([1, 6, 24, 168].includes(saved)) return saved;
+    } catch {
+      /* fall through */
+    }
+    return 6;
+  }
+  let range = $state(loadRange());
+  function setRange(hours) {
+    range = hours;
+    try {
+      localStorage.setItem(RANGE_KEY, String(hours));
+    } catch {
+      /* the choice still applies to this session */
+    }
+  }
 
   const VIEWS = [
     { id: 'status', label: 'Status', icon: 'gauge' },
@@ -221,6 +251,29 @@
   const UNITS = [
     { id: 'C', label: '°C' },
     { id: 'F', label: '°F' }
+  ];
+
+  /* Reset is the one control here that cannot be undone by nudging a number
+     back, so it asks twice. A modal for this would be heavier than the thing
+     it guards; a button that changes its own label is enough, and it clears
+     itself so a stray first tap does not stay armed. */
+  let confirmReset = $state(false);
+  let resetTimer = null;
+  function resetTunables() {
+    if (!confirmReset) {
+      confirmReset = true;
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(() => (confirmReset = false), 4000);
+      return;
+    }
+    clearTimeout(resetTimer);
+    confirmReset = false;
+    command('reset-settings');
+  }
+
+  const CLOCKS = [
+    { id: '24', label: '24 h' },
+    { id: '12', label: '12 h' }
   ];
 
   const THEMES = [
@@ -856,6 +909,22 @@
           </div>
           <section class="card tune-mode">
             {@render modeControl('mode-t-label')}
+
+            <div class="quiet-row reset-row">
+              <button
+                type="button"
+                class="quiet"
+                onclick={resetTunables}
+                disabled={!live}
+              >
+                {confirmReset ? 'Tap again to confirm' : 'Reset to defaults'}
+              </button>
+            </div>
+            <p class="sub">
+              Puts every value on this page back to the firmware's own. The
+              connection, the units and the colour scheme are this browser's and
+              are not touched.
+            </p>
           </section>
         {/if}
 
@@ -1021,7 +1090,7 @@
 
       <div class="ranges" role="group" aria-label="Time range">
         {#each RANGES as r (r.hours)}
-          <button class:on={range === r.hours} onclick={() => (range = r.hours)}>
+          <button class:on={range === r.hours} onclick={() => setRange(r.hours)}>
             {r.label}
           </button>
         {/each}
@@ -1155,6 +1224,21 @@
             onclick={() => setUnits(u.id)}
           >
             <span class="mode-name">{u.label}</span>
+          </button>
+        {/each}
+      </div>
+
+      <p class="setting-label">Clock</p>
+      <div class="modes two" role="radiogroup" aria-label="Clock format">
+        {#each CLOCKS as c (c.id)}
+          <button
+            class="mode"
+            class:active={$clockPref === c.id}
+            role="radio"
+            aria-checked={$clockPref === c.id}
+            onclick={() => setClock(c.id)}
+          >
+            <span class="mode-name">{c.label}</span>
           </button>
         {/each}
       </div>
@@ -2325,6 +2409,11 @@
     padding: 12px 8px;
   }
   /* Two controls in one section now, so each needs saying which it is. */
+  .reset-row {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
   .setting-label {
     margin: 14px 0 0;
     font-family: var(--mono);

@@ -197,24 +197,69 @@ with sync_playwright() as pw:
     page.goto("http://127.0.0.1:%d/" % PORT, wait_until="load")
     page.wait_for_timeout(1200)
     print("  -- the setting")
-    sheet = page.locator(".modes.two")
-    check("the units control is in the settings sheet", sheet.count() == 1)
-    page.locator(".modes.two button", has_text="°F").click()
-    page.wait_for_timeout(500)
+    # Scoped by aria-label, not by class: the clock sits in an identical
+    # .modes.two group beside this one, and a bare class selector matched
+    # both the moment that arrived.
+    temp = page.locator("[aria-label='Temperature units']")
+    clock = page.locator("[aria-label='Clock format']")
+    check("the units control is in the settings sheet", temp.count() == 1)
+    check("the clock control is beside it", clock.count() == 1)
+
+    temp.locator("button", has_text="°F").click()
+    page.wait_for_timeout(400)
     check("choosing °F persists immediately",
           page.evaluate("localStorage.getItem('smartfan.units')") == "F")
     check("the chosen unit is marked for a screen reader",
-          page.locator(".modes.two button[aria-checked=true]").inner_text().strip() == "°F")
-    page.locator(".sheet-actions button", has_text="Cancel").click()
-    page.wait_for_timeout(300)
+          temp.locator("button[aria-checked=true]").inner_text().strip() == "°F")
+
+    clock.locator("button", has_text="12 h").click()
+    page.wait_for_timeout(400)
+    check("choosing 12 h persists",
+          page.evaluate("localStorage.getItem('smartfan.clock')") == "12")
+
+    # Neither is part of the connection draft, so Cancel must not revert them.
+    page.locator(".sheet-actions button", has_text="Cancel").first.click()
+    page.wait_for_timeout(400)
     check("Cancel does not revert the unit",
           page.evaluate("localStorage.getItem('smartfan.units')") == "F")
+    check("Cancel does not revert the clock",
+          page.evaluate("localStorage.getItem('smartfan.clock')") == "12")
+
     # A viewer preference, never a device setting: the fan must not be told.
     posts = []
     page.on("request", lambda r: posts.append(r.url) if r.method == "POST" else None)
     page.wait_for_timeout(800)
     check("changing units sends nothing to the fan", not posts, str(posts[:2]))
     ctx.close()
+
+    # -- the clock, rendered ------------------------------------------
+    # Chart.svelte and Activity.svelte had byte-identical clock() functions,
+    # which is how one of them gets left behind on 24-hour. A fresh context
+    # so this is testing a loaded preference, not a just-clicked one.
+    for pref, pattern, name in (
+        ("12", r"^\d{1,2}:\d{2}(am|pm)$", "12-hour"),
+        ("24", r"^([01]\d|2[0-3]):[0-5]\d$", "24-hour"),
+    ):
+        ctx = browser.new_context(viewport={"width": 430, "height": 900})
+        page = ctx.new_page()
+        page.add_init_script(
+            "localStorage.setItem('smartfan.clock', %r);"
+            "localStorage.setItem('smartfan.settings', JSON.stringify("
+            "{mode:'device', host:'127.0.0.1', httpPort:%d, room:'bathroom'}))"
+            % (pref, PORT))
+        page.route("**/api/state*", lambda r: r.fulfill(
+            status=200, content_type="application/json", body=json.dumps(STATE)))
+        page.route("**/api/history*", lambda r: r.fulfill(
+            status=200, content_type="text/plain", body=HIST))
+        page.goto("http://127.0.0.1:%d/" % PORT, wait_until="load")
+        page.wait_for_timeout(2600)
+        found = page.evaluate(
+            "(re) => [...document.querySelectorAll('span, div')]"
+            ".map(e => e.textContent.trim())"
+            ".filter(t => new RegExp(re).test(t))", pattern)
+        check("the timeline reads as %s" % name, len(found) > 0, str(found[:3]))
+        ctx.close()
+
     browser.close()
 
 httpd.shutdown()

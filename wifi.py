@@ -1,4 +1,4 @@
-"""Changing the WiFi network from the app, without a ladder.
+"""Changing the WiFi network, and the broker, from the app -- without a ladder.
 
 Until now a new router meant USB and `provision.py`. For a controller in a
 ceiling that is a ladder, a laptop, and a length of cable, which is the wrong
@@ -31,6 +31,17 @@ credentials live in `Link._try` and never touch the filesystem; if they do
 not work there is nothing to roll back, because nothing was done. This is the
 shape `ota.py` already uses for firmware, for the same reason.
 
+**The broker rides along, because it is the same door.**
+Moving the fan to a new broker cannot strand it: WiFi stays up and the app
+is still reachable over HTTP whatever the answer. So the ladder argument
+does not apply -- but the button does, for the same reason it applies to the
+WiFi. Being on someone's network is not a licence to point their fan at your
+broker, and the credentials in play are the ones that reach Home Assistant.
+
+It is built the same way anyway. A rejected broker leaves no trace and needs
+nothing undone, which is worth having for its own sake: the failure is then
+always "it did not work", never "it did not work and something changed".
+
 **The answer has to arrive before the network moves.**
 A successful switch takes the device off the network the request came in on,
 so the reply cannot be the result -- the socket dies with the association.
@@ -61,6 +72,16 @@ TRY_S = 45
 
 CLOSED, OPEN, TRYING, OK, FAILED = "closed", "open", "trying", "ok", "failed"
 
+# What an attempt is trying to change. One at a time: the states above are
+# per-attempt, and two in flight would have to agree about which one OK
+# refers to.
+WIFI, BROKER = "wifi", "broker"
+
+# A broker gets less time than a radio. An MQTT connect is one bounded
+# socket operation against a host that is already on the network, not an
+# association and a DHCP lease, and net.py bounds the connect itself at 5 s.
+BROKER_TRY_S = 20
+
 
 def _now():
     return time.ticks_ms()
@@ -83,9 +104,10 @@ class Provisioner:
         self.link = link
         self._log = log or (lambda *a: None)
         self.state = CLOSED
+        self.kind = None             # WIFI or BROKER, while an attempt runs
         self._opened_at = None
         self._started_at = None
-        self.candidate = ""          # SSID being tried, for the app to echo
+        self.candidate = ""          # SSID or host being tried, to echo back
         self.error = ""
         self.changed_at = None       # ticks of the last OK, for the app
 
@@ -139,6 +161,7 @@ class Provisioner:
             return False, "password too long"
 
         self.candidate = ssid
+        self.kind = WIFI
         self._country = country
         self._started_at = _now()
         self.state = TRYING
@@ -146,6 +169,69 @@ class Provisioner:
         self._log("wifi: trying %s" % ssid)
         self.link.try_wifi(ssid, psk)
         self._psk = psk
+        return True, "trying"
+
+    def start_broker(self, host, port=1883, user="", password=None,
+                     client_id=None):
+        """Begin trying a broker. Returns (ok, message); never blocks.
+
+        An empty host is a legitimate answer, not a missing field: it means
+        "no broker", which is a supported way to run this device rather than
+        a half-finished setup. It needs no connection to prove, so it commits
+        at once.
+        """
+        if not self.is_open:
+            return False, "the window is closed"
+        if self.state == TRYING:
+            return False, "already trying %s" % self.candidate
+
+        host = (host or "").strip()
+        if len(host) > 120:
+            return False, "host too long"
+        # An absent port defaults; a port of 0 does not. `int(port or 1883)`
+        # conflated the two and quietly turned "0" into 1883, which is a
+        # setting silently ignored rather than a setting refused.
+        if port in (None, ""):
+            port = 1883
+        try:
+            port = int(port)
+        except (TypeError, ValueError):
+            return False, "port must be a number"
+        if not 1 <= port <= 65535:
+            return False, "port out of range"
+        # None means "leave the password alone", which is what the app sends
+        # when its password box is untouched. An empty STRING is different:
+        # it means a broker that wants no password. Conflating them would
+        # wipe the credential every time somebody corrected a typo in the
+        # hostname, and the wipe would only show up as a broker that stopped
+        # accepting the fan.
+        if password is None:
+            password = self.link.broker("MQTT_PASS", "") or ""
+        if len(user or "") > 120 or len(password) > 120:
+            return False, "credentials too long"
+
+        self._broker = {
+            "MQTT_HOST": host,
+            "MQTT_PORT": port,
+            "MQTT_USER": user or "",
+            "MQTT_PASS": password,
+        }
+        if client_id:
+            self._broker["MQTT_CLIENT_ID"] = client_id
+        self.kind = BROKER
+        self.candidate = host or "(none)"
+        self._started_at = _now()
+        self.state = TRYING
+        self.error = ""
+
+        if not host:
+            # Nothing to connect to and nothing to prove. Write it and stop.
+            self._log("wifi: turning the broker off")
+            self._commit()
+            return True, "saved"
+
+        self._log("wifi: trying broker %s:%d" % (host, port))
+        self.link.try_broker(self._broker)
         return True, "trying"
 
     def poll(self):
@@ -160,6 +246,16 @@ class Provisioner:
             self.close("expired")
 
     def _poll_trying(self):
+        if self.kind == BROKER:
+            # `online` means the MQTT session is up, which is the only
+            # evidence that a host, a port and an account are all right.
+            if self.link.online:
+                self._commit()
+                return
+            if _since(self._started_at) > BROKER_TRY_S * 1000:
+                self._give_up(self.link.last_error or "could not reach the broker")
+            return
+
         if self.link.wifi_ok:
             self._commit()
             return
@@ -167,20 +263,30 @@ class Provisioner:
             self._give_up(self.link.last_error or "could not join")
 
     def _commit(self):
-        """It associated. Only now is anything written."""
+        """It worked. Only now is anything written."""
         try:
             import provision
-            provision._write_secrets(self.candidate, self._psk, self._country)
+            if self.kind == BROKER:
+                provision.update_secrets(**self._broker)
+            else:
+                provision._write_secrets(self.candidate, self._psk, self._country)
         except Exception as e:
             # Associated but could not be saved: the fan is on the new network
             # right now and will be on the old one after a reboot. Say so
             # rather than reporting a success that will not survive.
-            self._log("wifi: joined %s but could not write secrets: %s"
+            self._log("wifi: reached %s but could not write secrets: %s"
                       % (self.candidate, e))
             self.state = FAILED
-            self.error = "joined, but saving failed: %s" % e
+            self.error = "connected, but saving failed: %s" % e
+            if self.kind == BROKER:
+                self.link.stop_trying_broker()
+            else:
+                self.link.stop_trying()
             return
-        self.link.adopt()
+        if self.kind == BROKER:
+            self.link.adopt_broker()
+        else:
+            self.link.adopt()
         self.state = OK
         self.changed_at = _now()
         self.error = ""
@@ -192,19 +298,40 @@ class Provisioner:
         self._log("wifi: %s failed (%s); going back" % (self.candidate, why))
         # Nothing to undo on the filesystem -- that is the point of trying
         # first. Dropping the override is the whole rollback.
-        self.link.stop_trying()
+        if self.kind == BROKER:
+            self.link.stop_trying_broker()
+        else:
+            self.link.stop_trying()
 
     # -- what the app reads ------------------------------------------------
 
     def status(self):
         return {
             "state": self.state,
+            "kind": self.kind or "",
             "open": self.is_open,
             "secs_left": self.seconds_left,
             "window_s": WINDOW_S,
             "ssid": self.link.ssid,
             "trying": self.candidate if self.state == TRYING else "",
             "error": self.error,
+        }
+
+    def broker_status(self):
+        """What the fan is pointed at, minus the password.
+
+        The account name is shown because it is what you check when the
+        broker refuses you; the password never leaves the device, the same
+        way it never leaves it over MQTT.
+        """
+        host = self.link.broker("MQTT_HOST", "") or ""
+        return {
+            "host": host,
+            "port": self.link.broker("MQTT_PORT", 1883),
+            "user": self.link.broker("MQTT_USER", "") or "",
+            "has_password": bool(self.link.broker("MQTT_PASS", "")),
+            "enabled": bool(host),
+            "state": getattr(self.link, "state", "offline"),
         }
 
     def scan(self):

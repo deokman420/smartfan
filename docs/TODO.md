@@ -225,3 +225,28 @@ changes underneath a fan nobody has touched. It needs one thing first:
 only ever run before the WDT is armed. Calling it from the live loop means
 threading a feed through its portal loop. Not hard, but it is real work on
 the recovery path, and it should not be bolted on in passing.
+
+### The broker, from the app — done
+
+`GET/POST /api/broker`, behind the same button window as the WiFi. The
+argument is narrower than the WiFi's and still real: this cannot strand the
+fan — wifi stays up and the app stays reachable whatever the answer — but
+being on someone's network is not a licence to point their fan at your
+broker, and these are the credentials that reach Home Assistant.
+
+Built the same way anyway. The fan connects before it saves, so a rejected
+broker leaves no trace and the failure is always "it did not work" rather
+than "it did not work and something changed". An empty host is a legitimate
+answer meaning "no broker", not a missing field, and commits at once because
+there is nothing to connect to.
+
+Two things fell out of it:
+
+* **One `update_secrets()` writer.** Two rewriters of `secrets.py` would each
+  have to remember to carry the other's keys through, which is the bug that
+  loses a broker password the first time somebody changes networks.
+* **`Telemetry` is always constructed.** It used to be built only when a
+  broker existed *at boot*, so adding one from the app brought MQTT up with
+  nothing to publish over it until the next reboot. Its constructor does no
+  I/O and `publish()` returns immediately while offline, so an unused one
+  costs a few topic strings.

@@ -11,6 +11,7 @@
    */
   import { mode } from '$lib/link.js';
   import { F, GAP_MS, STATE_NAME } from '$lib/history.js';
+  import { clock as clockPref, fmtClock } from '$lib/units.js';
 
   let { rows = [], compact = false } = $props();
 
@@ -134,9 +135,11 @@
     return `${Math.floor(m / 60)} h ${m % 60} m`;
   }
 
+  /* One implementation, in lib/units.js. These two files had byte-identical
+     copies of this, which is how a 12-hour clock ends up applied to the
+     chart axis and not to the timeline underneath it. */
   function clock(t) {
-    const d = new Date(t);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return fmtClock(t, $clockPref);
   }
 
   function pointer(e) {

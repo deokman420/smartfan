@@ -183,7 +183,7 @@ The rest is the controller's own stop conditions, mirrored from `main.py`'s
 RUN branch — `MIN_RUN_S`, the post-light hold, and the `MAX_RUN_S` cap. An
 estimate that ignores those is not an estimate of anything the fan will do.
 
-**`test_wifi.py` — 38 checks.** Changing the WiFi from the app, with a fake
+**`test_wifi.py` — 65 checks.** Changing the WiFi from the app, with a fake
 radio. A real association cannot be exercised on the host, but everything
 that decides whether this is *safe* can be.
 
@@ -203,11 +203,23 @@ credentials and comparing them against fixtures. It passed by coincidence,
 because the fixture IP happened to match the real one. The fixtures are
 deliberately implausible now.
 
+The broker rides the same window, and its tests assert the same shape: that
+nothing is written while it is still connecting, that a refused broker leaves
+the file untouched, and that **changing the broker keeps the wifi credentials
+and vice versa** — which is why there is now one `update_secrets()` writer
+rather than two that each had to remember the other's keys.
+
+Two of them are about a distinction that is easy to collapse: an *absent*
+password means "keep the one you have" and an *empty* one means "this broker
+wants none". Conflating them wipes the credential every time somebody
+corrects a typo in the hostname, and the wipe only shows up later as a broker
+that has stopped accepting the fan.
+
 The HTTP contract lives in `test_httpd.py` instead: which status code a shut
 window gives, that the provisioner is never even asked, and that a password
 containing `:,# =` is not mangled by the newline-separated body.
 
-**`test_units.py` — 23 checks.** Celsius and Fahrenheit, everywhere a
+**`test_units.py` — 28 checks.** Celsius and Fahrenheit, everywhere a
 temperature is printed. A browser rather than a unit test of the arithmetic,
 because the arithmetic is two lines and nobody gets it wrong twice — what
 goes wrong is a temperature printed from a path the conversion does not
@@ -222,7 +234,13 @@ differently — 1.8 °F per °C with no offset — and the absolute conversion
 turns a 3.9 degree margin into 39.0, which is a different claim about whether
 the mirror is about to fog rather than a rounding error.
 
-It also asserts the fan is never told: changing units issues no POST.
+It also covers the clock, which belongs to the same module for the same
+reason — a 12-hour clock is a display unit like a degree, and `Chart.svelte`
+and `Activity.svelte` had byte-identical `clock()` functions, which is
+exactly how one gets left behind on 24-hour. Midnight and noon are the cases
+a naive `h % 12` gets wrong; both are 12, not 0.
+
+And it asserts the fan is never told: changing units issues no POST.
 
 **`test_provision.py` — 62 checks.** Host-only, with MicroPython stubbed,
 so it needs no board and touches none. The radio cannot be exercised here,

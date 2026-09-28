@@ -18,6 +18,9 @@ Endpoints:
     GET  /api/history?since=<s>  stored rows as CSV text, oldest first
     GET  /api/wifi               provisioning window state and current SSID
     GET  /api/wifi/scan          visible networks; only while the window is open
+    GET  /api/broker             host, port and account -- never the password
+    POST /api/broker             body: host, port, user, password, one per line
+                                 (window only; empty host means "no broker")
     POST /api/cmd                body: boost | cancel | relearn | clear | ...
     POST /api/set/<PARAM>        body: the new value
     POST /api/wifi               body: ssid, password, country, one per line
@@ -214,6 +217,8 @@ class Api:
             return self._wifi(req)
         if route == "wifi/scan":
             return self._wifi_scan(req)
+        if route == "broker":
+            return self._broker(req)
         if route == "cmd":
             return self._cmd(req)
         if route.startswith("set/"):
@@ -334,6 +339,60 @@ class Api:
         # would die with the association. The app reads GET /api/wifi after.
         return json_response({"ok": True, "state": "trying", "ssid": ssid,
                               "poll": "/api/wifi", "try_s": wifi_try_s()}, 202)
+
+    def _broker(self, req):
+        """The broker the fan publishes to.
+
+        Behind the same button as the WiFi, and for a narrower but real
+        reason: this cannot strand the device -- WiFi stays up and the app
+        stays reachable whatever the answer -- but being on someone's network
+        is not a licence to point their fan at your broker, and these are the
+        credentials that reach Home Assistant.
+        """
+        prov = self._prov()
+        if prov is None:
+            return json_response({"supported": False,
+                                  "reason": "no wifi module on this build"}, 501)
+        if req.method in ("GET", "HEAD"):
+            st = prov.broker_status()
+            st["supported"] = True
+            st["open"] = prov.is_open
+            return json_response(st)
+        if req.method != "POST":
+            return text_response(405, "GET or POST")
+
+        if not prov.is_open:
+            return json_response({
+                "ok": False,
+                "reason": "hold the button on the fan for %ds first"
+                          % int(getattr(self.cfg, "HOLD_PRESS_S", 8)),
+                "open": False,
+            }, 403)
+
+        body = req.text() or ""
+        if len(body) > 400:
+            return text_response(413, "too long")
+        parts = body.split("\n")
+        host = parts[0].strip() if parts else ""
+        port = parts[1].strip() if len(parts) > 1 else ""
+        user = parts[2] if len(parts) > 2 else ""
+        # A fourth line absent means "keep the password you have"; a fourth
+        # line present but empty means "this broker wants no password". The
+        # app sends three lines when its password box was never touched.
+        password = parts[3] if len(parts) > 3 else None
+
+        ok, why = prov.start_broker(host, port or 1883, user, password)
+        if not ok:
+            return json_response({"ok": False, "reason": why}, 400)
+
+        # 200 for "no broker", which is already done and has nothing to
+        # wait for; 202 for a connection that is still being attempted.
+        # Unlike the WiFi this reply does survive -- the device is not going
+        # anywhere -- so the app can poll this same endpoint for the answer.
+        done = why == "saved"
+        return json_response({"ok": True, "state": "saved" if done else "trying",
+                              "host": host, "poll": "/api/wifi"},
+                             200 if done else 202)
 
     def _wifi_scan(self, req):
         if req.method not in ("GET", "HEAD"):
