@@ -1,15 +1,24 @@
 /**
- * A rolling 24 hours of samples, kept in the browser.
+ * A rolling week of samples, kept in the browser and topped up by the fan.
  *
- * Why not Home Assistant's recorder, which already holds 30 days: the app
- * is a client of the broker and nothing else. Pulling history would add a
- * second credential, a second service to be up, and a dependency on the
- * very thing the app is supposed to work without. See app/README.md.
+ * Two sources, one buffer. Live readings arrive every 30 s (broker) or 2 s
+ * (device) and are recorded as they come. On top of that, a device-mode
+ * connection asks the fan for its own stored history -- five-minute means
+ * kept on flash for a week -- and backfills whatever this browser missed.
  *
- * The honest cost of that choice: history only covers the time this
- * browser has had the app open. It survives reloads, it does not invent
- * the gaps, and the charts say so rather than drawing a straight line
- * across a period nobody watched.
+ * That backfill is what closed the one honest complaint about the old
+ * design: history used to cover only the time this browser had personally
+ * had the app open, so a new phone opened on an empty chart and clearing
+ * site data threw the week away. Home Assistant's recorder was the obvious
+ * alternative and is still rejected for the same reason as before -- it
+ * would add a second credential, a second service to be up, and a
+ * dependency on the very thing the app is meant to work without. The fan
+ * keeping its own record adds none of those.
+ *
+ * Resolutions are mixed on purpose, and the charts already handle it: gaps
+ * longer than GAP_MS are drawn as breaks rather than as a confident straight
+ * line, which is exactly the right treatment for the seam between a coarse
+ * backfill and a fine live stream.
  *
  * Samples are stored as plain arrays, not objects. 2880 objects with ten
  * named keys each is roughly six times the JSON, and this goes through
@@ -18,7 +27,11 @@
 import { writable, get } from 'svelte/store';
 
 const KEY = 'smartfan.history';
-const MAX = 2880; // 24 h at one sample per 30 s
+// A week of five-minute means is 2,016 rows and a day of 30 s samples is
+// 2,880. 6,000 holds both with room to spare. The cost is the serialise on
+// persist, which is why that is throttled to once a minute.
+const MAX = 6000;
+const WINDOW_H = 7 * 24;
 const MIN_GAP_MS = 15_000; // the device also publishes on change
 export const GAP_MS = 5 * 60_000; // longer than this is a break, not a line
 
@@ -34,8 +47,13 @@ export const F = {
   light: 6,
   rpm: 7,
   fan: 8,
-  lit: 9
+  lit: 9,
+  st: 10 // controller state, appended so older samples stay valid
 };
+
+/** Stored in F.st. Older samples simply omit it. */
+export const STATE_CODE = { LEARN: 0, IDLE: 1, RUN: 2, BOOST: 3, FAULT: 4 };
+export const STATE_NAME = ['LEARN', 'IDLE', 'RUN', 'BOOST', 'FAULT'];
 
 function load() {
   try {
@@ -44,8 +62,8 @@ function load() {
     const rows = JSON.parse(raw);
     if (!Array.isArray(rows)) return [];
     // Drop anything older than the window, so a browser left closed for a
-    // week does not open on a chart of last week.
-    const cutoff = Date.now() - 24 * 3600_000;
+    // month does not open on a chart of last month.
+    const cutoff = Date.now() - WINDOW_H * 3600_000;
     return rows.filter((r) => Array.isArray(r) && r[F.t] > cutoff);
   } catch {
     return [];
@@ -83,7 +101,8 @@ export function record(p) {
     num(p.light_pc),
     num(p.rpm),
     p.fan_on ? 1 : 0,
-    p.light_on ? 1 : 0
+    p.light_on ? 1 : 0,
+    STATE_CODE[p.state] ?? null
   ];
 
   const next = rows.length >= MAX ? rows.slice(rows.length - MAX + 1) : rows.slice();
@@ -96,6 +115,48 @@ export function record(p) {
     lastWrite = now;
     persist(next);
   }
+}
+
+/**
+ * Fold the fan's own stored rows in, keeping whatever we already have.
+ *
+ * The device sends `[unix_seconds, ...]` in the same field order as F, which
+ * is not an accident: store.py documents that the order is append-only for
+ * exactly this reason. Timestamps are converted to ms here, at the one place
+ * that knows both conventions.
+ *
+ * Live samples win over stored ones for the same bucket. A backfilled row is
+ * a five-minute mean; a live row is a real reading, and where both exist the
+ * reading is the truer answer.
+ */
+export function backfill(rows, intervalS = 300) {
+  if (!Array.isArray(rows) || !rows.length) return 0;
+  const have = get(history);
+  const bucket = Math.max(1000, intervalS * 1000);
+  // Keys of what we hold, at the backfill's own resolution, so an incoming
+  // mean that overlaps live samples is dropped rather than interleaved.
+  const seen = new Set(have.map((r) => Math.floor(r[F.t] / bucket)));
+
+  const cutoff = Date.now() - WINDOW_H * 3600_000;
+  const add = [];
+  for (const row of rows) {
+    if (!Array.isArray(row) || row.length < 2) continue;
+    const t = Number(row[0]) * 1000;
+    if (!Number.isFinite(t) || t < cutoff || t > Date.now() + 60_000) continue;
+    const key = Math.floor(t / bucket);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const next = row.slice();
+    next[F.t] = t;
+    add.push(next);
+  }
+  if (!add.length) return 0;
+
+  const merged = have.concat(add).sort((a, b) => a[F.t] - b[F.t]);
+  const trimmed = merged.length > MAX ? merged.slice(merged.length - MAX) : merged;
+  history.set(trimmed);
+  persist(trimmed);
+  return add.length;
 }
 
 function num(v) {

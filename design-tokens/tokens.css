@@ -1,0 +1,303 @@
+/* ========================================================================
+   Smartfan — canonical design tokens.
+
+   This file is the single source of truth for every colour, typeface,
+   radius and shadow in this repository. Nothing downstream should declare
+   a literal hex value; if a rule needs a colour that is not here, add it
+   here first.
+
+   Lineage: the palette is phbeks.com's, transcribed from the rendered
+   stylesheet at smarthouse/phbeks-site/blog/blog.css. phbeks-site names a
+   design-tokens/tokens.css of its own as canonical but does not ship one,
+   so blog.css is the live artefact and therefore the honest source.
+
+   Three kinds of token live below, kept in separate blocks so the line
+   between "the brand" and "this project" stays visible:
+
+     Brand      — byte-for-byte blog.css. Do not edit to taste; edit only
+                  when blog.css changes, and note the date.
+     Project    — additions and deliberate divergences this app needs,
+                  each with the reason and the measured contrast.
+     Light      — the light scheme, authored here because blog.css is
+                  dark-only and there was nothing upstream to transcribe.
+                  Written to lift into blog.css unchanged; see its own
+                  header for the one caveat.
+
+   Contrast target is WCAG AAA: 7:1 for normal text, 4.5:1 for large. The
+   ratios noted against each colour below are measured, and the checker
+   next to this file re-measures them — in BOTH schemes — against the
+   surfaces each token is actually rendered on. Run it after any change
+   here:
+
+       node design-tokens/check-contrast.mjs
+   ======================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* ── Brand: surfaces ─────────────────────────────────────────────── */
+  --bg:            #0c0f16;
+  --bg-card:       #141820;
+  --bg-card-2:     #1a1f2b;
+  --bg-card-hover: #1f2530;
+
+  /* ── Brand: borders ──────────────────────────────────────────────── */
+  --border:        #1e2530;
+  --border-strong: #2a3140;
+
+  /* ── Brand: accent (teal) ────────────────────────────────────────── */
+  --accent:      #00d4aa;              /* 10.04 / 9.31 / 8.63 — AAA */
+  --accent-dim:  rgba(0, 212, 170, 0.12);
+  --accent-soft: rgba(0, 212, 170, 0.18);
+
+  /* ── Brand: secondary hues ───────────────────────────────────────── */
+  /* Fills and icon chips. --blue (5.21 / 4.83 / 4.48) and --purple
+     (4.84 / 4.49 / 4.16) are below AAA as text; they are not used as
+     text anywhere, and must not be. */
+  --blue:   #3b82f6;
+  --purple: #a855f7;
+  --orange: #f59e0b;
+
+  /* ── Brand: semantic ─────────────────────────────────────────────── */
+  /* The FILL sense of the trio: gauge bands, legend dots, the Nav alert.
+     Graphics, so the floor is 3:1, not 7:1. The text sense of each lives
+     in --good-text / --warn-text / --bad-text under Project below.
+
+     That split is not bookkeeping. One token cannot be both a vivid band
+     and AAA body text on a light surface, and the dark scheme only got
+     away with a single value because a near-black page lets a vivid
+     colour clear 7:1 by accident. --bad/--bad-text already worked this
+     way; the light scheme is what forced the other two to follow. */
+  --good: #10b981;                     /* 7.56 / 7.01 — well over 3 */
+  --warn: #f59e0b;                     /* 8.93 / 8.28 */
+  --bad:  #ef4444;                     /* 5.09 / 4.72 */
+
+  /* ── Brand: text ─────────────────────────────────────────────────── */
+  --text:       #e2e8f0;               /* 15.55 / 14.42 / 13.36 — AAA */
+  --text-muted: #4a5568;               /* 2.55 / 2.36 / 2.19 — decorative
+                                          only; never for anything that has
+                                          to be read. */
+
+  /* ── Brand: type ─────────────────────────────────────────────────── */
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+
+  /* ── Brand: shape ────────────────────────────────────────────────── */
+  --radius:    12px;
+  --radius-lg: 16px;
+  --shadow:    0 4px 14px rgba(0, 0, 0, 0.35);
+
+  /* ── Brand: backdrop ─────────────────────────────────────────────── */
+  /* A calm, static page gradient; no animation to run down a phone. */
+  --backdrop: linear-gradient(180deg, rgba(0, 212, 170, 0.05) 0%, transparent 42%),
+              radial-gradient(90% 60% at 100% 0%, rgba(59, 130, 246, 0.05) 0%, transparent 55%),
+              var(--bg);
+
+  /* ══ Project ══════════════════════════════════════════════════════ */
+
+  /* --text-dim is a divergence, not an addition. Brand value #8492a6
+     measures 6.06 / 5.62 / 5.21: AA, not AAA. On phbeks.com it carries
+     decorative card tags; here it carries the field name and the
+     qualifier on every stat card, which is content, in a room that is
+     often steamy and badly lit.
+
+     Same hue and saturation, walked up in lightness only, to the first
+     value clearing 7:1 on all three surfaces: 8.15 / 7.56 / 7.00. */
+  --text-dim: #9faab9;
+
+  /* The TEXT sense of the semantic trio. --bad is fine as a fill or a 1px
+     border but fails AAA as text, and "Fault" in the hero facts is small
+     text. These are the same hues lifted into range, and they replace the
+     two literals the alert banners used to carry inline.
+
+     --good-text is the same value as --good here, which is the honest
+     answer on dark rather than an oversight: the brand green already
+     clears 7:1 on both surfaces, so lifting it would only make the two
+     senses differ for the sake of differing. On light they diverge. */
+  --bad-text:  #fca5a5;                /* 10.10 / 9.37 / 8.68 — AAA */
+  --warn-text: #fcd34d;                /* 13.29 / 12.33 / 11.42 — AAA */
+  --good-text: #10b981;                /* 7.56 / 7.01 — AAA */
+
+  /* Green. The brand has --good for the semantic sense; this app also
+     needs a plain green for an icon chip that means neither good nor bad
+     (the light sensor), so the chip row reads as six distinct hues. */
+  --green: #22c55e;
+
+  /* Hue washes at 12%, matching --accent-dim's weight, so every icon
+     chip is built the same way instead of from inline rgba(). */
+  --blue-dim:   rgba(59, 130, 246, 0.12);
+  --purple-dim: rgba(168, 85, 247, 0.12);
+  --orange-dim: rgba(245, 158, 11, 0.12);
+  --green-dim:  rgba(34, 197, 94, 0.12);
+  --bad-dim:    rgba(239, 68, 68, 0.12);
+
+  /* Alert-banner washes; heavier than the chips because they tint a
+     whole block, and paired with a visible border. */
+  --bad-wash:    rgba(239, 68, 68, 0.08);
+  --bad-edge:    rgba(239, 68, 68, 0.35);
+  --warn-wash:   rgba(245, 158, 11, 0.08);
+  --warn-edge:   rgba(245, 158, 11, 0.35);
+
+  /* Hairline lift for a pill sitting on the page backdrop, and the
+     scrim behind the settings sheet. */
+  --pill-fill: rgba(255, 255, 255, 0.02);
+  --scrim:     rgba(5, 7, 11, 0.72);
+
+  /* The teal bloom in the top-left corner of the hero card. Lighter than
+     --accent-dim: it has to sit under the gauge without tinting it. */
+  --hero-glow: rgba(0, 212, 170, 0.07);
+
+  /* The OS chrome tint, written into <meta name="theme-color"> at runtime by
+     src/lib/appicon.js so the phone's status bar says whether the fan is
+     running without the app having to be on screen to read.
+
+     --bar is --bg exactly, which is what app.html ships in the tag. --bar-
+     active is --bg with --accent composited over it at 14 %: the same move
+     --backdrop already makes at 5 %, pushed far enough to be unmistakable
+     as a 20px strip at the top of a phone, and still dark enough that the
+     white system glyphs on top of it stay legible (15.07:1, measured). Not
+     text tokens, so check-contrast.mjs does not police them. */
+  --bar:        #0c0f16;
+  --bar-active: #0a2b2b;
+
+  /* iOS installs run under a black-translucent status bar, which shows page
+     content rather than taking a colour from us, so --bar-active cannot
+     reach it. The top of the page IS that strip there: this is --backdrop
+     with its teal stop doubled, swapped in by [data-fan='on'] so iOS gets
+     the same signal from the only surface it will let us paint. */
+  --backdrop-active: linear-gradient(180deg, rgba(0, 212, 170, 0.1) 0%, transparent 42%),
+              radial-gradient(90% 60% at 100% 0%, rgba(59, 130, 246, 0.05) 0%, transparent 55%),
+              var(--bg);
+}
+
+/* ========================================================================
+   Light.
+
+   Authored here, not transcribed: phbeks.com is dark-only -- blog.css has
+   no light palette and no prefers-color-scheme block -- so there was
+   nothing upstream to copy. This is therefore the light half of the design
+   system rather than a Smartfan-local theme, written to be lifted into
+   blog.css unchanged.
+
+   It is a palette, not an inversion. Every hue below is the brand hue at
+   the same H and S, walked DOWN in lightness until it clears its floor on
+   the light surfaces, so the family survives the switch. The ratios are
+   measured, and check-contrast.mjs re-measures both schemes:
+
+       node design-tokens/check-contrast.mjs
+
+   The cost, stated plainly: AAA teal on white is dark. --accent goes from
+   #00d4aa to #00614e, because 7:1 against white admits nothing brighter.
+   Light mode is a quieter thing than dark mode here, and that is the
+   arithmetic rather than a choice.
+
+   Applied by an explicit data-theme on <html>, never by the media query
+   alone, so "system" and an override are the same code path and the
+   palette is written once. app/src/lib/theme.js resolves it, including
+   following the OS while the app is open. A consumer without JS -- which
+   blog.css would be -- needs this block repeated under
+   `@media (prefers-color-scheme: light) { :root:not([data-theme='dark']) }`;
+   that is the one thing that does not lift across unchanged.
+   ======================================================================== */
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* ── Surfaces ────────────────────────────────────────────────────── */
+  /* Inverted in role, not in value: on dark a card LIFTS off the page, so
+     on light it is the page that recedes and the card that is plain white.
+     --bg-card-2 still means "recessed" -- form fields and the chart range
+     buttons -- which on light means a step darker rather than lighter. */
+  --bg:            #f7f9fb;
+  --bg-card:       #ffffff;
+  --bg-card-2:     #eef2f6;
+  --bg-card-hover: #f2f6fa;
+
+  /* ── Borders ─────────────────────────────────────────────────────── */
+  --border:        #dde4ec;
+  --border-strong: #c3ccd8;
+
+  /* ── Accent (teal) ───────────────────────────────────────────────── */
+  /* 7.06 on --bg, 7.45 on --bg-card — AAA. The brand #00d4aa measures
+     1.68 on white and is not usable as text in this scheme at all. */
+  --accent:      #00614e;
+  --accent-dim:  rgba(0, 97, 78, 0.10);
+  --accent-soft: rgba(0, 97, 78, 0.16);
+
+  /* ── Secondary hues ──────────────────────────────────────────────── */
+  /* Fills and icon chips, never text, exactly as in the dark scheme. */
+  --blue:   #166af4;
+  --purple: #9c3df6;
+  --orange: #9f6607;
+
+  /* ── Semantic: the FILL sense ────────────────────────────────────── */
+  /* Gauge bands and legend dots, at the 3:1 graphic floor. Held at roughly
+     equal weight to each other -- 4.75, 4.76, 4.95 on --bg -- because they
+     are read side by side on one arc, and an AAA-grade green beside a
+     4.5-grade red reads as two different design systems. Walking all three
+     to 7:1 was the first attempt and produced a muddy brown band. */
+  --good: #15803d;                     /* 4.75 / 5.02 */
+  --warn: #b45309;                     /* 4.76 / 5.02 */
+  --bad:  #d32222;                     /* 4.95 / 5.22 */
+
+  /* ── Text ────────────────────────────────────────────────────────── */
+  --text:       #0f172a;               /* 16.92 / 17.85 / 15.87 — AAA */
+  --text-muted: #94a3b8;               /* decorative only, as on dark */
+  --text-dim:   #455265;               /* 7.51 / 7.93 / 7.05 — AAA */
+
+  /* The TEXT sense, walked all the way to AAA. On light every one of these
+     is genuinely darker than its fill above -- which is the whole reason
+     the two senses had to become separate tokens. */
+  --bad-text:  #ac0f0f;                /* 7.03 / 7.42 — AAA */
+  --warn-text: #774c05;                /* 7.06 / 7.45 — AAA */
+  --good-text: #086244;                /* 7.00 / 7.39 — AAA */
+
+  --green: #17843f;
+
+  /* ── Washes ──────────────────────────────────────────────────────── */
+  /* Built from the LIGHT hues above, not the brand ones, so a chip's glyph
+     and its wash stay in the same family. 10% rather than dark's 12%:
+     the same wash reads heavier over white. */
+  --blue-dim:   rgba(22, 106, 244, 0.10);
+  --purple-dim: rgba(156, 61, 246, 0.10);
+  --orange-dim: rgba(159, 102, 7, 0.10);
+  --green-dim:  rgba(23, 132, 63, 0.10);
+  --bad-dim:    rgba(211, 34, 34, 0.10);
+
+  --bad-wash:    rgba(211, 34, 34, 0.07);
+  --bad-edge:    rgba(211, 34, 34, 0.30);
+  --warn-wash:   rgba(159, 102, 7, 0.08);
+  --warn-edge:   rgba(159, 102, 7, 0.30);
+
+  /* ── Shape and depth ─────────────────────────────────────────────── */
+  /* A shadow on light is a tint of the darkest text, not black at 35%,
+     which on white reads as dirt rather than depth. */
+  --shadow:    0 4px 14px rgba(15, 23, 42, 0.1);
+  --pill-fill: rgba(15, 23, 42, 0.03);
+  --scrim:     rgba(15, 23, 42, 0.45);
+
+  /* The hero bloom keeps the BRIGHT brand teal: it is a light source, and
+     the walked-down --accent reads as a stain over white. */
+  --hero-glow: rgba(0, 212, 170, 0.16);
+
+  /* ── Backdrop ────────────────────────────────────────────────────── */
+  /* Same construction, but the resting wash is only lifted from 0.05 to
+     0.06, not doubled. Doubling was the obvious move and looked wrong on
+     screen: a teal that reads as "a faint warmth at the top" over #0c0f16
+     reads as "this app is mint green" over #f7f9fb, because there is far
+     more headroom above a light surface than below a dark one. The ACTIVE
+     wash still has to shout, so that one is genuinely heavier. */
+  --backdrop: linear-gradient(180deg, rgba(0, 212, 170, 0.06) 0%, transparent 42%),
+              radial-gradient(90% 60% at 100% 0%, rgba(59, 130, 246, 0.05) 0%, transparent 55%),
+              var(--bg);
+  --backdrop-active: linear-gradient(180deg, rgba(0, 212, 170, 0.22) 0%, transparent 42%),
+              radial-gradient(90% 60% at 100% 0%, rgba(59, 130, 246, 0.07) 0%, transparent 55%),
+              var(--bg);
+
+  /* ── OS chrome ───────────────────────────────────────────────────── */
+  /* --bar is --bg, as on dark. --bar-active is --bg under the bright brand
+     teal at 18%: light enough that the phone keeps its DARK status-bar
+     glyphs, which is the whole reason it cannot simply be --accent. */
+  --bar:        #f7f9fb;
+  --bar-active: #caf2ec;
+}

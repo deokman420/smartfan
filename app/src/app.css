@@ -1,75 +1,52 @@
 /* ========================================================================
-   Smartfan app — phbeks.com design system.
+   Smartfan app — global stylesheet.
 
-   The :root block mirrors phbeks-site/design-tokens/tokens.css. Keep it in
-   sync if the canonical tokens change; do not invent values here.
+   Every token comes from ../../design-tokens/tokens.css, which is the one
+   canonical source for this repo. This file declares no colours of its
+   own; if you need one that is not a var(), add it there.
    ======================================================================== */
 
-:root {
-  color-scheme: dark;
+@import '../../design-tokens/tokens.css';
 
-  /* Surfaces */
-  --bg: #0c0f16;
-  --bg-card: #141820;
-  --bg-card-2: #1a1f2b;
-  --bg-card-hover: #1f2530;
+/* ------------------------------------------------------------------------
+   The typefaces, served by the fan.
 
-  /* Borders */
-  --border: #1e2530;
-  --border-strong: #2a3140;
+   These used to come from fonts.googleapis.com, which meant three requests
+   left the network every time the app was opened — including from a phone's
+   home screen, and including on a device whose whole claim is that nothing
+   leaves the network. Measured, not assumed: one for the stylesheet and one
+   for each woff2.
 
-  /* Accent (teal) */
-  --accent: #00d4aa;
-  --accent-dim: rgba(0, 212, 170, 0.12);
-  --accent-soft: rgba(0, 212, 170, 0.18);
+   Both are variable fonts, so one file per family covers every weight the
+   design system asks for. Latin subset only: 78 kB for the pair, against
+   2 MB of free flash. The app is also served over a LAN that may have no
+   route out at all, where the old arrangement silently fell back to system
+   fonts and quietly stopped looking like the design system.
 
-  /* Secondary hues */
-  --blue: #3b82f6;
-  --purple: #a855f7;
-  --orange: #f59e0b;
-  --green: #22c55e;
+   Licensed under the SIL Open Font License 1.1, redistributed with the
+   licence alongside them in static/fonts/LICENSE.txt.
+   ------------------------------------------------------------------------ */
 
-  /* Semantic */
-  --good: #10b981;
-  --warn: #f59e0b;
-  --bad: #ef4444;
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin-var.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
-  /* Text.
-
-     Two of the three brand text tones are deliberately altered here, and
-     the canonical values are recorded so the divergence is visible rather
-     than accidental:
-
-       --text-dim    brand #8492a6 -> 5.62:1 on --bg-card. AA, not AAA.
-       --text-muted  brand #4a5568 -> 2.36:1. Fails AA outright.
-
-     On phbeks.com those carry decorative card tags. Here they were carrying
-     the field name and the qualifier on every stat card, which is content,
-     in a room that is often steamy and badly lit.
-
-     #9faab9 is the same hue and saturation as --text-dim, walked up in
-     lightness only, to the first value clearing 7:1 against --bg,
-     --bg-card AND --bg-card-2: 8.15 / 7.56 / 7.00. Every piece of text in
-     the app now passes AAA.
-
-     --text-muted is kept at its brand value and used for nothing that has
-     to be read. */
-  --text: #e2e8f0;
-  --text-dim: #9faab9;
-  --text-muted: #4a5568;
-
-  /* Type */
-  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
-
-  /* Shape */
-  --radius: 12px;
-  --radius-lg: 16px;
-  --shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-
-  --backdrop: linear-gradient(180deg, rgba(0, 212, 170, 0.05) 0%, transparent 42%),
-    radial-gradient(90% 60% at 100% 0%, rgba(59, 130, 246, 0.05) 0%, transparent 55%),
-    var(--bg);
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin-var.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 * {
@@ -77,7 +54,9 @@
 }
 
 html {
-  color-scheme: dark;
+  /* color-scheme is not set here any more: tokens.css declares it per scheme,
+     so form controls, scrollbars and the canvas the browser paints behind the
+     page follow the palette instead of insisting on dark under it. */
   background: var(--bg);
 }
 
@@ -93,6 +72,17 @@ body {
   /* Home-screen installs run under the notch. */
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
     env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* The fan is running, set by lib/appicon.js alongside the theme-color it
+   writes. An iOS home-screen install draws under a black-translucent status
+   bar, so that strip shows the page rather than taking a colour from us --
+   the top of the backdrop IS the status bar there, and strengthening its teal
+   stop is the only way to tint it. Costs nothing on the platforms where
+   theme-color already works: the same gradient, slightly warmer. */
+html[data-fan='on'] body {
+  background: var(--backdrop-active);
+  background-attachment: fixed;
 }
 
 button,
@@ -123,10 +113,11 @@ button {
 }
 
 .wrap {
-  max-width: 940px;
-  margin: 0 auto;
-  padding-inline: 18px;
-  padding-block: 22px 64px;
+  /* The page shell owns width and padding. This class remains so the
+     regression checks can still read the rendered app as one region. */
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 
 /* --- section headings --------------------------------------------------- */
@@ -188,7 +179,6 @@ h2::after {
 .stat:hover {
   background: var(--bg-card-hover);
   border-color: var(--border-strong);
-  transform: translateY(-2px);
 }
 
 /* The site's card-icon pattern: a tinted chip that colour-codes the row at
@@ -218,23 +208,23 @@ h2::after {
   color: var(--accent);
 }
 .icon-blue {
-  background: rgba(59, 130, 246, 0.12);
+  background: var(--blue-dim);
   color: var(--blue);
 }
 .icon-purple {
-  background: rgba(168, 85, 247, 0.12);
+  background: var(--purple-dim);
   color: var(--purple);
 }
 .icon-orange {
-  background: rgba(245, 158, 11, 0.12);
+  background: var(--orange-dim);
   color: var(--orange);
 }
 .icon-green {
-  background: rgba(34, 197, 94, 0.12);
+  background: var(--green-dim);
   color: var(--green);
 }
 .icon-red {
-  background: rgba(239, 68, 68, 0.12);
+  background: var(--bad-dim);
   color: var(--bad);
 }
 
@@ -268,18 +258,23 @@ h2::after {
 
 /* --- tone ---------------------------------------------------------------- */
 
+/* Every tone takes the TEXT sense of its colour, never the fill sense.
+   --bad already did; --good and --warn now do too, because on light the
+   fill values are vivid band colours that do not clear 7:1 as text. The
+   gauge bands and the legend dots are the other half of that split and
+   keep using --good / --warn / --bad directly. */
 .tone-ok,
 .tone-calm {
-  color: var(--good);
+  color: var(--good-text);
 }
 .tone-active {
   color: var(--accent);
 }
 .tone-warn {
-  color: var(--warn);
+  color: var(--warn-text);
 }
 .tone-bad {
-  color: var(--bad);
+  color: var(--bad-text);
 }
 .tone-info {
   color: var(--blue);
@@ -300,7 +295,7 @@ h2::after {
   padding: 5px 12px;
   border-radius: 999px;
   border: 1px solid currentColor;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--pill-fill);
   white-space: nowrap;
 }
 

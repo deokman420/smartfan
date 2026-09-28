@@ -5,10 +5,15 @@ non-zero on failure, so any of them can gate a flash or a deploy.
 
 ```bash
 python tests/test_manifest.py        # host only, no board needed
+python tests/test_httpd.py           # host only, no board needed
+python tests/test_device_app.py      # host only, the app with no broker
+python tests/test_appicon.py         # host only, the tab icon and status bar
+python tests/test_theme.py           # host only, light / dark / system
 python tests/test_app.py             # the app, needs broker + device
 python tests/test_improv.py          # host only, no board needed
 python tests/test_provision.py       # host only, no board needed
 python tests/test_device.py [COM5]   # hardware, needs the Pico attached
+python tests/test_device_http.py     # hardware, over WiFi, needs it on the network
 python tests/test_ha.py              # integration, needs HA + device online
 python tests/test_ui.py [--headed]   # browser, needs HA reachable
 ```
@@ -43,11 +48,112 @@ wedging the stream, a packet split across two reads must not answer early
 (which is what a serial port actually does), and the network list must end
 with an empty result or the browser waits for more until it times out.
 
-**`test_provision.py` — 41 checks.** Host-only, with MicroPython stubbed,
+**`test_httpd.py` — 54 checks.** The on-device server, its API and its
+stored history, with no board and no browser. `httpd.py`, `webapi.py` and
+`store.py` are portable Python on purpose, because the alternative is testing
+a web server by flashing a fan controller and refreshing a phone.
+
+The server under test is stepped the way the control loop steps it — short,
+bounded `step()` calls from one thread — so a handler that blocked would hang
+the suite rather than passing it. It also asserts the things a browser must
+not be able to do: escape the bundle, boost the fan from the wrong website,
+or push firmware through a door with no credentials.
+
+Two real bugs came out of writing it, both invisible on hardware until they
+bit. The CORS check accepted `http://192.168.0.9.evil.example`, a domain
+anyone can register that merely *starts* like a private address. And closing
+a socket with unread bytes sends a RST that discards the response just
+written — which hit precisely the two answers that most need to be read, the
+503 at the connection cap and the 413 for an oversized body.
+
+**`test_device_http.py` — 18 checks.** The server on the board, over real
+WiFi, which is the only place the things that actually broke could be seen.
+It checks that `fan.local` resolves, that a browser loads the whole bundle
+off flash, that Boost reaches the fan, that eight simultaneous requests are
+all served, and — after every phase — that `up_min` has not gone backwards,
+because the watchdog reboots the board if the control loop ever stops feeding
+it and that is the loudest failure available.
+
+It found that the history endpoint could not have worked at all on hardware:
+a week of rows costs ~890 bytes of heap each and raised `MemoryError` at 512
+of them, on code the host suite passed instantly. See `docs/phase-5-plan.md`.
+
+One trap for anyone debugging with a cable: **`mpremote exec` reboots the
+board** — entering the raw REPL sends a soft reset — so `up_min` dropping to
+zero right after a USB command is the tooling, not a fault.
+
+**`test_device_app.py` — 14 checks.** The built app against the real
+`httpd.py` and `webapi.py`, running on the host with a stand-in controller.
+It proves the whole no-broker path end to end — a tile shows the number the
+API returned, Boost reaches the fan, and a browser that has never seen this
+fan draws a week of history off the fan's own flash. The only fiction is the
+fan itself.
+
+Boost is verified on the controller object rather than on the app's screen.
+The screen is the thing under test and would otherwise be marking its own
+homework.
+
+The bundle is served by the real `httpd.py` here too, not by a convenient
+Python web server. That hole hid a genuine bug: a browser opens six
+connections at once, the server capped them at three and answered 503, and
+**a browser does not retry a 503** — it dropped the stylesheet and half the
+scripts and rendered a blank page.
+
+It also asserts that **nothing leaves the network**, which is the app's
+central claim and was quietly untrue: the typefaces came from
+`fonts.googleapis.com`, so opening the fan told Google about it. They are
+served by the device now, and this check is what keeps the claim honest.
+
+**`test_appicon.py` — 18 checks.** The spinning favicon and the status-bar
+tint, which follow `fanRunning` out of `lib/link.js`. Needs only a build:
+the thing under test is a function of one boolean, so a real fan would add
+nothing but new ways to fail.
+
+It loads `lib/appicon.js` verbatim as a blob module, against the built
+`index.html` with its `<script>` tags stripped. The stripping is not
+squeamishness — `+layout.svelte` starts a watcher of its own and two of them
+on one page fight over `<head>`, which is how the suite first failed.
+
+Half the checks are about stopping rather than starting: a backgrounded tab
+must drop the timer, and teardown must put the icon, the theme colour and
+`data-fan` back exactly as `app.html` shipped them. A favicon is decoration,
+and decoration that leaks a 13 fps repaint into a tab nobody is looking at is
+worse than no decoration.
+
+**`test_theme.py` — 18 checks.** Light, dark and system. Needs only a
+build; the scheme is a function of one saved string and one OS preference,
+and neither involves the fan.
+
+Not "does light mode look light" — the screenshots show that, and
+`check-contrast.mjs` proves the palette clears AAA without a browser at all.
+What only a browser proves is the wiring: that `system` keeps following the
+OS while the app is open rather than reading it once at boot, that an
+explicit choice then ignores the OS, and that Cancel in the settings sheet
+does **not** revert the scheme — the theme is deliberately outside the
+connection draft, and snapping back on Cancel is the bug that arrangement
+exists to prevent.
+
+One check is worth more than the rest: that `data-theme` is already set when
+the document reaches `readyState === 'interactive'`. The inline script in
+`app.html` is the only thing between a light-mode user and a dark frame on
+every single load, it duplicates three lines of `theme.js`, and duplicated
+code that is never exercised is how a flash comes back six months later.
+Asking after `load` would only prove `theme.js` eventually ran.
+
+**`test_provision.py` — 62 checks.** Host-only, with MicroPython stubbed,
 so it needs no board and touches none. The radio cannot be exercised here,
 but everything that decides whether provisioning is *correct* can be: the
-derived AP credentials, form decoding, the `secrets.py` it writes, and the
-escaping of network names it did not choose.
+derived AP credentials, form decoding, the `secrets.py` and `identity.py` it
+writes, and the escaping of network names it did not choose.
+
+It also covers what setup now asks for beyond the password. **The room is
+free text that becomes a DNS label, an MQTT topic segment and a display
+name**, so every shape a person might type — `Master Bath`, `WC #2`, sixty
+characters, `!!!` — is asserted to come out as something all three can
+accept. And the **country** is checked against a list rather than passed
+through, because an invalid regulatory domain is not always an error: some
+builds accept it and quietly restrict the channels, which presents as a
+wrong password.
 
 Two of those earn their keep on their own. **"PSK meets the WPA2
 minimum"** — anything under 8 characters makes the AP come up *open*, which

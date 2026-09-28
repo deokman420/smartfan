@@ -160,7 +160,13 @@ httpd = Quiet(("127.0.0.1", PORT), handler)
 httpd.RequestHandlerClass.log_message = lambda *a, **k: None
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
-cfg = {"host": secrets.MQTT_HOST, "port": 1884, "room": "bathroom",
+# Seeded in broker mode. The app now defaults to talking straight to the fan
+# over HTTP, which is the right default and the wrong thing for this suite:
+# these tests exist to prove the broker path still works end to end, against
+# the live broker and the live fan. The device path has its own suite in
+# tests/test_httpd.py.
+cfg = {"mode": "broker",
+       "host": secrets.MQTT_HOST, "port": 1884, "room": "bathroom",
        "username": secrets.MQTT_USER, "password": secrets.MQTT_PASS}
 
 errors = []
@@ -249,7 +255,7 @@ with sync_playwright() as pw:
     # --- charts -----------------------------------------------------------
     go("Charts")
     cards = page.locator(".chart-card")
-    check("every chart renders", cards.count() == 5, "%d cards" % cards.count())
+    check("every chart renders", cards.count() == 6, "%d cards" % cards.count())
     # A chart that silently falls back to the empty state still "renders".
     check("charts actually draw data",
           page.locator(".chart-card svg path.line").count() >= 5,
@@ -257,7 +263,9 @@ with sync_playwright() as pw:
     check("no chart is stuck on the empty state",
           page.locator(".chart-card .nodata").count() == 0)
 
-    cards.nth(1).click()          # Excess, the one carrying thresholds
+    # By name, not position: the activity timeline is the first card, and
+    # Excess is the one whose detail has to draw the thresholds.
+    page.get_by_role("button", name="Excess above baseline").click()
     page.wait_for_timeout(400)
     check("tapping a chart opens detail",
           page.get_by_role("dialog", name="Excess above baseline").count() > 0)
@@ -372,11 +380,29 @@ with sync_playwright() as pw:
     check("first run opens settings", first.locator("#host").is_visible())
     check("first run offers setup, not an error",
           "Set up connection" in first_body or
-          "Connect to your broker" in first_body)
+          "Point the app at your fan" in first_body)
     check("first run shows no broker rejection",
           "reject" not in first_body.lower(), first_body[:60])
-    check("first run prefills the defaults",
+
+    # The default is the fan itself, because that is the setup that needs
+    # nothing else running. Served from 127.0.0.1 this page cannot have come
+    # off a device, so it still asks -- what it must not do is ask for broker
+    # credentials as though they were the only way in.
+    check("first run offers both ways to connect",
+          first.get_by_role("radio", name="The fan itself").is_visible() and
+          first.get_by_role("radio", name="An MQTT broker").is_visible())
+    check("the fan itself is the default",
+          first.get_by_role("radio", name="The fan itself")
+          .get_attribute("aria-checked") == "true")
+    check("device mode asks for an address and no password",
+          first.locator("#httpPort").is_visible() and
+          first.locator("#pass").count() == 0)
+
+    first.get_by_role("radio", name="An MQTT broker").click()
+    check("choosing a broker prefills its defaults",
           first.locator("#port").input_value() == "1884")
+    check("choosing a broker asks for credentials",
+          first.locator("#pass").is_visible())
     check("no JS errors on first run", not first_errors,
           "; ".join(first_errors[:2]))
     fresh.close()

@@ -36,7 +36,7 @@ def build(hours=6):
         light = 31.4 if lit else 1.6
         rows.append([t, round(rh, 1), round(base, 1), round(rh - base, 1),
                      round(temp, 1), round(dp, 1), round(light, 1),
-                     rpm, fan, lit])
+                     rpm, fan, lit, 2 if fan else 1])
     return rows
 
 if __name__ == "__main__":

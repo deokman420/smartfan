@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="MQTT broker reference for the Smartfan: which listeners the Home Assistant Mosquitto add-on already exposes, why the app needs WebSockets, the topic map, and how to verify it yourself.">
+<meta name="description" content="MQTT broker reference for the Smartfan: when you need a broker at all, which listeners the Home Assistant Mosquitto add-on already exposes, why the app needs WebSockets for that path, the topic map, and how to verify it yourself.">
 <link rel="icon" href="data:,">
 <title>Smartfan Broker Reference</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -142,22 +142,67 @@ footer {
 <div class="wrap">
 
 <header>
-  <p class="eyebrow">Smartfan &middot; <b>Phase 4d</b> &middot; App transport</p>
+  <p class="eyebrow">Smartfan &middot; <b>Phase 5</b> &middot; App transport</p>
   <h1>MQTT broker reference</h1>
-  <p class="lede">What the app connects to, why it has to be WebSockets, and
-  what is already running on your Home Assistant host. Short version: nothing
-  needs changing.</p>
+  <p class="lede">What the app connects to when you point it at a broker, why
+  that has to be WebSockets, and what is already running on your Home
+  Assistant host. Short version: nothing needs changing &mdash; and as of
+  phase&nbsp;5 you do not need a broker at all.</p>
 </header>
 
 <div class="verdict">
   <span class="tick">&#10003;</span>
-  <p><strong>No broker configuration is required.</strong> The Home Assistant
-  Mosquitto add-on already serves MQTT over WebSocket on port <code>1884</code>.
-  Verified on 2026-09-27 with a real handshake &mdash; the server returned
-  <code>101 Switching Protocols</code> and negotiated
+  <p><strong>A broker is now optional.</strong> The device serves the app off
+  its own flash and answers a JSON API on port&nbsp;80, so
+  <code>http://fan.local/</code> is a complete setup with no Mosquitto and no
+  Home Assistant anywhere on the network. Leave <code>MQTT_HOST</code> empty
+  in <code>secrets.py</code> and the controller runs WiFi&#8209;only. This page
+  is for the other case: adding a broker, and with it Home Assistant.</p>
+</div>
+
+<div class="verdict">
+  <span class="tick">&#10003;</span>
+  <p><strong>If you do use one, no broker configuration is required.</strong>
+  The Home Assistant Mosquitto add-on already serves MQTT over WebSocket on
+  port <code>1884</code>. Verified on 2026-09-27 with a real handshake &mdash;
+  the server returned <code>101 Switching Protocols</code> and negotiated
   <code>Sec-WebSocket-Protocol: mqtt</code>. The <code>listener 9001</code>
   block written into the phase&nbsp;4 plan is not needed.</p>
 </div>
+
+<h2>Which setup are you in?</h2>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Setup</th><th>Has to be running</th><th>What you get</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>Device only</b></td>
+      <td>The fan, on WiFi</td>
+      <td>The app at <code>http://fan.local/</code>, live readings, every
+          control, and a week of history kept on the board. No broker, no
+          Home Assistant, no server, no account.</td>
+    </tr>
+    <tr>
+      <td><b>With a broker</b></td>
+      <td>The fan, plus Mosquitto</td>
+      <td>All of the above, plus Home Assistant&rsquo;s 31 entities, its
+          recorder, its automations, and an app page that can watch a fan it
+          was not served by.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>The app picks between them under <b>Settings &rarr; Connection</b>, and
+defaults to the device. Served from the fan itself it never asks: the address
+is the one in the address bar and there is no account to enter.</p>
+
+<p><b>A standalone broker is fine too.</b> Nothing here needs the Home
+Assistant add-on specifically &mdash; Mosquitto in Docker with
+<code>listener 1883</code> for the device and <code>listener 1884</code> plus
+<code>protocol websockets</code> for the app does the same job. The add-on is
+just the one most people already have.</p>
 
 <h2>Why the app cannot use port 1883</h2>
 
@@ -301,7 +346,9 @@ reusing the device&rsquo;s:</p>
 <h2>Topic map</h2>
 
 <p>The app subscribes to what the device already publishes. Nothing new is
-added on the firmware side.</p>
+added on the firmware side. In device mode none of this is used at all
+&mdash; the equivalents are <code>GET /api/state</code> and
+<code>POST /api/cmd</code>, documented in the project README.</p>
 
 <div class="tablewrap">
 <table>
@@ -320,7 +367,16 @@ added on the firmware side.</p>
     <tr>
       <td><code>fan/bathroom/cmd</code></td>
       <td>app &rarr; device</td>
-      <td>Commands, including <code>update &lt;url&gt;</code> for OTA</td>
+      <td>Commands, including <code>update &lt;url&gt;</code> for OTA. That
+          one is <b>MQTT&#8209;only</b>: the HTTP API refuses it, so the
+          command that changes what the device runs stays on the channel with
+          credentials on it</td>
+    </tr>
+    <tr>
+      <td><code>fan/bathroom/set/&lt;PARAM&gt;</code></td>
+      <td>app &rarr; device</td>
+      <td>One tunable&rsquo;s new value. The device validates against its own
+          ranges and rejects anything outside them</td>
     </tr>
     <tr>
       <td><code>homeassistant/&hellip;/config</code></td>

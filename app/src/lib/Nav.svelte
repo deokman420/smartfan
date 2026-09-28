@@ -35,7 +35,7 @@
 <style>
   nav {
     display: flex;
-    gap: 4px;
+    gap: 2px;
   }
 
   button {
@@ -43,35 +43,53 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
+    justify-content: center;
+    gap: 3px;
     position: relative;
     background: transparent;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    padding: 9px 4px;
+    border: 0;
+    border-radius: 12px;
+    padding: 8px 2px 7px;
+    min-height: 52px;
     color: var(--text-dim);
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 500;
-    transition: background 0.18s, color 0.18s, border-color 0.18s;
+    letter-spacing: -0.01em;
+    transition: background 0.18s, color 0.18s;
   }
 
   button:hover {
     color: var(--text);
-    background: var(--bg-card);
   }
 
   button.active {
     color: var(--accent);
-    background: var(--accent-dim);
-    border-color: var(--accent-soft);
+  }
+
+  button.active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 22%;
+    right: 22%;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+
+  .label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .ico {
     display: inline-flex;
   }
   .ico svg {
-    width: 17px;
-    height: 17px;
+    width: 18px;
+    height: 18px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.7;
@@ -83,13 +101,13 @@
      going looking for it. */
   .badge {
     position: absolute;
-    top: 6px;
-    right: calc(50% - 20px);
+    top: 8px;
+    right: calc(50% - 16px);
     width: 7px;
     height: 7px;
     border-radius: 50%;
     background: var(--bad);
-    box-shadow: 0 0 0 2px var(--bg);
+    box-shadow: 0 0 0 2px var(--bg-card);
   }
 
   @media (min-width: 960px) {
@@ -101,14 +119,30 @@
       flex-direction: row;
       justify-content: flex-start;
       gap: 11px;
-      padding: 10px 13px;
-      font-size: 0.88rem;
+      min-height: 42px;
+      padding: 9px 12px;
+      font-size: 0.92rem;
       text-align: left;
+    }
+    button:hover {
+      background: var(--bg-card-hover);
+    }
+    button.active {
+      background: var(--accent-dim);
+    }
+    button.active::before {
+      top: 9px;
+      bottom: 9px;
+      left: 0;
+      right: auto;
+      width: 2px;
+      height: auto;
     }
     .badge {
       top: 50%;
-      right: 13px;
+      right: 12px;
       transform: translateY(-50%);
+      box-shadow: 0 0 0 2px var(--bg-card);
     }
   }
 </style>

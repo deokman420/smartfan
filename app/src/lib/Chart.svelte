@@ -1,16 +1,22 @@
 <script>
   /**
-   * A small multi-series time chart, hand-drawn in SVG.
+   * Hand-drawn time chart.
    *
-   * No charting library: the app is served over a LAN with no route out, so
-   * a CDN script is a blank chart, and bundling one to draw four lines is
-   * several hundred kilobytes for something this file does in eighty.
+   * No charting library: the app is served on a LAN with no route out, so a
+   * CDN script is a blank chart, and bundling one to draw a few lines is
+   * hundreds of kilobytes for something this file can do itself.
    *
-   * Every label names a value the chart actually reaches -- the y axis is
-   * taken from the data, not from a round number that may sit off the top
-   * of the drawing.
+   * The scale is chosen so the ticks are numbers a person would say. A
+   * quantity that already sits on zero (fan speed, light) is grounded there,
+   * so the axis cannot wander off into negative rpm. Humidity and
+   * temperature stay zoomed on the band they actually occupy.
+   *
+   * Text is HTML, not SVG. The drawing is stretched to the card;
+   * preserveAspectRatio would letterbox it, and text inside that SVG would
+   * be stretched with it.
    */
-  import { F, segments, GAP_MS } from '$lib/history.js';
+  import { mode } from '$lib/link.js';
+  import { F, segments, stats, GAP_MS } from '$lib/history.js';
 
   let {
     rows = [],
@@ -18,277 +24,530 @@
     height = 150,
     unit = '',
     bands = null,
+    bandOn = '',
+    bandOff = '',
+    bandStory = '',
+    bandIdle = '',
+    bandColor = 'var(--accent)',
     refs = [],
     compact = false
   } = $props();
 
-  const W = 600;
-  const PAD_L = 38;
-  const PAD_R = 8;
-  const PAD_T = 10;
-  const PAD_B = 20;
-
-  let H = $derived(height);
-  let plotW = W - PAD_L - PAD_R;
-  let plotH = $derived(H - PAD_T - PAD_B);
+  const uid = Math.random().toString(36).slice(2, 8);
 
   let t0 = $derived(rows.length ? rows[0][F.t] : 0);
   let t1 = $derived(rows.length ? rows[rows.length - 1][F.t] : 1);
 
-  let bounds = $derived.by(() => {
+  let scale = $derived.by(() => {
     const vals = [];
     for (const s of series) {
       for (const r of rows) {
         const v = r[s.field];
-        if (v !== null && v !== undefined) vals.push(v);
+        if (v !== null && v !== undefined && Number.isFinite(v)) vals.push(v);
       }
     }
-    for (const r of refs) if (Number.isFinite(r.value)) vals.push(r.value);
-    if (!vals.length) return { lo: 0, hi: 1 };
-    let lo = Math.min(...vals);
-    let hi = Math.max(...vals);
-    if (hi - lo < 1e-6) {
-      // A flat series would collapse to a zero-height box and the line
-      // would sit on the axis looking like missing data.
-      lo -= 1;
-      hi += 1;
-    }
-    const pad = (hi - lo) * 0.12;
-    return { lo: lo - pad, hi: hi + pad };
-  });
+    for (const ref of refs) if (Number.isFinite(ref.value)) vals.push(ref.value);
+    if (!vals.length) return { lo: 0, hi: 1, ticks: [0, 1] };
 
-  function x(t) {
-    if (t1 === t0) return PAD_L + plotW;
-    return PAD_L + ((t - t0) / (t1 - t0)) * plotW;
-  }
+    let lo0 = Math.min(...vals);
+    let hi0 = Math.max(...vals);
+    let span = hi0 - lo0;
+    if (span < 1e-6) {
+      lo0 -= 1;
+      hi0 += 1;
+      span = 2;
+    }
+
+    // Ground at zero only when the data already lives down there. Humidity
+    // at 60% must not be drawn from an axis of zero or the shower disappears.
+    if (lo0 >= 0 && lo0 <= span * 0.35) lo0 = 0;
+    hi0 += Math.max(span, 1) * 0.08;
+
+    const step = niceStep(hi0 - lo0);
+    let lo = Math.floor(lo0 / step) * step;
+    let hi = Math.ceil(hi0 / step) * step;
+    if (lo0 >= 0 && lo < 0) lo = 0;
+    // A slight dip under zero (excess at -0.4) should still be visible,
+    // without spending a whole grid band on empty negative space.
+    if (lo0 < 0 && lo <= -step && lo0 > -step * 0.35) lo = lo0 - step * 0.15;
+    if (!(hi > lo)) hi = lo + step;
+
+    const ticks = [];
+    const i0 = Math.ceil(lo / step - 1e-6);
+    const i1 = Math.floor(hi / step + 1e-6);
+    for (let i = i0; i <= i1 && ticks.length < 7; i++) {
+      const v = i * step;
+      if (v < lo - step * 0.01 || v > hi + step * 0.01) continue;
+      ticks.push(roundTick(v, step));
+    }
+    if (ticks.length < 2) return { lo, hi, ticks: [roundTick(lo, step), roundTick(hi, step)] };
+    return { lo, hi, ticks };
+  });
 
   function y(v) {
-    const { lo, hi } = bounds;
-    return PAD_T + plotH - ((v - lo) / (hi - lo)) * plotH;
+    const { lo, hi } = scale;
+    if (!(hi > lo)) return 500;
+    return 1000 - ((v - lo) / (hi - lo)) * 1000;
   }
 
-  function path(seg) {
-    return seg.map((p, i) => `${i ? 'L' : 'M'} ${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`).join(' ');
+  function x(t) {
+    if (t1 === t0) return 1000;
+    return ((t - t0) / (t1 - t0)) * 1000;
   }
 
-  function area(seg) {
-    if (seg.length < 2) return '';
-    const base = PAD_T + plotH;
-    return (
-      path(seg) +
-      ` L ${x(seg[seg.length - 1][0]).toFixed(1)} ${base}` +
-      ` L ${x(seg[0][0]).toFixed(1)} ${base} Z`
-    );
+  function yPct(v) {
+    return y(v) / 10;
   }
 
-  let ticks = $derived.by(() => {
-    const { lo, hi } = bounds;
+  let guides = $derived(series.filter((s) => !s.fill));
+  let zeroInView = $derived(scale.lo < 0 && scale.hi > 0);
+
+  let bandsBetween = $derived.by(() => {
     const out = [];
-    for (let i = 0; i <= 2; i++) {
-      const v = lo + ((hi - lo) * i) / 2;
-      out.push({ v, y: y(v) });
+    for (const s of series) {
+      if (!s.fill) continue;
+      const partner = guides[0];
+      if (!partner) continue;
+      out.push({ color: s.color, paths: between(s.field, partner.field) });
     }
     return out;
   });
 
-  let xticks = $derived.by(() => {
+  let areas = $derived.by(() => {
+    if (guides.length && series.some((s) => s.fill)) return [];
+    const floor = zeroInView ? 0 : scale.lo;
+    const out = [];
+    for (const s of series) {
+      if (!s.fill) continue;
+      for (const seg of segments(rows, s.field)) {
+        if (seg.length < 2) continue;
+        const line = seg
+          .map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`)
+          .join(' ');
+        const y0 = y(floor).toFixed(1);
+        out.push({
+          color: s.color,
+          d:
+            line +
+            ` L${x(seg[seg.length - 1][0]).toFixed(1)} ${y0}` +
+            ` L${x(seg[0][0]).toFixed(1)} ${y0} Z`
+        });
+      }
+    }
+    return out;
+  });
+
+  let lines = $derived(
+    series.map((s) => ({
+      field: s.field,
+      color: s.color,
+      dash: !!s.dash,
+      paths: segments(rows, s.field).map((seg) =>
+        seg.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`).join(' ')
+      )
+    }))
+  );
+
+  let refMarks = $derived.by(() => {
+    const marks = refs
+      .filter((r) => Number.isFinite(r.value))
+      .map((r) => ({ ...r, pct: yPct(r.value) }));
+    marks.sort((a, b) => a.pct - b.pct);
+    for (let i = 1; i < marks.length; i++) {
+      if (marks[i].pct - marks[i - 1].pct < 10) marks[i].pct = marks[i - 1].pct + 10;
+    }
+    return marks;
+  });
+
+  let rail = $derived.by(() => {
+    if (bands === null || bands === undefined || rows.length < 2) return [];
+    const out = [];
+    let start = null;
+    let prev = null;
+    for (const r of rows) {
+      const on = r[bands] === 1;
+      const gap = prev !== null && r[F.t] - prev > GAP_MS;
+      if (gap && start !== null) {
+        out.push([start, prev]);
+        start = null;
+      }
+      if (on && start === null) start = r[F.t];
+      if (!on && start !== null) {
+        out.push([start, r[F.t]]);
+        start = null;
+      }
+      prev = r[F.t];
+    }
+    if (start !== null && prev !== null) out.push([start, prev]);
+    const span = Math.max(t1 - t0, 1);
+    return out.map(([a, b]) => ({
+      left: ((a - t0) / span) * 100,
+      width: Math.max(0.6, ((b - a) / span) * 100)
+    }));
+  });
+
+  let ends = $derived(
+    series.map((s) => {
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const v = rows[i][s.field];
+        if (v !== null && v !== undefined && Number.isFinite(v)) {
+          return {
+            field: s.field,
+            color: s.color,
+            v,
+            left: x(rows[i][F.t]) / 10,
+            top: yPct(v)
+          };
+        }
+      }
+      return null;
+    }).filter(Boolean)
+  );
+
+  let peak = $derived.by(() => {
+    if (compact || !series.length) return null;
+    const field = series[0].field;
+    let best = null;
+    for (const r of rows) {
+      const v = r[field];
+      if (v === null || v === undefined || !Number.isFinite(v)) continue;
+      if (!best || v > best.v) best = { v, t: r[F.t] };
+    }
+    if (!best) return null;
+    const st = stats(rows, field);
+    if (!st || st.max - st.min < (unit === 'rpm' ? 80 : 1.5)) return null;
+    return {
+      v: best.v,
+      left: x(best.t) / 10,
+      top: yPct(best.v),
+      color: series[0].color
+    };
+  });
+
+  let xLabels = $derived.by(() => {
     if (!rows.length || t1 === t0) return [];
+    const n = compact ? 2 : 4;
     const out = [];
-    for (let i = 0; i <= (compact ? 1 : 3); i++) {
-      const t = t0 + ((t1 - t0) * i) / (compact ? 1 : 3);
-      out.push({ t, x: x(t) });
+    const fresh = Date.now() - t1 < 3 * 60_000;
+    for (let i = 0; i < n; i++) {
+      const p = n === 1 ? 1 : i / (n - 1);
+      const t = t0 + (t1 - t0) * p;
+      out.push({
+        p: p * 100,
+        text: i === n - 1 && fresh ? 'now' : clock(t),
+        edge: i === 0 ? 'start' : i === n - 1 ? 'end' : ''
+      });
     }
     return out;
   });
+
+  let summary = $derived.by(() => {
+    if (compact || rows.length < 2 || !series.length) return '';
+    const field = series[0].field;
+    const st = stats(rows, field);
+    if (!st) return '';
+    const suffix = unit === 'rpm' ? ' rpm' : unit;
+    const steady = st.max - st.min < (unit === 'rpm' ? 80 : 1);
+    const head = steady
+      ? `Steady near ${fmtVal(st.last)}${suffix}`
+      : `Peaked at ${fmtVal(st.max)}${suffix}`;
+    const parts = [];
+    const levels = refs.map((r) => r.value).filter((v) => Number.isFinite(v));
+    if (levels.length) {
+      const start = Math.max(...levels);
+      const above = durationWhere(field, (v) => v >= start);
+      parts.push(
+        above >= 60_000
+          ? `${head}, over the ${fmtVal(start)}${suffix} line for ${fmtDur(above)}.`
+          : `${head}. Stayed under the ${fmtVal(start)}${suffix} line.`
+      );
+    } else {
+      parts.push(`${head}.`);
+    }
+    if (bands !== null && bands !== undefined && bandStory) {
+      const on = durationWhere(bands, (v) => v === 1);
+      parts.push(on >= 20_000 ? `${bandStory} for ${fmtDur(on)}.` : `${bandIdle || bandOff}.`);
+    }
+    if (unit === '°C' && series.length >= 2) {
+      let closest = Infinity;
+      const a = series[0].field;
+      const b = series[1].field;
+      for (const r of rows) {
+        if (r[a] === null || r[b] === null || r[a] === undefined || r[b] === undefined) continue;
+        const g = Math.abs(r[a] - r[b]);
+        if (g < closest) closest = g;
+      }
+      if (Number.isFinite(closest) && closest < Infinity) {
+        parts.push(`Closest those two came: ${fmtVal(closest)}${suffix}.`);
+      }
+    }
+    return parts.join(' ');
+  });
+
+  let hover = $state(null);
+
+  function pointer(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (!(rect.width > 0)) return;
+    const p = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const target = t0 + p * (t1 - t0);
+    let lo = 0;
+    let hi = rows.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (rows[mid][F.t] < target) lo = mid + 1;
+      else hi = mid;
+    }
+    let idx = lo;
+    if (idx > 0 && Math.abs(rows[idx - 1][F.t] - target) < Math.abs(rows[idx][F.t] - target)) {
+      idx -= 1;
+    }
+    const row = rows[idx];
+    if (!row) return;
+    const span = Math.max(t1 - t0, 1);
+    hover = {
+      pct: ((row[F.t] - t0) / span) * 100,
+      clock: clock(row[F.t]),
+      values: series.map((s) => ({
+        label: s.label,
+        color: s.color,
+        text:
+          row[s.field] === null || row[s.field] === undefined ? '—' : `${fmtVal(row[s.field])}${unit === 'rpm' ? '' : unit}`
+      })),
+      band:
+        bands === null || bands === undefined
+          ? ''
+          : row[bands] === 1
+            ? bandOn || 'On'
+            : bandOff || 'Off'
+    };
+  }
+
+  function between(fieldA, fieldB) {
+    const polys = [];
+    let run = [];
+    const flush = () => {
+      if (run.length > 1) polys.push(run);
+      run = [];
+    };
+    for (const r of rows) {
+      const a = r[fieldA];
+      const b = r[fieldB];
+      const broke = run.length && r[F.t] - run[run.length - 1][0] > GAP_MS;
+      if (a === null || a === undefined || b === null || b === undefined || broke) {
+        flush();
+        if (a === null || a === undefined || b === null || b === undefined) continue;
+      }
+      run.push([r[F.t], a, b]);
+    }
+    flush();
+    return polys.map((run) => {
+      const fwd = run
+        .map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`)
+        .join(' ');
+      const back = [...run]
+        .reverse()
+        .map((p) => `L${x(p[0]).toFixed(1)} ${y(p[2]).toFixed(1)}`)
+        .join(' ');
+      return `${fwd} ${back} Z`;
+    });
+  }
+
+  function durationWhere(field, pred) {
+    let ms = 0;
+    for (let i = 0; i < rows.length - 1; i++) {
+      const dt = rows[i + 1][F.t] - rows[i][F.t];
+      if (dt <= 0 || dt > GAP_MS) continue;
+      const v = rows[i][field];
+      if (v !== null && v !== undefined && pred(v)) ms += dt;
+    }
+    return ms;
+  }
+
+  function fmtVal(v) {
+    if (!Number.isFinite(v)) return '—';
+    if (unit === 'rpm' || Math.abs(v) >= 100) return Math.round(v).toLocaleString();
+    return (Math.round(v * 10) / 10).toFixed(1);
+  }
+
+  function fmtTick(v) {
+    if (!Number.isFinite(v)) return '';
+    if (Math.abs(v) >= 100) return Math.round(v).toLocaleString();
+    if (Math.abs(v - Math.round(v)) < 1e-6) return String(Math.round(v));
+    return v.toFixed(1);
+  }
+
+  function fmtDur(ms) {
+    const m = Math.round(ms / 60_000);
+    if (m < 90) return `${m} min`;
+    return `${Math.floor(m / 60)} h ${m % 60} m`;
+  }
 
   function clock(t) {
     const d = new Date(t);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
-  function fmt(v) {
-    const span = bounds.hi - bounds.lo;
-    return span < 10 ? v.toFixed(1) : String(Math.round(v));
+  function latest(field) {
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const v = rows[i][field];
+      if (v !== null && v !== undefined && Number.isFinite(v)) return fmtVal(v);
+    }
+    return '—';
   }
 
-  // Shaded periods when the fan was running, drawn behind everything. The
-  // question a humidity chart is actually asked is "did the fan deal with
-  // it", which needs both on one drawing.
-  let runs = $derived.by(() => {
-    if (!bands) return [];
-    const out = [];
-    let start = null;
-    let prev = null;
-    for (const r of rows) {
-      const on = r[bands] === 1;
-      if (on && start === null) start = r[F.t];
-      if (!on && start !== null) {
-        out.push([start, r[F.t]]);
-        start = null;
-      }
-      if (prev !== null && r[F.t] - prev > GAP_MS && start !== null) {
-        out.push([start, prev]);
-        start = null;
-      }
-      prev = r[F.t];
-    }
-    if (start !== null && prev !== null) out.push([start, prev]);
-    return out;
-  });
+  function niceStep(span) {
+    const rough = span / 4;
+    if (!(rough > 0)) return 1;
+    const pow = 10 ** Math.floor(Math.log10(rough));
+    const err = rough / pow;
+    if (err < 1.5) return pow;
+    if (err < 3) return 2 * pow;
+    if (err < 7) return 5 * pow;
+    return 10 * pow;
+  }
+
+  function roundTick(v, step) {
+    const d = step >= 1 ? 0 : step >= 0.1 ? 1 : 2;
+    const f = 10 ** d;
+    return Math.round(v * f) / f;
+  }
 </script>
 
 {#if rows.length < 2}
-  <div class="nodata" style="height:{H}px">
+  <div class="nodata" style="height:{height}px">
     <p>Not enough history yet</p>
-    <p class="hint">Readings are collected while this app is open.</p>
+    <p class="hint">
+      {#if $mode === 'device'}
+        The fan keeps a week of its own, written every five minutes. A board
+        that has just started has none to give yet.
+      {:else}
+        Readings are collected while this app is open.
+      {/if}
+    </p>
   </div>
 {:else}
-  <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" role="img" aria-label="chart">
-    {#each runs as [a, b] (a)}
-      <rect
-        x={x(a)}
-        y={PAD_T}
-        width={Math.max(1, x(b) - x(a))}
-        height={plotH}
-        class="run"
-      />
-    {/each}
-
-    {#each ticks as tk (tk.v)}
-      <line x1={PAD_L} y1={tk.y} x2={W - PAD_R} y2={tk.y} class="grid" />
-      <text x={PAD_L - 6} y={tk.y + 3.5} class="ylab">{fmt(tk.v)}</text>
-    {/each}
-
-    {#each xticks as tk (tk.t)}
-      <text x={tk.x} y={H - 6} class="xlab">{clock(tk.t)}</text>
-    {/each}
-
-    {#each refs as r (r.label)}
-      <line x1={PAD_L} y1={y(r.value)} x2={W - PAD_R} y2={y(r.value)} class="ref" />
-      {#if !compact}
-        <text x={W - PAD_R - 2} y={y(r.value) - 4} class="reflab">{r.label}</text>
-      {/if}
-    {/each}
-
-    {#each series as s (s.field)}
-      {#each segments(rows, s.field) as seg, i (i)}
-        {#if s.fill}
-          <path d={area(seg)} class="area" style="fill:{s.color}" />
-        {/if}
-        <path d={path(seg)} class="line" style="stroke:{s.color}" />
+  <div class="plot" style="height:{height}px">
+    <div class="ylabels" aria-hidden="true">
+      {#each scale.ticks as v (v)}
+        <span style="top:{yPct(v)}%">{fmtTick(v)}</span>
       {/each}
+    </div>
+
+    <div class="stage">
+    <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+      {#each scale.ticks as v (v)}
+        <line x1="0" y1={y(v)} x2="1000" y2={y(v)} class="grid" class:axis={Math.abs(v) < 1e-6} />
+      {/each}
+
+      {#each bandsBetween as band, i (i)}
+        {#each band.paths as d, j (j)}
+          <path {d} class="area" style="fill:{band.color}" />
+        {/each}
+      {/each}
+
+      {#each areas as area, i (i)}
+        <path d={area.d} class="area fade" style="fill:url(#{uid}-{i})" />
+      {/each}
+
+      <defs>
+        {#each areas as area, i (i)}
+          <linearGradient id="{uid}-{i}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color={area.color} stop-opacity="0.32" />
+            <stop offset="100%" stop-color={area.color} stop-opacity="0.02" />
+          </linearGradient>
+        {/each}
+      </defs>
+
+      {#each refs as r (r.label)}
+        {#if Number.isFinite(r.value)}
+          <line x1="0" y1={y(r.value)} x2="1000" y2={y(r.value)} class="ref" />
+        {/if}
+      {/each}
+
+      {#each lines as s (s.field)}
+        {#each s.paths as d, i (i)}
+          <path {d} class="line" class:dash={s.dash} style="stroke:{s.color}" />
+        {/each}
+      {/each}
+    </svg>
+
+    {#if !compact}
+      <!-- The card underneath is the button. This layer exists only in the
+           detail sheet, where dragging is how you read one moment. -->
+      <div
+        class="scrub"
+        onpointerdown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          pointer(e);
+        }}
+        onpointermove={pointer}
+        onpointercancel={() => (hover = null)}
+        onpointerleave={() => (hover = null)}
+      ></div>
+    {/if}
+
+    {#each ends as dot (dot.field)}
+      <i class="end" style="left:{dot.left}%; top:{dot.top}%; background:{dot.color}"></i>
     {/each}
-  </svg>
+
+    {#if peak}
+      <i class="end peak" style="left:{peak.left}%; top:{peak.top}%; background:{peak.color}"></i>
+      <span class="peaklab" style="left:{peak.left}%; top:{peak.top}%" class:below={peak.top < 16}>
+        {fmtVal(peak.v)}
+      </span>
+    {/if}
+
+    {#if !compact}
+      {#each refMarks as r (r.label)}
+        <span class="reflab" style="top:{r.pct}%">{r.label} {fmtVal(r.value)}</span>
+      {/each}
+    {/if}
+
+    {#if hover}
+      <i class="rule" style="left:{hover.pct}%"></i>
+      <div class="tip" style="left:{hover.pct}%" class:flip={hover.pct > 62}>
+        <b>{hover.clock}</b>
+        {#each hover.values as v (v.label)}
+          <span><i style="background:{v.color}"></i>{v.label} {v.text}</span>
+        {/each}
+        {#if hover.band}<span class="band">{hover.band}</span>{/if}
+      </div>
+    {/if}
+    </div>
+  </div>
+
+  {#if rail.length || (bands !== null && bands !== undefined)}
+    <div class="rail" aria-hidden="true" title={bandOn || 'on'}>
+      {#each rail as seg, i (i)}
+        <i style="left:{seg.left}%; width:{seg.width}%; background:{bandColor}"></i>
+      {/each}
+    </div>
+  {/if}
+
+  <div class="xlabels" aria-hidden="true">
+    {#each xLabels as lab (lab.p)}
+      <span style="left:{lab.p}%" class={lab.edge}>{lab.text}</span>
+    {/each}
+  </div>
 
   <div class="legend">
     {#each series as s (s.field)}
-      <span><i style="background:{s.color}"></i>{s.label}</span>
+      <span><i style="background:{s.color}"></i>{s.label} <b>{latest(s.field)}{unit === 'rpm' ? '' : unit}</b></span>
     {/each}
     {#each refs as r (r.label)}
-      <span><i class="swatch-ref"></i>{r.label}</span>
+      <span><i class="swatch-ref"></i>{r.label} {fmtVal(r.value)}</span>
     {/each}
-    {#if bands}
-      <span><i class="swatch-run"></i>fan running</span>
+    {#if bands !== null && bands !== undefined}
+      <span><i class="swatch-run" style="background:{bandColor}"></i>{bandOn || 'on'}</span>
     {/if}
     {#if unit}<span class="unit">{unit}</span>{/if}
   </div>
+
+  {#if summary}<p class="summary">{summary}</p>{/if}
 {/if}
 
 <style>
-  svg {
-    width: 100%;
-    display: block;
-    overflow: visible;
-  }
-
-  .grid {
-    stroke: var(--border);
-    stroke-width: 1;
-    vector-effect: non-scaling-stroke;
-  }
-
-  /* The thresholds that actually decide whether the fan runs. Without
-     them the reader can see the shape but not whether it mattered. */
-  .ref {
-    stroke: var(--text-muted);
-    stroke-width: 1;
-    stroke-dasharray: 3 3;
-    vector-effect: non-scaling-stroke;
-  }
-  .reflab {
-    fill: var(--text-dim);
-    font-family: var(--mono);
-    font-size: 8.5px;
-    text-anchor: end;
-  }
-
-  .run {
-    fill: var(--accent);
-    opacity: 0.1;
-  }
-
-  .line {
-    fill: none;
-    stroke-width: 2;
-    stroke-linejoin: round;
-    stroke-linecap: round;
-    vector-effect: non-scaling-stroke;
-  }
-
-  .area {
-    opacity: 0.12;
-    stroke: none;
-  }
-
-  .ylab,
-  .xlab {
-    fill: var(--text-dim);
-    font-family: var(--mono);
-    font-size: 9px;
-  }
-  .ylab {
-    text-anchor: end;
-  }
-  .xlab {
-    text-anchor: middle;
-  }
-
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px 14px;
-    margin-top: 10px;
-    font-size: 0.72rem;
-    color: var(--text-dim);
-  }
-  .legend span {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .legend i {
-    width: 9px;
-    height: 3px;
-    border-radius: 2px;
-    display: inline-block;
-  }
-  .legend .swatch-ref {
-    height: 0;
-    width: 11px;
-    border-top: 1px dashed var(--text-dim);
-    border-radius: 0;
-  }
-  .legend .swatch-run {
-    height: 9px;
-    border-radius: 2px;
-    background: var(--accent);
-    opacity: 0.25;
-  }
-  .legend .unit {
-    margin-left: auto;
-    font-family: var(--mono);
-  }
-
   .nodata {
     display: flex;
     flex-direction: column;
@@ -296,7 +555,7 @@
     justify-content: center;
     text-align: center;
     color: var(--text-dim);
-    border: 1px dashed var(--border);
+    background: var(--bg-card-2);
     border-radius: 10px;
   }
   .nodata p {
@@ -306,6 +565,255 @@
   .nodata .hint {
     font-size: 0.76rem;
     margin-top: 4px;
-    opacity: 0.8;
+  }
+
+  .plot {
+    position: relative;
+  }
+
+  .ylabels {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 36px;
+    pointer-events: none;
+  }
+  .ylabels span {
+    position: absolute;
+    right: 0;
+    transform: translateY(-50%);
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stage {
+    position: absolute;
+    inset: 0 0 0 42px;
+  }
+
+  svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    overflow: hidden;
+  }
+
+  .grid {
+    stroke: var(--border);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+  .grid.axis {
+    stroke: var(--border-strong);
+  }
+
+  .area {
+    stroke: none;
+    opacity: 0.22;
+  }
+  .area.fade {
+    opacity: 1;
+  }
+
+  .line {
+    fill: none;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .line.dash {
+    stroke-dasharray: 5 4;
+  }
+
+  /* Thresholds. text-dim, not the brand muted grey: that one disappears
+     on these cards, and this line is the thing the chart is here to show. */
+  .ref {
+    stroke: var(--text-dim);
+    stroke-width: 1.25;
+    stroke-dasharray: 2 3;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .scrub {
+    position: absolute;
+    inset: 0;
+    touch-action: none;
+    cursor: crosshair;
+  }
+
+  .end {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    margin: -3.5px 0 0 -3.5px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--bg-card);
+    pointer-events: none;
+  }
+  .end.peak {
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+  }
+  .peaklab {
+    position: absolute;
+    transform: translate(-50%, -16px);
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    color: var(--text);
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .peaklab.below {
+    transform: translate(-50%, 8px);
+  }
+
+  .reflab {
+    position: absolute;
+    right: 0;
+    transform: translateY(-50%);
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    color: var(--text-dim);
+    background: var(--bg-card);
+    padding: 0 3px;
+    pointer-events: none;
+  }
+
+  .rule {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--text-dim);
+    pointer-events: none;
+  }
+  .tip {
+    position: absolute;
+    top: 8px;
+    z-index: 2;
+    transform: translateX(8px);
+    background: var(--bg-card-2);
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+    padding: 6px 8px 7px;
+    display: grid;
+    gap: 2px;
+    min-width: 132px;
+    pointer-events: none;
+    box-shadow: var(--shadow);
+  }
+  .tip.flip {
+    transform: translateX(calc(-100% - 8px));
+  }
+  .tip b {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .tip span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .tip i {
+    width: 8px;
+    height: 3px;
+    border-radius: 2px;
+    flex: none;
+  }
+  .tip .band {
+    color: var(--text-dim);
+    font-size: 0.7rem;
+  }
+
+  .rail {
+    position: relative;
+    height: 6px;
+    margin: 6px 0 0 42px;
+    border-radius: 99px;
+    background: var(--bg-card-2);
+    overflow: hidden;
+  }
+  .rail i {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+  }
+
+  .xlabels {
+    position: relative;
+    height: 16px;
+    margin: 3px 0 0 42px;
+  }
+  .xlabels span {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .xlabels .start {
+    transform: none;
+  }
+  .xlabels .end {
+    transform: translateX(-100%);
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend b {
+    color: var(--text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .legend i {
+    width: 10px;
+    height: 3px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+  .legend .swatch-ref {
+    height: 0;
+    width: 12px;
+    border-top: 1px dashed var(--text-dim);
+    border-radius: 0;
+  }
+  .legend .swatch-run {
+    height: 8px;
+    border-radius: 2px;
+    opacity: 0.85;
+  }
+  .legend .unit {
+    margin-left: auto;
+    font-family: var(--mono);
+  }
+
+  .summary {
+    margin: 8px 0 0;
+    font-size: 0.86rem;
+    color: var(--text);
+    max-width: 68ch;
   }
 </style>
