@@ -167,7 +167,7 @@
      Display only, and deliberately downstream of everything: nothing in
      the control path imports it, and the fan stops on a measured reading
      crossing a threshold exactly as it did before. */
-  let learned = $derived(learnTau($history));
+  let learned = $derived(learnTau($history, { minPeak: Number(cfg.RH_RISE_ON) || undefined }));
   let runCtx = $derived(runContext($history));
   let offIn = $derived(
     state === 'RUN' && t && learned
@@ -530,12 +530,18 @@
                       waiting on the light, not the humidity
                     {:else if offIn.hi - offIn.lo >= 60}
                       {dur(offIn.lo)}–{dur(offIn.hi)} across {offIn.runs}
-                      past run{offIn.runs === 1 ? '' : 's'}
+                      past shower{offIn.runs === 1 ? '' : 's'}
                     {:else}
                       <!-- Runs this consistent give quartiles a minute apart,
                            and "24 min-24 min" reads as a broken widget rather
-                           than as a confident one. -->
-                      learned from {offIn.runs} past run{offIn.runs === 1 ? '' : 's'}
+                           than as a confident one.
+
+                           "Showers", not "runs", and the word is doing real
+                           work: only runs that peaked past RH_RISE_ON are
+                           learned from, so this count is events where the
+                           humidity actually pumped -- not every time the fan
+                           happened to spin. -->
+                      learned from {offIn.runs} past shower{offIn.runs === 1 ? '' : 's'}
                     {/if}
                   </p>
                 {/if}

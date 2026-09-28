@@ -142,7 +142,7 @@ every single load, it duplicates three lines of `theme.js`, and duplicated
 code that is never exercised is how a flash comes back six months later.
 Asking after `load` would only prove `theme.js` eventually ran.
 
-**`test_dryrate.mjs` — 20 checks.** The learned time-to-off estimator.
+**`test_dryrate.mjs` — 27 checks.** The learned time-to-off estimator.
 Node, not Python, and no browser: the thing under test is arithmetic over an
 array, and `app/src/lib/dryrate.js` imports relatively so this can just
 import it.
@@ -160,6 +160,23 @@ returned 19.5 min. A room settles slightly *above* its own baseline, the
 curve flattens as it nears that floor, and a straight line through the logs
 reads the flattening as a slower room. The floor is fitted now, and the test
 asserts the three-parameter fit beats the number the pinned one gave.
+
+It also asserts that only runs where the humidity **actually pumped** are
+learned from. The fan runs far more often than anyone showers — a trip to
+find a towel runs the minimum plus the post-light hold, a boost gets pressed
+in a dry room — and those teach nothing, because the humidity never went
+anywhere. Against a synthetic week of 36 runs, 6 of them showers:
+
+```
+with the gate     tau 17.16 min from 6 showers   spread 17.2-17.2
+without the gate  tau 10.82 min from 12 runs     spread  4.5-17.2
+```
+
+A boost's 1.8 %RH decay clears a 1.6 %RH fall gate perfectly well, so before
+the peak gate those runs were admitted and dragged the estimate 36 %
+optimistic. The gate is the controller's own `RH_RISE_ON`, passed in from the
+device's settings rather than hardcoded, so retuning the threshold retunes
+this with it.
 
 The rest is the controller's own stop conditions, mirrored from `main.py`'s
 RUN branch — `MIN_RUN_S`, the post-light hold, and the `MAX_RUN_S` cap. An

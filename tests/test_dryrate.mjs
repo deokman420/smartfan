@@ -133,6 +133,69 @@ check('a room that settles above the threshold is "never dries"', never.neverDri
 check('and is reported as capped rather than as infinity',
       never.capped && Number.isFinite(never.secs), `${never.secs} s`);
 
+// --- only runs where the humidity actually pumped ---------------------
+// The fan runs for reasons other than a shower, and far more often: a trip to
+// find a towel runs the minimum plus the post-light hold, and a boost gets
+// pressed in a dry room. Both are real runs and both teach nothing, because
+// the humidity never went anywhere.
+//
+// This is not a hypothetical tidy-up. Measured below: the boosts alone drag
+// tau from 17 min to under 11, a 36% optimistic estimate, because a 1.8 %RH
+// decay clears a 1.6 %RH fall gate perfectly well.
+const STEP = 30_000;
+
+function trip(t0) {
+  // Light on, fan runs, humidity wobbles inside the sensor's own noise.
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    const exc = 0.9 + 0.35 * Math.sin(i / 2) + (i % 3) * 0.1;
+    out.push([t0 + i * STEP, 62 + exc, 62, +exc.toFixed(1), 21.4, 14, 30,
+              4200, 1, i < 5 ? 1 : 0, 2]);
+  }
+  return out;
+}
+
+function boost(t0) {
+  // A boost in a dry room: a real decay, of nothing much.
+  const out = [];
+  for (let i = 0; i < 30; i++) {
+    const exc = 1.8 * Math.exp(-i / 9) + 0.3;
+    out.push([t0 + i * STEP, 62 + exc, 62, +exc.toFixed(1), 21.4, 14, 2,
+              4200, 1, 0, 3]);
+  }
+  return out;
+}
+
+const mixed = [];
+{
+  let t = rows[0][0] - 40 * 3600_000;
+  for (let d = 0; d < 6; d++) {
+    for (let k = 0; k < 4; k++) { mixed.push(...trip(t)); t += 2 * 3600_000; }
+    mixed.push(...boost(t)); t += 2 * 3600_000;
+    const offset = t - rows[0][0];
+    for (const r of rows) { const c = r.slice(); c[0] = r[0] + offset; mixed.push(c); }
+    t += 8 * 3600_000;
+  }
+  mixed.sort((a, b) => a[0] - b[0]);
+}
+
+const gated = learnTau(mixed, { minPeak: 8.0 });
+const ungated = learnTau(mixed, { minPeak: 0 });
+
+check('it sees every run the fan actually made', gated.ran === 36, `${gated.ran}`);
+check('but learns only from the showers', gated.seen === 6, `${gated.seen} of 36`);
+check('so tau survives a realistic week', near(gated.tau, TAU, TAU * 0.05),
+      `${(gated.tau / 60).toFixed(2)} min`);
+check('and the spread stays tight', gated.hi - gated.lo < 60,
+      `${((gated.hi - gated.lo) / 60).toFixed(1)} min`);
+
+// The regression this gate exists to prevent, stated as a number.
+check('without the gate the dry runs wreck it', ungated.tau < TAU * 0.75,
+      `${(ungated.tau / 60).toFixed(2)} min from ${ungated.seen} runs`);
+check('a run that never pumped is not fitted on its own',
+      fitRun(boost(0), 8.0) === null);
+check('...though it would be without a peak gate', fitRun(boost(0), 0) !== null);
+
 // --- refusing to answer -----------------------------------------------
 check('no history means no estimate, not a guess', learnTau([]) === null);
 check('a too-short run is not fitted', fitRun(rows.slice(0, 3)) === null);

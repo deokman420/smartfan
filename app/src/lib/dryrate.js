@@ -53,6 +53,28 @@ const FLOOR_RH = 0.6;
 /** A decay has to actually decay before it tells us anything about tau. */
 const MIN_FALL = 1.6;
 
+/**
+ * How far above baseline a run must have PEAKED to teach us anything.
+ *
+ * The fan runs for reasons other than humidity. Someone turns the light on
+ * to find a towel and the fan runs its minimum plus the post-light hold; a
+ * boost gets pressed in a dry room. Those are genuine runs and genuinely
+ * useless here: the humidity never went anywhere, so the "decay" fitted from
+ * them is a line through sensor noise, and averaging it in drags tau towards
+ * whatever the DHT22's jitter looks like that day.
+ *
+ * Only a run where the humidity actually pumped says anything about how fast
+ * this room clears, and that is also the only kind of run where anyone is
+ * looking at the estimate. So the gate is the controller's own RH_RISE_ON --
+ * the rise that would have started the fan on humidity alone. Below that it
+ * was not a shower, whatever else it was.
+ *
+ * Passed in from the device's settings rather than hardcoded, so retuning the
+ * threshold retunes this with it. The constant is only the fallback for a
+ * caller that does not know it yet.
+ */
+const MIN_PEAK = 8.0;
+
 /** Fewer points than this is a line through nothing. */
 const MIN_POINTS = 6;
 
@@ -135,11 +157,16 @@ function line(pts, c) {
  * through that produced a tau that was wrong in the worst direction -- it
  * flattened the curve and made every estimate optimistic.
  */
-export function fitRun(run) {
+export function fitRun(run, minPeak = MIN_PEAK) {
   let peak = 0;
   for (let i = 1; i < run.length; i++) {
     if (run[i][F.exc] > run[peak][F.exc]) peak = i;
   }
+  // Not a shower. See MIN_PEAK: this is the whole difference between
+  // learning from four real events and averaging in forty trips to the
+  // bathroom that never raised the humidity at all.
+  if (!(run[peak][F.exc] >= minPeak)) return null;
+
   const decay = run.slice(peak);
   if (decay.length < MIN_POINTS) return null;
 
@@ -202,12 +229,13 @@ function quantile(sorted, q) {
  * doing outside, and a single number would imply a precision this does not
  * have.
  */
-export function learnTau(rows) {
+export function learnTau(rows, { minPeak = MIN_PEAK } = {}) {
   if (!Array.isArray(rows) || rows.length < MIN_POINTS) return null;
 
+  const all = runs(rows);
   const fits = [];
-  for (const run of runs(rows)) {
-    const fit = fitRun(run);
+  for (const run of all) {
+    const fit = fitRun(run, minPeak);
     if (fit) fits.push(fit);
   }
   if (!fits.length) return null;
@@ -223,7 +251,11 @@ export function learnTau(rows) {
     // ended early sits well above the room's real settling point.
     c: quantile(floors, 0.5),
     runs: recent.length,
-    seen: fits.length
+    seen: fits.length,
+    // Every stretch the fan ran, including the ones that taught us nothing.
+    // The gap between this and `seen` is the point of MIN_PEAK, and it is
+    // worth being able to look at rather than inferring.
+    ran: all.length
   };
 }
 
