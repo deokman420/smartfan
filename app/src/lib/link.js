@@ -205,3 +205,13 @@ export function command(name) {
 export function setParam(name, value) {
   return active ? active.setParam(name, value) : false;
 }
+
+/**
+ * The fan's own WiFi settings, or null when the transport has no route to
+ * them. Only device mode does: a broker reached over the network the fan is
+ * about to leave is not the channel to change that network on, and the
+ * device door is gated on a button press anyway.
+ */
+export function wifiApi() {
+  return active?.wifi ?? null;
+}

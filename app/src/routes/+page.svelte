@@ -33,6 +33,7 @@
   import Activity from '$lib/Activity.svelte';
   import { history, since, stats, F } from '$lib/history.js';
   import { learnTau, timeToOff, runContext } from '$lib/dryrate.js';
+  import WifiPanel from '$lib/WifiPanel.svelte';
   import { onMount } from 'svelte';
 
   let showSettings = $state(false);
@@ -1083,6 +1084,8 @@
           protection is that the fan is only reachable from your network.
         </p>
       {/if}
+
+      <WifiPanel open={showSettings} holdS={Number(cfg.HOLD_PRESS_S) || 8} />
 
       <h3 class="section">Appearance</h3>
       <p class="sub">

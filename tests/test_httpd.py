@@ -104,6 +104,35 @@ class _Settings:
             raise AttributeError(name)
 
 
+class FakeProv:
+    """Just enough of wifi.Provisioner for the HTTP contract.
+
+    The real one is exercised by tests/test_wifi.py, which can drive a fake
+    radio and watch what does and does not reach the filesystem. What matters
+    HERE is only the shape of the door: which status code a closed window
+    gives, and that a POST to it is refused before any of that logic runs.
+    """
+
+    def __init__(self, is_open=False):
+        self.is_open = is_open
+        self.started = []
+        self.state = "open" if is_open else "closed"
+        self.scanned = 0
+
+    def status(self):
+        return {"state": self.state, "open": self.is_open,
+                "secs_left": 120 if self.is_open else 0, "window_s": 180,
+                "ssid": "old-net", "trying": "", "error": ""}
+
+    def start(self, ssid, psk, country=None):
+        self.started.append((ssid, psk, country))
+        return True, "trying"
+
+    def scan(self):
+        self.scanned += 1
+        return [{"ssid": "home", "rssi": -44, "secure": True}] if self.is_open else None
+
+
 class FakeController:
     def __init__(self):
         self.state = "IDLE"
@@ -160,6 +189,7 @@ class Cfg:
     HOSTNAME = "fan"
     HISTORY_INTERVAL_S = 300
     HISTORY_DAYS = 7
+    HOLD_PRESS_S = 8.0
 
 
 # --- the pump ---------------------------------------------------------------
@@ -613,6 +643,79 @@ def test_origins():
     check("local origins are told apart from the internet", not bad, str(bad))
 
 
+def test_wifi(tmp):
+    """The provisioning door, over real HTTP."""
+    root = os.path.join(tmp, "www")
+    make_www(root)
+    c = FakeController()
+    snap = Snapshot(Cfg, log=lambda *a: None)
+    api = webapi.Api(c, Cfg, snap, None)
+    port = free_port()
+    server = httpd.Server(handler=api.handle, root=root, port=port,
+                          log=lambda *a: None)
+    server.start()
+    pump = Pump(server)
+    pump.start()
+    try:
+        # A build without wifi.py answers honestly rather than 404ing, so the
+        # app can tell "this fan cannot" from "you typed the URL wrong".
+        st, _, body = get(port, "/api/wifi")
+        check("no provisioner answers 501, not 404", st == 501, "status %d" % st)
+        check("and says it is unsupported",
+              json.loads(body.decode()).get("supported") is False)
+
+        # -- the window shut --------------------------------------------
+        c.prov = FakeProv(is_open=False)
+        st, _, body = get(port, "/api/wifi")
+        doc = json.loads(body.decode())
+        check("a shut window still reports the current network",
+              st == 200 and doc["ssid"] == "old-net")
+        check("it says it is shut", doc["open"] is False)
+        check("it tells the app how long the button press is",
+              doc.get("hold_s") == Cfg.HOLD_PRESS_S, str(doc.get("hold_s")))
+
+        st, _, body = get(port, "/api/wifi", method="POST", body=b"new-net\npw")
+        check("a shut window refuses credentials with 403", st == 403,
+              "status %d" % st)
+        check("and the provisioner was never asked", c.prov.started == [])
+        check("the refusal says how to open it",
+              "button" in json.loads(body.decode())["reason"])
+
+        st, _, _ = get(port, "/api/wifi/scan")
+        check("a shut window refuses a scan too", st == 403, "status %d" % st)
+
+        # -- the window open --------------------------------------------
+        c.prov = FakeProv(is_open=True)
+        st, _, body = get(port, "/api/wifi", method="POST",
+                          body=b"new-net\nhunter2\nGB")
+        check("an open window accepts credentials with 202", st == 202,
+              "status %d" % st)
+        check("ssid, password and country arrive intact",
+              c.prov.started == [("new-net", "hunter2", "GB")],
+              str(c.prov.started))
+        doc = json.loads(body.decode())
+        check("the reply points at where the answer will be",
+              doc.get("poll") == "/api/wifi")
+
+        # A password may legitimately contain anything printable; the split is
+        # on the one character it cannot contain.
+        get(port, "/api/wifi", method="POST", body=b"net\np:a,s#s w=d")
+        check("an awkward password is not mangled",
+              c.prov.started[-1][1] == "p:a,s#s w=d", repr(c.prov.started[-1][1]))
+
+        st, _, body = get(port, "/api/wifi/scan")
+        check("an open window scans", st == 200 and
+              json.loads(body.decode())["networks"][0]["ssid"] == "home")
+
+        # GET must never be a write, here least of all.
+        before = len(c.prov.started)
+        get(port, "/api/wifi")
+        check("GET /api/wifi changes nothing", len(c.prov.started) == before)
+    finally:
+        pump.stop()
+        server.stop()
+
+
 def main():
     print("on-device server (host, no board)\n")
     with tempfile.TemporaryDirectory() as tmp:
@@ -621,6 +724,8 @@ def main():
             test_server(tmp)
             print()
             test_store(os.path.join(tmp, "hist"))
+            print()
+            test_wifi(tmp)
             print()
             test_origins()
         finally:

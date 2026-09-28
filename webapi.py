@@ -16,8 +16,12 @@ Endpoints:
     GET  /api/state              the snapshot, same JSON as fan/<room>/state
     GET  /api/info               identity, build, link and history status
     GET  /api/history?since=<s>  stored rows as CSV text, oldest first
+    GET  /api/wifi               provisioning window state and current SSID
+    GET  /api/wifi/scan          visible networks; only while the window is open
     POST /api/cmd                body: boost | cancel | relearn | clear | ...
     POST /api/set/<PARAM>        body: the new value
+    POST /api/wifi               body: ssid, password, country, one per line
+                                 (window only; see wifi.py)
 
 Reads are GET and writes are POST, so a browser's prefetching or a crawler
 cannot boost the fan by following a link.
@@ -31,6 +35,14 @@ reflected only for local origins (see httpd._lan_origin), so a random page
 on the internet cannot drive it. Anyone already on the network can. If that
 is not acceptable, do not expose the port; the MQTT path with broker
 credentials is still there.
+
+/api/wifi is the one exception, and it proves the rule rather than breaking
+it. Reading humidity and pressing Boost sit comfortably inside "anyone on the
+LAN"; moving the fan onto a different network does not, because nothing about
+being on the network says you are allowed to take the device off it. So it is
+gated on someone holding the button on the fan, which is the same physical
+control the rest of the argument rests on, and the same reasoning that
+already refuses `update` here. See wifi.py.
 """
 
 from httpd import Response, json_response, text_response
@@ -39,6 +51,15 @@ try:
     from store import FIELDS
 except ImportError:                     # history disabled or not installed
     FIELDS = ()
+
+
+def wifi_try_s():
+    """How long an attempt is given, so the app can size its own wait."""
+    try:
+        import wifi
+        return wifi.TRY_S
+    except ImportError:
+        return 45
 
 
 class Rows:
@@ -189,6 +210,10 @@ class Api:
             return self._info(req)
         if route == "history":
             return self._history(req)
+        if route == "wifi":
+            return self._wifi(req)
+        if route == "wifi/scan":
+            return self._wifi_scan(req)
         if route == "cmd":
             return self._cmd(req)
         if route.startswith("set/"):
@@ -252,6 +277,75 @@ class Api:
         return Response(200, b"", "text/csv; charset=utf-8", headers,
                         source=Rows(self.history.paths(),
                                     self.history.interval_s, since))
+
+    # -- wifi ---------------------------------------------------------------
+
+    def _prov(self):
+        return getattr(self.c, "prov", None)
+
+    def _wifi(self, req):
+        prov = self._prov()
+        if prov is None:
+            return json_response({"supported": False,
+                                  "reason": "no wifi module on this build"}, 501)
+        if req.method in ("GET", "HEAD"):
+            st = prov.status()
+            st["supported"] = True
+            # The gesture belongs to config.py, not to the provisioner, and
+            # the app should not be hardcoding "8 seconds" in its own copy of
+            # a number the device can simply tell it.
+            st["hold_s"] = getattr(self.cfg, "HOLD_PRESS_S", 8)
+            return json_response(st)
+        if req.method != "POST":
+            return text_response(405, "GET or POST")
+
+        # The window, checked here as well as in Provisioner.start, so a
+        # closed door answers 403 rather than 400. The app shows a different
+        # thing for "not allowed yet" than for "that did not work", and the
+        # status code is what tells it which.
+        if not prov.is_open:
+            return json_response({
+                "ok": False,
+                "reason": "hold the button on the fan for %ds first"
+                          % int(getattr(self.cfg, "HOLD_PRESS_S", 8)),
+                "open": False,
+            }, 403)
+
+        body = req.text() or ""
+        if len(body) > 200:
+            return text_response(413, "too long")
+        # Newline-separated, like /api/cmd's plain-text body: a password may
+        # legitimately contain any printable character including the ones
+        # that would need escaping in JSON or a query string, and splitting
+        # on the one character it cannot contain is the simplest thing that
+        # cannot corrupt it.
+        parts = body.split("\n")
+        ssid = parts[0].strip() if parts else ""
+        psk = parts[1] if len(parts) > 1 else ""
+        country = parts[2].strip() if len(parts) > 2 else None
+
+        ok, why = prov.start(ssid, psk, country)
+        if not ok:
+            return json_response({"ok": False, "reason": why}, 400)
+
+        # 202, not 200: this has been accepted and not yet done, and the
+        # answer cannot come back on this socket. A successful switch takes
+        # the radio off the network this request arrived on, so the reply
+        # would die with the association. The app reads GET /api/wifi after.
+        return json_response({"ok": True, "state": "trying", "ssid": ssid,
+                              "poll": "/api/wifi", "try_s": wifi_try_s()}, 202)
+
+    def _wifi_scan(self, req):
+        if req.method not in ("GET", "HEAD"):
+            return text_response(405, "GET only")
+        prov = self._prov()
+        if prov is None:
+            return json_response({"supported": False}, 501)
+        nets = prov.scan()
+        if nets is None:
+            return json_response({"ok": False, "open": False,
+                                  "reason": "the window is closed"}, 403)
+        return json_response({"ok": True, "networks": nets})
 
     # -- writes ------------------------------------------------------------
 

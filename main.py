@@ -55,6 +55,15 @@ try:
 except ImportError:
     _STORE = False
 
+# Changing the WiFi from the app. Additive in exactly the same way as the
+# rest: a board without this file still runs the fan, still serves the app,
+# and simply has no provisioning window to open.
+try:
+    import wifi
+    _WIFI = True
+except ImportError:
+    _WIFI = False
+
 
 LEARN, IDLE, RUN, BOOST, FAULT = "LEARN", "IDLE", "RUN", "BOOST", "FAULT"
 
@@ -147,7 +156,7 @@ class Tach:
 
 
 class Button:
-    """Polled debounce. Reports short and long presses on release."""
+    """Polled debounce. Reports short, long and hold presses on release."""
 
     def __init__(self, pin_no):
         self._pin = Pin(pin_no, Pin.IN, Pin.PULL_UP)
@@ -155,8 +164,20 @@ class Button:
         self._stable = 1
         self._changed_at = time.ticks_ms()
 
+    def held_s(self):
+        """How long the button has been down right now, 0 if it is not.
+
+        The press is only reported on release, so without this an eight
+        second hold is eight seconds of no feedback whatsoever. main.py uses
+        it to flash both LEDs once the hold threshold is passed, which turns
+        an undocumented gesture into one you find by leaning on the button.
+        """
+        if self._down_at is None or self._stable != 0:
+            return 0.0
+        return ms_since(self._down_at) / 1000.0
+
     def poll(self):
-        """Returns None, 'short', or 'long'."""
+        """Returns None, 'short', 'long', or 'hold'."""
         raw = self._pin.value()
         if raw != self._stable:
             if ms_since(self._changed_at) < 25:
@@ -170,6 +191,8 @@ class Button:
                 return None
             held = ms_since(self._down_at) / 1000.0
             self._down_at = None
+            if held >= cfg.HOLD_PRESS_S:
+                return "hold"
             return "long" if held >= cfg.LONG_PRESS_S else "short"
         self._changed_at = time.ticks_ms()
         return None
@@ -210,6 +233,7 @@ class Controller:
         self.ota_state = "idle"
 
         self.link = None
+        self.prov = None           # wifi.Provisioner, once there is a Link
         self.telem = None
         self._push = False         # force a publish after a command lands
         self.wdt = None
@@ -256,6 +280,8 @@ class Controller:
                     print("net: enabled, room=%s" % cfg.ROOM)
                 else:
                     print("net: wifi only, no broker configured")
+                if _WIFI:
+                    self.prov = wifi.Provisioner(self.link, log=print)
             except Exception as e:
                 print("net: disabled (%s)" % e)
                 self.link = self.telem = None
@@ -512,6 +538,23 @@ class Controller:
         self.set_fan(self.state in (RUN, BOOST))
 
         phase = (time.ticks_ms() // 400) % 2
+
+        # Held past the WiFi threshold: both LEDs together, which is a
+        # pattern no controller state uses. Checked before the state machine
+        # so the feedback is immediate and unambiguous -- let go now and the
+        # window opens.
+        held = self.button.held_s()
+        if held >= cfg.HOLD_PRESS_S:
+            self.led_ok.value(phase)
+            self.led_run.value(phase)
+            return
+        if self.prov is not None and self.prov.is_open:
+            # Window open: a fast double-blink on the OK led, so a fan that is
+            # waiting for a password does not look like a fan that is idle.
+            fast = (time.ticks_ms() // 150) % 2
+            self.led_ok.value(fast)
+            self.led_run.value(0)
+            return
         if self.state == FAULT:
             self.led_ok.value(phase)
             self.led_run.value(1 - phase)
@@ -604,7 +647,16 @@ class Controller:
         self._push = True
 
     def handle_button(self, press):
-        if press == "long":
+        if press == "hold":
+            # Opening the window is all this does. The credentials arrive
+            # over the API afterwards, from a phone with a keyboard, because
+            # a device with one button and two LEDs is not where anyone
+            # should be typing a WPA2 passphrase.
+            if self.prov is not None:
+                self.prov.open("button")
+            else:
+                print("wifi: no provisioner (offline build)")
+        elif press == "long":
             self.baseline = self.rh
             print("baseline relearned: %s" % self.baseline)
             self.set_state(LEARN, "manual relearn")
@@ -811,6 +863,16 @@ class Controller:
                     print("net: %s" % e)
                 if was and not self.link.online and self.telem:
                     self.telem.on_disconnect()
+
+            # After the link, so an attempt is judged on the association the
+            # poll above just made rather than on the one before it. Wrapped
+            # like everything else out here: a provisioning bug must not be
+            # able to stop a fan.
+            if self.prov is not None:
+                try:
+                    self.prov.poll()
+                except Exception as e:
+                    print("wifi: %s" % e)
 
             # Last in the pass, after the watchdog has already been fed by a
             # loop that did its real work. A browser cannot delay the fan by

@@ -13,6 +13,7 @@ node   tests/test_dryrate.mjs        # host only, no browser at all
 python tests/test_app.py             # the app, needs broker + device
 python tests/test_improv.py          # host only, no board needed
 python tests/test_provision.py       # host only, no board needed
+python tests/test_wifi.py            # host only, changing the wifi in-app
 python tests/test_device.py [COM5]   # hardware, needs the Pico attached
 python tests/test_device_http.py     # hardware, over WiFi, needs it on the network
 python tests/test_ha.py              # integration, needs HA + device online
@@ -163,6 +164,30 @@ asserts the three-parameter fit beats the number the pinned one gave.
 The rest is the controller's own stop conditions, mirrored from `main.py`'s
 RUN branch — `MIN_RUN_S`, the post-light hold, and the `MAX_RUN_S` cap. An
 estimate that ignores those is not an estimate of anything the fan will do.
+
+**`test_wifi.py` — 38 checks.** Changing the WiFi from the app, with a fake
+radio. A real association cannot be exercised on the host, but everything
+that decides whether this is *safe* can be.
+
+The assertion the whole design exists for is **"nothing is written while the
+radio is still trying"**, and its partner **"NOTHING is written when it
+fails"**. Those are what make a typo cost a retry rather than a ladder, and
+they are exactly the property a refactor would remove without noticing.
+
+Also: that an in-flight attempt cannot be abandoned by an expiring window, that
+a passphrase full of quotes and backslashes survives `repr()` into
+`secrets.py`, and that changing the WiFi keeps the broker settings.
+
+`fresh()` is worth reading before adding to this file. `provision._carry_over()`
+does `import secrets`, and chdir alone leaves the *repo's* secrets.py first on
+`sys.path` — so the carry-over check was reading this developer's real broker
+credentials and comparing them against fixtures. It passed by coincidence,
+because the fixture IP happened to match the real one. The fixtures are
+deliberately implausible now.
+
+The HTTP contract lives in `test_httpd.py` instead: which status code a shut
+window gives, that the provisioner is never even asked, and that a password
+containing `:,# =` is not mangled by the newline-separated body.
 
 **`test_provision.py` — 62 checks.** Host-only, with MicroPython stubbed,
 so it needs no board and touches none. The radio cannot be exercised here,

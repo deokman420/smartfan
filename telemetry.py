@@ -58,7 +58,7 @@ FW_VERSION = "2c.3"
 TRACKED = ("main.py", "config.py", "settings.py", "telemetry.py",
            "net.py", "mqtt.py", "ringbuf.py", "calibrate.py",
            "provision.py", "improv.py", "httpd.py", "webapi.py",
-           "store.py")
+           "store.py", "wifi.py")
 
 # The app bundle is versioned separately and NOT hashed into the fingerprint.
 # It is pushed by tools/build_www.py rather than by an OTA, changes on its own

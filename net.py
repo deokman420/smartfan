@@ -80,6 +80,18 @@ class Link:
         self._down_since = _now()         # offline until proven otherwise
         self.outage_s = 0                 # length of the most recent outage
 
+        # Credentials to use INSTEAD of secrets.py, while wifi.py is trying a
+        # new network. Held here rather than by mutating the secrets module
+        # so that a failed attempt needs nothing undone: drop the override and
+        # the next associate is the old network again, with no file written
+        # and nothing to roll back. See wifi.py.
+        self._try = None
+
+        # Consecutive association failures. The count survives backoff, so it
+        # measures "this network has stopped working" rather than "one attempt
+        # was unlucky", which is what boot.py's AP fallback keys off.
+        self.wifi_fails = 0
+
     # -- state ---------------------------------------------------------------
 
     @property
@@ -96,6 +108,57 @@ class Link:
             return bool(self._wlan and self._wlan.isconnected())
         except Exception:
             return False
+
+    @property
+    def ssid(self):
+        """The network being used right now, override included."""
+        if self._try:
+            return self._try[0]
+        return getattr(self._s, "WIFI_SSID", "")
+
+    @property
+    def trying(self):
+        return self._try is not None
+
+    def try_wifi(self, ssid, psk):
+        """Associate with these instead, starting now.
+
+        Deliberately does not touch secrets.py. Whether these credentials are
+        worth keeping is not known until the radio says so, and writing first
+        is how a typo becomes a fan that needs a ladder.
+        """
+        self._try = (ssid, psk)
+        self.drop("trying %s" % ssid)
+
+    def stop_trying(self):
+        """Give up on the override and go back to what secrets.py says."""
+        if self._try is None:
+            return
+        self._try = None
+        self.drop("back to %s" % getattr(self._s, "WIFI_SSID", ""))
+
+    def adopt(self):
+        """The override worked and has been written. It is just the network now."""
+        self._try = None
+
+    def drop(self, why="asked to"):
+        """Disassociate and reconnect immediately, skipping the backoff.
+
+        The backoff exists to stop a dead broker or a missing access point
+        costing a stall every pass. A human changing the network is the one
+        case where the next attempt should be now.
+        """
+        try:
+            if self._wlan is not None:
+                self._wlan.disconnect()
+        except Exception:
+            pass
+        if self.client:
+            self.client.close()
+            self.client = None
+        self._backoff = _BACKOFF_START_S
+        self._retry_at = _now()
+        self._goto(OFFLINE, "(%s)" % why)
 
     def _goto(self, state, why=""):
         if state == self.state:
@@ -171,12 +234,14 @@ class Link:
         except Exception:
             pass
         if not self._wlan.isconnected():
-            self._wlan.connect(self._s.WIFI_SSID, self._s.WIFI_PASS)
+            ssid, psk = self._try or (self._s.WIFI_SSID, self._s.WIFI_PASS)
+            self._wlan.connect(ssid, psk)
         self._goto(WIFI_WAIT)
 
     def _poll_wifi(self):
         if self._wlan.isconnected():
             self.ip = self._wlan.ifconfig()[0]
+            self.wifi_fails = 0
             self._log("net: wifi up, ip %s" % self.ip)
             self._sync_clock()
             if not self.mqtt_enabled:
@@ -190,6 +255,7 @@ class Link:
                 self._wlan.disconnect()
             except Exception:
                 pass
+            self.wifi_fails += 1
             self._fail("wifi timeout")
 
     def _sync_clock(self):

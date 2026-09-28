@@ -217,6 +217,45 @@ export function create(getSettings, sink) {
 
     setParam(name, value) {
       return post(`/api/set/${String(name).toLowerCase()}`, value);
+    },
+
+    /* WiFi provisioning. Only this transport has it: the whole point is a
+       door that opens on the fan itself, and a broker on the far side of
+       the network it is about to leave is not the right channel for it.
+       link.js returns null in broker mode and the app says so. */
+    wifi: {
+      async status() {
+        const res = await ask(url('/api/wifi'));
+        return res.ok ? res.json() : null;
+      },
+
+      async scan() {
+        // 15 s: a scan takes the radio through every channel, and on a busy
+        // 2.4 GHz band that is several seconds before a single byte comes
+        // back. The default timeout was aborting a scan that was working.
+        const res = await ask(url('/api/wifi/scan'), {}, 15000);
+        if (!res.ok) return { ok: false, status: res.status };
+        return res.json();
+      },
+
+      async connect(ssid, psk, country) {
+        // One field per line, matching /api/cmd's plain-text bodies. A
+        // passphrase may contain any printable character, and a newline is
+        // the one thing it cannot, so splitting on it cannot corrupt it.
+        const body = [ssid, psk ?? '', country ?? ''].join('\n');
+        const res = await ask(url('/api/wifi'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body
+        });
+        let payload = null;
+        try {
+          payload = await res.json();
+        } catch {
+          /* a body we cannot read is still a status code we can report */
+        }
+        return { ok: res.status === 202, status: res.status, ...(payload ?? {}) };
+      }
     }
   };
 }

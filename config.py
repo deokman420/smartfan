@@ -48,6 +48,10 @@ MAX_RUN_S    = 2700  # hard stop after 45 min no matter what
 POST_LIGHT_S = 120   # keep running at least this long after lights out
 BOOST_S      = 900   # manual button boost
 LONG_PRESS_S = 2.0   # hold this long to relearn the baseline
+HOLD_PRESS_S = 8.0   # ...and this long to open the WiFi provisioning window.
+                     # Both LEDs flash together once you are past it, so the
+                     # gesture is discoverable by holding rather than by
+                     # reading this file.
 
 # --- Fan health -------------------------------------------------------
 TACH_PPR = 2     # pulses per revolution, standard for 3-wire fans

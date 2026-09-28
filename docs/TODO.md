@@ -187,32 +187,41 @@ See `docs/phase-5-plan.md`, and the hardware item above for what is left.
 
 ### Phase 6 — changing the WiFi from the app
 
-Decided, not built. Today a new network means USB and `provision.py`, which
-for a fan in a ceiling means a ladder.
+**Done.** `wifi.py`, `GET/POST /api/wifi`, `GET /api/wifi/scan`, and the
+Network section in the app's settings sheet. Hold the fan's button for
+`HOLD_PRESS_S` (8 s, both LEDs flash together) and the door is open for three
+minutes.
 
-Most of the machinery already exists: `provision.py` writes credentials
-atomically (`secrets.new` then rename, so a power cut cannot leave a
-`secrets.py` that will not import), `_carry_over()` keeps the MQTT settings
-through a re-provision, and there is already a SoftAP with a captive portal.
+Nothing is written until the radio has actually associated. The candidate
+credentials live in `Link._try` and never reach the filesystem, so a failed
+attempt needs nothing undone — dropping the override *is* the rollback. A
+typo costs a retry rather than a ladder.
 
-Two things have to be added, and neither is the API endpoint:
+The one thing that cannot be hidden: a successful change takes the fan off
+the network the request came in on, so the reply cannot carry the result. The
+POST returns 202 and the app says plainly that the fan has left and the phone
+has to follow. Silence after a switch is what success looks like from the old
+network.
 
-**Try before commit.** `needs_provisioning()` fires when credentials are
-*absent*, never when they are *wrong*. Typing a password wrong from the app
-would put the fan on no network with valid-looking secrets and no AP — USB
-recovery only, which is the exact failure this feature exists to avoid. Join
-the new network while still holding the old secrets and only write on
-success. `ota.py` already works this way; this is the same shape.
+#### The automatic AP fallback was a bad idea, and is not built
 
-Add the matching boot-side fallback too: N failed joins raises the AP. That
-makes the whole class of problem recoverable without a ladder, including the
-one where the router changes underneath a fan nobody has touched.
+The earlier note here said "N failed joins raises the AP". That was wrong,
+and writing it down is cheaper than rediscovering why.
 
-**A button press, not a password.** The API's protection today is that the
-fan is only reachable from your network, which is proportionate for reading
-humidity and pressing Boost. Writing WiFi credentials is not in that class:
-anyone on the LAN, guests included, could take the fan off the network. A
-long press opens a short provisioning window and the API only accepts
-credentials inside it. Physical presence as authorisation, which fits the
-rest of this device better than bolting on an account — and the button and
-its long-press handler are already there.
+**It would break the rule the whole project rests on.** A router that is off
+for an hour is an ordinary event, and the fan is supposed to keep running the
+bathroom through it. Handing the device to a captive portal on WiFi failure
+means a power cut at the router stops the fan controlling anything — trading
+the failure this feature prevents for a worse one it would cause.
+
+**Try-before-commit already removed the failure mode it was for.** Bad
+credentials can no longer be written, so the "valid-looking secrets, no
+network, no AP" state has no way to arise from the app any more.
+
+A *deliberate* escape hatch — a second hold starting the AP on purpose,
+never automatically — is still worth having for the case where the network
+changes underneath a fan nobody has touched. It needs one thing first:
+`provision.run()` blocks for minutes and feeds no watchdog, because it has
+only ever run before the WDT is armed. Calling it from the live loop means
+threading a feed through its portal loop. Not hard, but it is real work on
+the recovery path, and it should not be bolted on in passing.
