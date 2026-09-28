@@ -115,6 +115,40 @@ DEVICE_ID  = "fan_bathroom"    # unique_id prefix; must be unique per device
 # orphan the lot and start a second device beside the first.
 DEVICE_NAME = "Bathroom Smartfan"
 
+# --- The on-device server ---------------------------------------------
+# The device serves the app itself, from flash, and answers a small JSON API
+# on the same port. This is what makes a broker optional: with no Home
+# Assistant and no Mosquitto anywhere on the network, http://fan.local/ is
+# still a working interface to the fan.
+#
+# It is stepped from the control loop with the budget below, after the
+# outputs have already been driven and after the watchdog has been fed by a
+# pass that did its real work. Control is never waiting on a browser.
+HTTP_ENABLED   = True
+HTTP_PORT      = 80
+HTTP_BUDGET_MS = 8      # work done per loop pass; 8 ms against a 20 ms loop
+WWW_ROOT       = "www"  # the built app, gzipped, pushed by tools/build_www.py
+
+# The name the app is reached by, so there is no IP to remember or re-learn
+# after a DHCP lease changes. http://fan.local/ works on phones and laptops
+# alike, answered by MicroPython's own mDNS responder -- there is no code of
+# ours behind it, only the ordering in net.py that registers this name before
+# the interface comes up. Verified on the bench: ping fan.local answers.
+#
+# It is the DHCP hostname too, so the router's client list is readable.
+HOSTNAME = "fan"
+
+# --- Stored history ---------------------------------------------------
+# Without Home Assistant there is no recorder, and the app's own history is
+# a rolling day inside one browser. This keeps five-minute means on flash so
+# that any phone opening the app for the first time sees real history.
+#
+# 300 s x 7 days is 2,016 rows and 288 small writes a day, which flash will
+# outlive the fan at. Raising the resolution costs writes, not just space.
+HISTORY_ENABLED    = True
+HISTORY_INTERVAL_S = 300
+HISTORY_DAYS       = 7
+
 # --- Telemetry --------------------------------------------------------
 # 30 s keeps history readable without flooding the recorder. Any change of
 # state, fan, light or fault publishes immediately regardless, so a 20 s
@@ -122,5 +156,28 @@ DEVICE_NAME = "Bathroom Smartfan"
 PUBLISH_INTERVAL_S = 30
 EXPIRE_AFTER_S     = 120   # HA marks entities unavailable after this silence
 
+# MQTT itself is optional. Leave secrets.MQTT_HOST empty and the controller
+# runs WiFi only: no broker, no Home Assistant, no discovery -- just the fan
+# and its own server. See secrets.example.py.
+
 # --- Misc -------------------------------------------------------------
 LOG = True       # print a status line on every sample
+
+# --- This particular unit ---------------------------------------------
+# Everything above is the product. identity.py is this board: the room its
+# owner named at setup, and the address that follows from it.
+#
+# It is a separate file because THIS one is versioned and shipped by OTA. A
+# room name written in here would be overwritten by the next update, and the
+# symptom would be a device that silently renames itself and moves house --
+# new topics, new address, entities orphaned in Home Assistant.
+#
+# Absent on a board that was set up before this existed, or configured by
+# hand, and the defaults above stand. See provision.py.
+try:
+    import identity as _id
+    ROOM = getattr(_id, "ROOM", ROOM)
+    ROOM_NAME = getattr(_id, "ROOM_NAME", ROOM_NAME)
+    HOSTNAME = getattr(_id, "HOSTNAME", HOSTNAME)
+except ImportError:
+    pass

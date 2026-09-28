@@ -1,7 +1,27 @@
 """Wi-Fi provisioning over SoftAP with a captive portal. Phase 4a/4b.
 
 Runs only when there are no usable credentials, before the control loop
-starts, and never alongside it. On success it writes secrets.py and resets.
+starts, and never alongside it. On success it writes secrets.py, writes
+identity.py if the owner named the room, and resets.
+
+Setup asks three things, and each one exists because leaving it out broke
+something real:
+
+    network + password   the obvious one
+    room                 free text, default "bathroom". It names the device,
+                         its MQTT topics and its address, so a second unit is
+                         ensuite-fan.local rather than a second fan.local that
+                         answers at random.
+    country              the Wi-Fi regulatory domain. Wrong value restricts
+                         the usable channels, so a router on channel 12 or 13
+                         -- legal in the EU, not in the US -- is simply
+                         invisible, and the failure looks exactly like a wrong
+                         password.
+
+It finishes by telling the owner the address to open. Before the device
+served its own app, "the green light is on, you are done" was the whole
+truth; now the app is on the device and a setup flow that does not say where
+it lives leaves people with a working fan they cannot see.
 
 Why an access point and not Bluetooth
 -------------------------------------
@@ -102,9 +122,92 @@ def _carry_over():
     return keep
 
 
-def _write_secrets(ssid, psk):
+DEFAULT_ROOM = "bathroom"
+
+# A conservative set. Anything not in here is rejected rather than passed to
+# the radio, because an invalid country code is not always an error -- on some
+# builds it is accepted and quietly restricts the channel list.
+_COUNTRIES = ("AT", "AU", "BE", "BR", "CA", "CH", "CN", "CZ", "DE", "DK", "ES",
+              "FI", "FR", "GB", "GR", "HU", "IE", "IL", "IN", "IT", "JP", "KR",
+              "MX", "NL", "NO", "NZ", "PL", "PT", "RO", "SE", "SG", "TR", "TW",
+              "US", "ZA")
+
+
+def _slug(text, fallback=DEFAULT_ROOM):
+    """Free text to something safe as a DNS label and an MQTT topic segment.
+
+    The room is typed by a person on a phone -- "Master Bath", "Ensuite!",
+    an empty box -- and it ends up in a hostname, a topic and a unique_id.
+    Lowercase, hyphens for gaps, nothing else, and never empty or
+    hyphen-ended because neither is a legal DNS label.
+    """
+    out = ""
+    for ch in (text or "").strip().lower():
+        if ("a" <= ch <= "z") or ("0" <= ch <= "9"):
+            out += ch
+        elif ch in " _-./" and out and not out.endswith("-"):
+            out += "-"
+    out = out.strip("-")[:24].strip("-")
+    return out or fallback
+
+
+def _title(text, fallback="Bathroom"):
+    """The display name, kept as the owner typed it where that is sane."""
+    text = " ".join((text or "").split())[:32].strip()
+    return text or fallback
+
+
+def _hostname_for(room):
+    """The name this unit answers to. One definition, used by every surface.
+
+    `<room>-fan` rather than the room alone: "bathroom.local" reads like the
+    room itself and will collide with the next thing somebody names after it,
+    and a bare "fan.local" collides with the second fan.
+    """
+    return "%s-fan" % _slug(room)
+
+
+def _write_identity(room):
+    """Write identity.py: which room this unit is, and what it answers to.
+
+    Deliberately NOT config.py. That file is versioned and shipped by OTA, so
+    a room name written into it would be overwritten by the next update --
+    silently, and the symptom would be a device that renames itself and
+    changes its own address. config.py imports this at the end if it exists,
+    and OTA never carries it.
+    """
+    # A room of "!!!" slugs to nothing. Fall back on both halves together,
+    # so the display name cannot end up as punctuation while the slug quietly
+    # becomes "bathroom".
+    slug = _slug(room, "")
+    name = _title(room) if slug else "Bathroom"
+    slug = slug or DEFAULT_ROOM
+    lines = ['"""This unit\'s identity, written by provision.py.',
+             "",
+             "Not versioned and never sent by OTA: config.py holds the",
+             "defaults and this holds what the owner chose for this board.",
+             '"""',
+             "",
+             "ROOM = %r" % slug,
+             "ROOM_NAME = %r" % name,
+             "HOSTNAME = %r" % ("%s-fan" % slug),
+             ""]
+    body = "\n".join(lines)
+    with open("identity.new", "w") as f:
+        f.write(body)
+    try:
+        os.remove("identity.py")
+    except OSError:
+        pass
+    os.rename("identity.new", "identity.py")
+    return slug
+
+
+def _write_secrets(ssid, psk, country=None):
     """Write secrets.py. repr() keeps quotes and backslashes valid."""
     keep = _carry_over()
+    if country and country.upper() in _COUNTRIES:
+        keep["WIFI_COUNTRY"] = country.upper()
     lines = ['"""Written by provision.py. Edit by hand if you prefer."""',
              "",
              "WIFI_SSID = %r" % ssid,
@@ -183,6 +286,12 @@ li span{color:#8b97a8;font-size:12px;flex:none}
 border-radius:10px;margin-bottom:20px;font-size:14px}
 .note{color:#8b97a8;font-size:13px;margin-top:20px;padding-top:16px;
 border-top:1px solid #222a35}
+select{width:100%;padding:13px 14px;border-radius:10px;border:1px solid #2b3442;
+background:#1a2029;color:#e8edf5;font-size:16px}
+.hint{color:#6f7d8f;font-size:12px;margin:6px 0 0}
+.url{display:block;margin:10px 0 0;padding:12px 14px;background:#10233a;
+border:1px solid #2b4a6b;border-radius:10px;color:#9fd0ff;font-size:17px;
+font-weight:600;text-align:center;word-break:break-all}
 """
 
 # Event delegation, reading textContent -- deliberately NOT an inline
@@ -195,10 +304,23 @@ document.getElementById('nets').addEventListener('click',function(e){
 var li=e.target.closest('li');if(!li||!li.dataset.pick)return;
 document.getElementById('s').value=li.querySelector('b').textContent;
 document.getElementById('p').focus();});
+(function(){var c=document.getElementById('c');if(!c||!c.dataset.guess)return;
+var l=(navigator.languages&&navigator.languages[0])||navigator.language||'';
+var m=/[-_]([A-Za-z]{2})$/.exec(l);if(!m)return;
+var want=m[1].toUpperCase();
+for(var i=0;i<c.options.length;i++){if(c.options[i].value===want){
+c.selectedIndex=i;return;}}})();
 """
 
 
-def _page(networks, error=""):
+def _page(networks, error="", room=DEFAULT_ROOM, country="US", guess=True):
+    """The setup form.
+
+    `guess` lets the page ask the phone what country it is in, which is a far
+    better default than US-for-everyone. It is switched off once the owner has
+    chosen for themselves, so a retry after a wrong password does not quietly
+    reset their answer to whatever the handset's locale says.
+    """
     rows = ""
     for ssid, rssi, locked in networks:
         rows += ('<li data-pick=1><b>%s</b><span>%s%s</span></li>'
@@ -221,25 +343,56 @@ def _page(networks, error=""):
         "<label for=p>Password</label>"
         "<input id=p name=psk type=password autocapitalize=off "
         "autocorrect=off autocomplete=off>"
+        "<label for=r>Room</label>"
+        "<input id=r name=room value=\"%s\" autocapitalize=words "
+        "autocorrect=off autocomplete=off maxlength=32>"
+        "<p class=hint>Names the fan, its address and its topics. A second "
+        "unit in another room needs a different one.</p>"
+        "<label for=c>Country</label>"
+        "<select id=c name=country%s>%s</select>"
+        "<p class=hint>Sets the Wi-Fi channels the fan may use. The wrong one "
+        "can hide your network completely.</p>"
         "<button type=submit>Connect</button></form>"
         "<p class=note>This setup network will disappear while the fan tries "
         "your password. If it works, the green light turns solid and the fan "
-        "is ready &mdash; nothing else to do. If it does not, the setup "
-        "network comes back so you can try again.</p>"
-        "</div><script>%s</script></body></html>" % (_CSS, err, rows, _JS))
+        "tells you where to find it. If it does not, the setup network comes "
+        "back so you can try again.</p>"
+        "</div><script>%s</script></body></html>"
+        % (_CSS, err, rows, _esc(room or DEFAULT_ROOM),
+           " data-guess=1" if guess else "", _options(country), _JS))
 
 
-_WAIT = (
-    "<!DOCTYPE html><html><head><meta charset=utf-8>"
-    "<meta name=viewport content='width=device-width,initial-scale=1'>"
-    "<title>Connecting</title><style>%s</style></head><body><div class=w>"
-    "<h1>Connecting&hellip;</h1>"
-    "<p class=sub>You can close this page.</p>"
-    "<p class=note>This setup network is shutting down while the fan joins "
-    "your Wi-Fi. Your phone will drop back to its usual network on its own."
-    "<br><br><b>Solid green light:</b> connected, setup is done."
-    "<br><b>Setup network reappears:</b> the password did not work. Rejoin it "
-    "and try again.</p></div></body></html>" % _CSS)
+def _options(selected):
+    """The country list. Plain markup: the portal has no route to a CDN."""
+    out = ""
+    for code in _COUNTRIES:
+        out += "<option value=%s%s>%s</option>" % (
+            code, " selected" if code == (selected or "US") else "", code)
+    return out
+
+
+def _wait_page(host):
+    """The last thing the device can say before its own network vanishes.
+
+    So it has to carry the address. The phone is about to drop back to the
+    house wifi and the device has no other channel to the person holding it:
+    no screen, and a light that can say "connected" but not "open this".
+    Leaving it out is what left the first real user with a working fan and
+    nowhere to look.
+    """
+    return (
+        "<!DOCTYPE html><html><head><meta charset=utf-8>"
+        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>Connecting</title><style>%s</style></head><body><div class=w>"
+        "<h1>Connecting&hellip;</h1>"
+        "<p class=sub>Once the green light is solid, open this:</p>"
+        "<b class=url>http://%s/</b>"
+        "<p class=note>This setup network is shutting down while the fan joins "
+        "your Wi-Fi. Your phone will drop back to its usual network on its own, "
+        "and the address above will work from there."
+        "<br><br><b>Solid green light:</b> connected, setup is done."
+        "<br><b>Setup network reappears:</b> the password did not work. Rejoin "
+        "it and try again.</p></div></body></html>" % (_CSS, _esc(host)))
 
 
 class Portal:
@@ -248,6 +401,11 @@ class Portal:
     def __init__(self, log=print):
         self.log = log
         self.ssid, self.psk = identity()
+        # What the owner last submitted, so a retry after a wrong password
+        # comes back with their room and country still filled in.
+        self.room = getattr(cfg, "ROOM_NAME", None) or DEFAULT_ROOM
+        self.country = "US"
+        self._chose_country = False
         self.error = ""
         self.networks = []
         self.sta_ip = None
@@ -369,7 +527,7 @@ class Portal:
         return s
 
     def _serve(self, conn):
-        """One request. Returns (ssid, psk) if the user submitted, else None."""
+        """One request. Returns (ssid, psk, room, country) on submit, else None."""
         conn.settimeout(4)
         try:
             raw = conn.recv(1024)
@@ -397,14 +555,27 @@ class Portal:
                     if "=" in pair:
                         k, v = pair.split("=", 1)
                         fields[k] = _unquote(v)
-                self._send(conn, _WAIT)
                 ssid = fields.get("ssid", "").strip()
-                return (ssid, fields.get("psk", "")) if ssid else None
+                room = fields.get("room", "").strip()
+                country = fields.get("country", "").strip().upper()
+                if room:
+                    self.room = room
+                if country:
+                    self.country = country
+                    self._chose_country = True
+                # The address is computed from the room they just chose, so
+                # the page they are reading names the device they just made.
+                self._send(conn, _wait_page(
+                    "%s.local" % _hostname_for(self.room)))
+                return ((ssid, fields.get("psk", ""), self.room, self.country)
+                        if ssid else None)
 
             # Every other path, including the captive probes iOS, Android and
             # Windows fire, gets the portal. Returning what those probes
             # expect is precisely what stops the sign-in sheet appearing.
-            self._send(conn, _page(self.networks, self.error))
+            self._send(conn, _page(self.networks, self.error,
+                                   self.room, self.country,
+                                   not self._chose_country))
             return None
         except Exception:
             return None
@@ -490,11 +661,17 @@ class Portal:
             self.log("provision: improv %s" % e)
 
     def _on_improv_wifi(self, ssid, psk):
-        """Improv's join callback. Returns the device URL, or None."""
+        """Improv's join callback. Returns the device URL, or None.
+
+        Improv carries no room field -- the protocol has no place for one --
+        so this path keeps whatever the unit is already called. The browser
+        is handed the .local name rather than the raw address, because that
+        is the one that still works after the next DHCP lease.
+        """
         self.log("provision: improv trying %s" % ssid)
         if self._attempt(ssid, psk):
             self.done = True
-            return "http://%s" % self.sta_ip
+            return "http://%s.local" % _hostname_for(self.room)
         return None
 
     # --- servers ----------------------------------------------------------
@@ -510,18 +687,31 @@ class Portal:
                 pass
         self._dns_sock = self._http_sock = None
 
-    def _attempt(self, ssid, psk):
+    def _attempt(self, ssid, psk, room=None, country=None):
         """Try credentials, restoring the portal if they do not work.
 
         Sequential by construction: the portal and the AP are gone before
         the radio is asked to be a station, because the CYW43439 cannot
         usefully be both at once.
+
+        Nothing is written until the join succeeds. A room name saved against
+        credentials that turned out to be wrong would rename the device on the
+        strength of a failed setup.
         """
         self._led_ok.value(0)
         self._servers_down()
         self.ap_down()
         if self.join(ssid, psk):
-            _write_secrets(ssid, psk)
+            _write_secrets(ssid, psk, country)
+            if room:
+                try:
+                    slug = _write_identity(room)
+                    self.log("provision: this is the %s unit, at http://%s/"
+                             % (slug, "%s-fan.local" % slug))
+                except Exception as e:
+                    # A fan that is on the network under the default name is
+                    # a far better outcome than one that refuses to finish.
+                    self.log("provision: could not save the room (%s)" % e)
             self._led_ok.value(1)
             self._led_run.value(0)
             self.log("provision: saved, restarting")
@@ -544,6 +734,8 @@ class Portal:
         self.log("   password %s" % self.psk)
         self.log(" then open http://%s/ if it does not appear" % AP_IP)
         self.log(" or provision over USB from improv-wifi.com")
+        self.log(" after setup the app is at http://%s.local/"
+                 % _hostname_for(self.room))
         self.log("=" * 52)
 
         self.scan()
@@ -570,7 +762,7 @@ class Portal:
                         conn = None
                 if conn is not None:
                     creds = self._serve(conn)
-                    if creds and self._attempt(creds[0], creds[1]):
+                    if creds and self._attempt(*creds):
                         return True
 
                 # Slow green pulse: waiting for someone to set me up.

@@ -25,6 +25,13 @@ from mqtt import MQTTClient
 
 OFFLINE, WIFI_WAIT, MQTT_WAIT, ONLINE = "offline", "wifi", "mqtt", "online"
 
+# WiFi is up and no broker was configured, which is a working steady state
+# rather than a half-finished one. The device runs its own HTTP server, so a
+# user with no broker and no Home Assistant still has an app; MQTT is the
+# optional extra, not the point. `online` stays False here on purpose --
+# nothing should publish -- and `wifi_ok` is what the server waits on.
+WIFI_ONLY = "wifi-only"
+
 _BACKOFF_START_S = 2
 _BACKOFF_MAX_S = 60
 _WIFI_TIMEOUT_S = 20
@@ -43,13 +50,21 @@ def _since(t):
 class Link:
     """WiFi + MQTT connection, driven by repeated poll() calls."""
 
-    def __init__(self, secrets, status_topic, log=None, subscribe=None, on_msg=None):
+    def __init__(self, secrets, status_topic, log=None, subscribe=None,
+                 on_msg=None, hostname=None):
         self._s = secrets
         self.status_topic = status_topic
         self._log = log or (lambda *a: None)
         self._subs = list(subscribe or ())
         self._on_msg = on_msg
+        self._hostname = hostname
         self.clock_ok = False
+        self.ip = None
+
+        # An empty or absent MQTT_HOST is a statement, not an omission: run
+        # WiFi only. Before this, secrets.py without a broker meant the
+        # network layer failed on every pass and backed off forever.
+        self.mqtt_enabled = bool(getattr(secrets, "MQTT_HOST", ""))
 
         self.state = OFFLINE
         self.client = None
@@ -69,7 +84,18 @@ class Link:
 
     @property
     def online(self):
+        """MQTT is up. Publishing is gated on this and nothing else."""
         return self.state == ONLINE
+
+    @property
+    def wifi_ok(self):
+        """The radio is associated, whether or not a broker is in use."""
+        if self.state not in (ONLINE, WIFI_ONLY):
+            return False
+        try:
+            return bool(self._wlan and self._wlan.isconnected())
+        except Exception:
+            return False
 
     def _goto(self, state, why=""):
         if state == self.state:
@@ -106,6 +132,8 @@ class Link:
                 self._poll_wifi()
             elif self.state == MQTT_WAIT:
                 self._poll_mqtt()
+            elif self.state == WIFI_ONLY:
+                self._poll_wifi_only()
             elif self.state == ONLINE:
                 self._poll_online()
         except Exception as e:                     # never propagate
@@ -118,6 +146,24 @@ class Link:
         if network is None:
             return
         if self._wlan is None:
+            # The hostname must be set BEFORE the interface comes up, and
+            # that ordering is the whole reason http://fan.local/ works.
+            #
+            # MicroPython on this port has its own mDNS responder built in --
+            # which is why a responder of ours could never bind port 5353 --
+            # and it registers the name when the netif is brought up. Setting
+            # the hostname afterwards leaves it registered under the old one.
+            # Measured on the bench: with `network.hostname()` after
+            # `active(True)`, fan.local did not resolve; moved before it, the
+            # same board answers a ping in 111 ms.
+            #
+            # It is also the DHCP hostname, so the router's client list says
+            # "fan" rather than an anonymous MAC.
+            if self._hostname:
+                try:
+                    network.hostname(self._hostname)
+                except Exception:
+                    pass
             self._wlan = network.WLAN(network.STA_IF)
         self._wlan.active(True)
         try:
@@ -130,8 +176,13 @@ class Link:
 
     def _poll_wifi(self):
         if self._wlan.isconnected():
-            self._log("net: wifi up, ip %s" % self._wlan.ifconfig()[0])
+            self.ip = self._wlan.ifconfig()[0]
+            self._log("net: wifi up, ip %s" % self.ip)
             self._sync_clock()
+            if not self.mqtt_enabled:
+                self._backoff = _BACKOFF_START_S
+                self._goto(WIFI_ONLY, "(no broker configured)")
+                return
             self._goto(MQTT_WAIT)
             return
         if _since(self._entered) > _WIFI_TIMEOUT_S * 1000:
@@ -193,6 +244,25 @@ class Link:
         self._backoff = _BACKOFF_START_S
         self._last_ping = _now()
         self._goto(ONLINE)
+
+    def _poll_wifi_only(self):
+        """Hold WiFi up and keep the clock honest. Cheap, and never blocks.
+
+        The clock retry matters more here than on the MQTT path: with no
+        broker, the stored history is the only record of what happened, and
+        store.py writes nothing until the year looks real.
+        """
+        if not self._wlan.isconnected():
+            self.ip = None
+            self._fail("wifi dropped")
+            return
+        ip = self._wlan.ifconfig()[0]
+        if ip != self.ip:
+            self.ip = ip
+            self._log("net: ip now %s" % ip)
+        if not self.clock_ok and _since(self._entered) > 60000:
+            self._entered = _now()
+            self._sync_clock()
 
     def _poll_online(self):
         try:

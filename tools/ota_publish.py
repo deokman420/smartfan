@@ -35,13 +35,15 @@ ROOT = os.path.dirname(HERE)
 # Push those over USB when they genuinely change.
 SHIP = ("main.py", "config.py", "settings.py", "telemetry.py",
         "net.py", "mqtt.py", "ringbuf.py", "calibrate.py", "provision.py",
-        "improv.py")
+        "improv.py", "httpd.py", "webapi.py", "store.py")
 
 EXCLUDE_REASON = {
+    "www/": "the app bundle -- pushed by tools/build_www.py, versioned apart",
     "boot.py": "recovery path -- flash over USB",
     "ota.py": "recovery path -- flash over USB",
     "secrets.py": "device-specific credentials",
     "settings.json": "device's own runtime settings",
+    "identity.py": "the room this unit was named at setup",
 }
 
 

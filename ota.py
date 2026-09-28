@@ -36,7 +36,11 @@ CHUNK = 512
 
 # Never replaced over the air: boot.py is what rescues a bad update, and
 # secrets/settings are this device's own, not the build's.
-PROTECTED = ("boot.py", "secrets.py", "settings.json", PENDING)
+# Never replaced or removed by an update. boot.py and secrets.py are the
+# recovery path and the credentials; settings.json and identity.py are what
+# this particular device is -- its tuning and its name -- as opposed to what
+# the product is.
+PROTECTED = ("boot.py", "secrets.py", "settings.json", "identity.py", PENDING)
 
 
 def _exists(name):

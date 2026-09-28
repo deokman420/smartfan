@@ -22,6 +22,11 @@ import config as cfg
 from settings import Settings
 import ota
 
+# Snapshot needs no network: it is the device's view of itself, and the HTTP
+# API reads it whether or not a broker exists. Telemetry, beside it, is the
+# MQTT publisher and does need a link.
+from telemetry import Snapshot, Telemetry
+
 # The network layer is strictly additive. No secrets.py, or any failure while
 # bringing it up, leaves a controller that still runs the fan exactly as it
 # would have done offline. A bathroom extractor that stops working when the
@@ -29,11 +34,27 @@ import ota
 try:
     import secrets
     from net import Link
-    from telemetry import Telemetry
     _NET = True
 except ImportError:
     secrets = None
     _NET = False
+
+# The on-device server is additive in exactly the same way, and guarded the
+# same way: a board that does not have these files yet -- mid-OTA, or rolled
+# back to an older set -- still boots and still runs the fan.
+try:
+    import httpd
+    import webapi
+    _WEB = True
+except ImportError:
+    _WEB = False
+
+try:
+    import store
+    _STORE = True
+except ImportError:
+    _STORE = False
+
 
 LEARN, IDLE, RUN, BOOST, FAULT = "LEARN", "IDLE", "RUN", "BOOST", "FAULT"
 
@@ -193,15 +214,48 @@ class Controller:
         self._push = False         # force a publish after a command lands
         self.wdt = None
         self.boot_reason = _boot_reason()
+
+        # Last raw LDR reading. Kept on the controller rather than only in
+        # run()'s locals so a web request can report it; read_light() is what
+        # keeps it current.
+        self.raw_light = 0
+        self.ip = None
+        self.mqtt_host = getattr(secrets, "MQTT_HOST", "") if secrets else ""
+
+        # Everything the device knows about itself, with or without a broker.
+        self.snap = Snapshot(cfg, log=print)
+
+        self.hist = None
+        if _STORE and getattr(cfg, "HISTORY_ENABLED", True):
+            try:
+                self.hist = store.History(cfg, log=print)
+                print("history: %ds buckets, %d days, %d rows on flash"
+                      % (self.hist.interval_s, self.hist.days,
+                         self.hist.stats()["rows"]))
+            except Exception as e:
+                print("history: disabled (%s)" % e)
+
+        self.http = None
+        self.api = None
+        self._web_retry_at = 0     # backoff after a failed bind
+
         if _NET:
             try:
                 cmd_topic = "fan/%s/cmd" % cfg.ROOM
                 set_topic = "fan/%s/set/+" % cfg.ROOM
                 self.link = Link(secrets, "fan/%s/status" % cfg.ROOM, log=print,
                                  subscribe=(cmd_topic, set_topic),
-                                 on_msg=self.on_command)
-                self.telem = Telemetry(cfg, self.link, log=print)
-                print("net: enabled, room=%s" % cfg.ROOM)
+                                 on_msg=self.on_command,
+                                 hostname=getattr(cfg, "HOSTNAME", None))
+                # No broker configured is a supported setup, not a failure:
+                # WiFi comes up, the device serves its own app, and nothing
+                # publishes. Telemetry is only built when there is a link for
+                # it to publish over.
+                if self.link.mqtt_enabled:
+                    self.telem = Telemetry(cfg, self.link, self.snap, log=print)
+                    print("net: enabled, room=%s" % cfg.ROOM)
+                else:
+                    print("net: wifi only, no broker configured")
             except Exception as e:
                 print("net: disabled (%s)" % e)
                 self.link = self.telem = None
@@ -215,6 +269,11 @@ class Controller:
 
         The red LED sits near the sensor and will otherwise read as
         "the bathroom light is on", which latches the fan permanently.
+
+        The reading is stored as well as returned, because the HTTP API has
+        to report the same number the log line shows without going and
+        reading the sensor from inside a web request. Storing it here, at the
+        one place that takes the reading, is what stops the two diverging.
         """
         ok, run = self.led_ok.value(), self.led_run.value()
         self.led_ok.value(0)
@@ -228,6 +287,7 @@ class Controller:
             self.light_on = True
         elif raw <= self.st.LIGHT_OFF:
             self.light_on = False
+        self.raw_light = raw
         return raw
 
     def read_climate(self):
@@ -264,6 +324,10 @@ class Controller:
         if new == self.state:
             return
         print("state: %s -> %s  %s" % (self.state, new, reason))
+        # fault_reason is published on every reading. Leaving it set after
+        # the controller has recovered makes a cleared fault look current.
+        if self.state == FAULT and new != FAULT:
+            self.fault_reason = ""
         self.state = new
         self.entered_at = time.ticks_ms()
 
@@ -274,8 +338,7 @@ class Controller:
         self.fan_on_at = time.ticks_ms() if on else None
         self.fan_off_at = None if on else time.ticks_ms()
         self.tach.rpm()          # discard the stale window
-        if self.telem:
-            self.telem.note_fan(on)
+        self.snap.note_fan(on)
 
     def fan_seconds(self):
         return 0 if self.fan_on_at is None else ms_since(self.fan_on_at) / 1000.0
@@ -574,6 +637,53 @@ class Controller:
                   self.fan.value(), self.rpm,
                   self.fault_reason if self.state == FAULT else ""))
 
+    # -- the on-device server -----------------------------------------
+
+    def web_step(self):
+        """Serve the app and the API, a few milliseconds at a time.
+
+        Started lazily: the socket cannot bind before WiFi is up, and a board
+        with no secrets.py never gets here at all. Once bound it stays bound
+        through any number of WiFi drops, because it listens on 0.0.0.0 and a
+        new DHCP lease does not invalidate that.
+
+        A failed bind backs off rather than retrying on the next pass. Port 80
+        can be held briefly by the previous socket after a reset, and a retry
+        every 20 ms would fill the log with the same line several hundred
+        times before it succeeded.
+
+        Never raises. The fan does not care whether anyone is watching.
+        """
+        if not _WEB or not getattr(cfg, "HTTP_ENABLED", True):
+            return
+        if self.link is None or not self.link.wifi_ok:
+            return
+        if self.http is None and time.ticks_diff(self._web_retry_at,
+                                                 time.ticks_ms()) > 0:
+            return
+        try:
+            if self.http is None:
+                self.api = webapi.Api(self, cfg, self.snap, self.hist,
+                                      log=print)
+                self.http = httpd.Server(
+                    handler=self.api.handle,
+                    root=getattr(cfg, "WWW_ROOT", "www"),
+                    port=getattr(cfg, "HTTP_PORT", 80),
+                    log=print)
+                if not self.http.start():
+                    self.http = None
+                    self._web_retry_at = time.ticks_add(time.ticks_ms(), 5000)
+                    return
+                name = getattr(cfg, "HOSTNAME", None)
+                print("http: app at http://%s/%s"
+                      % (self.link.ip or "?",
+                         "  (http://%s.local/)" % name if name else ""))
+
+            self.ip = self.link.ip
+            self.http.step(getattr(cfg, "HTTP_BUDGET_MS", 8))
+        except Exception as e:
+            print("http: %s" % e)
+
     # -- main loop ----------------------------------------------------
 
     def run(self):
@@ -627,14 +737,28 @@ class Controller:
                 # as a fault and is only a one-tick lag.
                 if cfg.LOG:
                     self.log(raw_light)
-            if sampled and self.telem:
-                sampled = False
+            if sampled:
+                # One payload per sample, read by everything that wants one:
+                # the MQTT publish, and the five-minute history bucket. Built
+                # once so the broker and the stored record can never disagree
+                # about what this sample was.
                 try:
-                    self.telem.publish(self, raw_light, self._rssi(),
-                                       force=self._push)
-                    self._push = False
+                    p = self.snap.payload(self, raw_light, self.rssi(),
+                                          self.link)
                 except Exception as e:
-                    print("telemetry: %s" % e)
+                    p = None
+                    print("snapshot: %s" % e)
+
+                if p is not None and self.hist is not None:
+                    self.hist.note(p)
+
+                if p is not None and self.telem:
+                    try:
+                        self.telem.publish(self, raw_light, self.rssi(),
+                                           force=self._push, payload=p)
+                        self._push = False
+                    except Exception as e:
+                        print("telemetry: %s" % e)
             sampled = False
 
             # The single feed point. Deliberately after the outputs are
@@ -688,9 +812,16 @@ class Controller:
                 if was and not self.link.online and self.telem:
                     self.telem.on_disconnect()
 
+            # Last in the pass, after the watchdog has already been fed by a
+            # loop that did its real work. A browser cannot delay the fan by
+            # more than this step's budget, and if it ever did hang, the
+            # watchdog resets us -- which is the correct outcome for a web
+            # server that has wedged a fan controller.
+            self.web_step()
+
             time.sleep_ms(20)
 
-    def _rssi(self):
+    def rssi(self):
         """WiFi signal, or None when offline. Cheap and never raises."""
         try:
             if self.link and self.link.online and self.link._wlan:

@@ -153,9 +153,69 @@ try:
           ns.get("MQTT_USER") == "pico-fan-bathroom"
           and ns.get("MQTT_PASS") == "brokerpw")
     check("no temp file left behind", not os.path.exists("secrets.new"))
+
+    # --- the country, which is the field nobody thinks about ---------------
+    # Getting it wrong restricts the channel list, so a router on 12 or 13 is
+    # invisible and the symptom reads as a wrong password.
+    provision._write_secrets("Home WiFi", "pw", "gb")
+    ns = {}
+    exec(compile(io.open("secrets.py", encoding="utf-8").read(),
+                 "secrets.py", "exec"), ns)
+    check("country is saved, normalised to upper case",
+          ns.get("WIFI_COUNTRY") == "GB", ns.get("WIFI_COUNTRY"))
+
+    # The property that matters is that nonsense never reaches the radio.
+    # It falls back to what was carried over rather than to the submitted
+    # value -- which here is the template default, because the stubbed
+    # secrets module is what _carry_over sees.
+    provision._write_secrets("Home WiFi", "pw", "ZZ")
+    ns = {}
+    exec(compile(io.open("secrets.py", encoding="utf-8").read(),
+                 "secrets.py", "exec"), ns)
+    check("a country the radio would not accept is never written",
+          ns.get("WIFI_COUNTRY") != "ZZ"
+          and ns.get("WIFI_COUNTRY") in provision._COUNTRIES,
+          ns.get("WIFI_COUNTRY"))
+
+    # --- identity.py, which decides what the device is called --------------
+    slug = provision._write_identity("Master Bath")
+    written = io.open("identity.py", encoding="utf-8").read()
+    ns = {}
+    exec(compile(written, "identity.py", "exec"), ns)
+    check("identity is importable python", "ROOM" in ns)
+    check("the room is slugged for topics and DNS",
+          slug == "master-bath" and ns["ROOM"] == "master-bath", slug)
+    check("the display name keeps what was typed",
+          ns["ROOM_NAME"] == "Master Bath", ns.get("ROOM_NAME"))
+    check("the hostname is the room, not a bare 'fan'",
+          ns["HOSTNAME"] == "master-bath-fan", ns.get("HOSTNAME"))
+    check("no temp identity left behind", not os.path.exists("identity.new"))
+
+    # A name that survives the slug but not much else.
+    provision._write_identity("!!!")
+    ns = {}
+    exec(compile(io.open("identity.py", encoding="utf-8").read(),
+                 "identity.py", "exec"), ns)
+    check("an unusable room falls back on both halves together",
+          ns["ROOM"] == "bathroom" and ns["ROOM_NAME"] == "Bathroom",
+          "%s / %s" % (ns["ROOM"], ns["ROOM_NAME"]))
+
+    # The room is typed by a person on a phone. Whatever they type has to
+    # come out as a legal DNS label and a legal topic segment, because it
+    # becomes both.
+    bad = []
+    for typed in ("Master Bath", "  ensuite  ", "loft/attic", "WC #2",
+                  "a" * 60, "-- --", "Bathroom", "salle de bain"):
+        got = provision._slug(typed)
+        if (not got or got != got.lower() or got.startswith("-")
+                or got.endswith("-") or len(got) > 24
+                or any(not (c.isalnum() or c == "-") for c in got)):
+            bad.append((typed, got))
+    check("every room name slugs to a legal label", not bad, str(bad[:2]))
 finally:
     os.chdir(cwd)
     sys.modules.pop("secrets", None)
+    sys.modules.pop("identity", None)
 
 # --- rendering names chosen by somebody else --------------------------------
 hostile = [
@@ -191,6 +251,41 @@ check("error text is escaped too",
 check("empty scan still renders a usable form",
       "No networks found" in provision._page([]) and "name=ssid" in
       provision._page([]))
+
+# --- the fields setup actually asks for -------------------------------------
+form = provision._page([])
+check("the form asks for the room", "name=room" in form)
+check("the room defaults to bathroom", 'value="bathroom"' in form)
+check("the form asks for the country", "name=country" in form)
+check("the country list is inline, not fetched",
+      "<option value=US" in form and "GB" in form)
+
+# The phone's locale is a better default than US-for-everyone, but only
+# until the owner answers for themselves. A retry after a wrong password
+# must not quietly reset their choice to whatever the handset says.
+check("a fresh form asks the phone where it is",
+      "data-guess=1" in provision._page([]))
+check("a remembered choice is left alone",
+      "data-guess" not in provision._page([], "", "bathroom", "GB", False))
+check("the remembered country is the selected one",
+      "<option value=GB selected>" in
+      provision._page([], "", "bathroom", "GB", False))
+
+# A room name is user input that gets rendered back into the form on a retry.
+hostile_room = provision._page([], "", '"><script>x</script>', "US")
+check("a hostile room name cannot break out of its attribute",
+      '"><script>' not in hostile_room and "&quot;&gt;" in hostile_room)
+
+# --- the hand-off, which is the whole reason setup ends anywhere ------------
+wait = provision._wait_page("ensuite-fan.local")
+check("the waiting page names the address to open",
+      "http://ensuite-fan.local/" in wait)
+check("the waiting page still explains the disappearing network",
+      "shutting down" in wait and "green light" in wait)
+check("the waiting page makes no external requests",
+      "https://" not in wait)
+check("one room, one hostname, one definition",
+      provision._hostname_for("Master Bath") == "master-bath-fan")
 
 size = len(page.encode("utf-8"))
 check("page fits the 20 KB budget", size < 20480, "%d bytes" % size)
@@ -251,8 +346,11 @@ p2._attempt = fake_attempt
 url = p2._on_improv_wifi("Hollow Bastion", "right")
 check("improv joins through the shared _attempt", calls == [
     ("Hollow Bastion", "right")])
+# The .local name, not the raw address. A browser handed 192.168.0.42 has
+# been given something that stops working at the next DHCP lease, and the
+# whole point of the name is that it does not.
 check("improv reports the device URL back",
-      url == "http://192.168.0.42", str(url))
+      url == "http://bathroom-fan.local", str(url))
 check("a successful improv join ends the portal", p2.done is True)
 
 p2.done = False

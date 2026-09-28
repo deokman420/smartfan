@@ -16,10 +16,21 @@ WIFI_SSID = "your-ssid"
 WIFI_PASS = "your-password"
 WIFI_COUNTRY = "US"          # regulatory domain; wrong value limits channels
 
-# --- MQTT -------------------------------------------------------------------
-# Mosquitto add-on on the Home Assistant host. Use a dedicated broker account
-# per device, not the Home Assistant login -- so one compromised or misbehaving
-# device can be revoked without touching the others.
+# --- MQTT (optional) --------------------------------------------------------
+# Leave MQTT_HOST empty to run without a broker at all:
+#
+#     MQTT_HOST = ""
+#
+# The controller then brings WiFi up, serves the app from flash at
+# http://fan.local/, keeps its own history, and publishes nothing. Nothing is
+# lost except Home Assistant -- the fan, the app and the API are all local.
+# Set it to a broker and the Home Assistant surface appears on top, additive
+# as it has always been.
+#
+# With a broker: Mosquitto on the Home Assistant host, or a standalone one.
+# Use a dedicated broker account per device, not the Home Assistant login --
+# so one compromised or misbehaving device can be revoked without touching
+# the others.
 MQTT_HOST = "192.168.0.5"
 MQTT_PORT = 1883
 MQTT_USER = "pico-fan-bathroom"

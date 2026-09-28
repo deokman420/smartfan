@@ -1,5 +1,14 @@
 # Deferred work
 
+> **Resolved 2026-09-27 — the broker is no longer required.** The app used to
+> reach the fan only through MQTT, and a broker in practice means Home
+> Assistant's Mosquitto add-on — so "local first" quietly meant "as long as
+> you run Home Assistant". The device now serves the app off its own flash,
+> answers a JSON API, and keeps a week of history, so a user with neither has
+> a working interface. Home Assistant lost nothing: set `MQTT_HOST` and the
+> whole MQTT surface works exactly as before. See
+> [`docs/phase-5-plan.md`](phase-5-plan.md).
+
 > **Resolved 2026-09-27 — the Mosquitto WebSocket listener.** It was on this
 > list as work for you to do. It turned out to need nothing: the Home
 > Assistant Mosquitto add-on already serves MQTT over WebSocket on port
@@ -103,6 +112,47 @@ happens. See `docs/phase-4-app-plan.md`.
 
 ## Quality passes not yet run
 
+### Setup, end to end, by somebody else
+
+**Needed by:** handing a unit to anyone who did not build it.
+
+The flow is built and unit-tested (`tests/test_provision.py`, 62 checks) and
+the pages have been rendered and read, but the whole path — power up a board
+with no credentials, join the setup AP from a phone, complete the form, land
+on the app — has never been walked in one go on hardware. The parts that can
+only fail there:
+
+* **The iOS Captive Network Assistant.** A restricted WebView, not Safari.
+  It can be dismissed mid-flow by the OS, and navigating away from the AP
+  kills it. The portal is built for this and unverified against it.
+* **The country field actually changing the channel list**, which is only
+  observable against a router on channel 12 or 13.
+* **Two units at once**, which is what the room field exists for and what no
+  test can prove with one board.
+
+**Unblocks with:** a second board, flashed with no `secrets.py`, and a phone.
+
+### The on-device server, on a phone
+
+**Needed by:** trusting phase 5 in the field.
+
+Done on hardware already: `tests/test_device_http.py` runs against the bench
+board over real WiFi — 17 checks, all passing. `fan.local` resolves, a browser
+loads the bundle off flash in 3.3 s, Boost reaches the fan, eight
+simultaneous requests are all served, and the control loop never missed a
+watchdog feed. Three real bugs came out of that session; see
+[`docs/phase-5-plan.md`](phase-5-plan.md).
+
+What a desktop browser on a bench cannot settle:
+
+* **A phone, in the room**, one-handed and steamy. That is the whole point of
+  the thing.
+* **The service worker across a bundle push.** It caches the app for offline
+  use, which is excellent until a new bundle is on flash and the phone serves
+  the old one from cache.
+* **A seven-day window rolling over**, so the two history files actually
+  rotate in anger.
+
 ### WCAG AAA contrast audit of the dashboard
 
 You asked for the dashboard to be "AAA worthy". It was rebuilt for layout
@@ -128,3 +178,8 @@ Needs a relay, a real ceiling vent fan, and permanent wiring.
 ### 4d, 4e — the app and its update surface
 
 In progress. See `docs/phase-4-app-plan.md` for the work order.
+
+### Phase 5 — the device serves the app
+
+Built and tested on the host; not yet flashed to the board in the ceiling.
+See `docs/phase-5-plan.md`, and the hardware item above for what is left.

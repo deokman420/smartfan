@@ -1,4 +1,17 @@
-"""Home Assistant MQTT discovery and state publishing.
+"""The device's own view of itself, and the Home Assistant MQTT surface.
+
+Two classes, split along one line: whether a broker has to exist.
+
+    Snapshot   what the controller currently is -- the fingerprint, the
+               daily runtime accounting, and the JSON payload. Needs no
+               network at all, and the on-device HTTP API reads it directly.
+    Telemetry  publishing that payload over MQTT, plus Home Assistant
+               discovery. Needs a live link.
+
+The split is what makes a broker optional. Before it, the payload could only
+be built by the object that owned an MQTT connection, so a user with no
+broker -- and therefore no Home Assistant -- had no way to see any of this,
+even from a page served by the device itself. See httpd.py and webapi.py.
 
 Sensors and binary sensors report; buttons send commands back. Parameter
 writes (thresholds, timings) are still to come -- those need clamping and
@@ -10,6 +23,7 @@ Topic layout assumes more than one of these will exist:
     fan/<room>/status        online | offline   (LWT, retained)
     fan/<room>/state         JSON snapshot      (retained)
     fan/<room>/cmd           boost | cancel | relearn | clear
+    fan/<room>/set/<PARAM>   a tunable's new value
     homeassistant/<kind>/<device>/<key>/config  (discovery, retained)
 
 One JSON state topic rather than a topic per sensor: fewer publishes, one
@@ -22,7 +36,20 @@ import time
 
 from settings import SPECS, MODES
 
-FW_VERSION = "2c.2"
+# MicroPython's monotonic millisecond clock, with a CPython fallback so this
+# module -- and the payload every surface reads -- can be exercised by
+# tests/test_httpd.py without a board attached.
+try:
+    _ticks = time.ticks_ms
+    _diff = time.ticks_diff
+except AttributeError:
+    def _ticks():
+        return int(time.monotonic() * 1000)
+
+    def _diff(a, b):
+        return a - b
+
+FW_VERSION = "2c.3"
 
 # Files whose content defines "what build is running". Hashed together into
 # a short fingerprint so the installed code can be identified over the
@@ -30,7 +57,14 @@ FW_VERSION = "2c.2"
 # device in a ceiling is to go and get it.
 TRACKED = ("main.py", "config.py", "settings.py", "telemetry.py",
            "net.py", "mqtt.py", "ringbuf.py", "calibrate.py",
-           "provision.py", "improv.py")
+           "provision.py", "improv.py", "httpd.py", "webapi.py",
+           "store.py")
+
+# The app bundle is versioned separately and NOT hashed into the fingerprint.
+# It is pushed by tools/build_www.py rather than by an OTA, changes on its own
+# schedule, and folding it in would make every firmware fingerprint comparison
+# report a mismatch after a purely cosmetic app change.
+APP_MANIFEST = "www/build.json"
 
 
 def fingerprint():
@@ -91,32 +125,44 @@ _BINARY = (
 )
 
 
+def app_build():
+    """The app bundle's version, or None if no bundle is installed.
+
+    Reported alongside the firmware fingerprint because the two are now
+    separate deployables: a device can be running current firmware and a
+    stale app, and that difference has to be visible from the app itself.
+    """
+    try:
+        with open(APP_MANIFEST) as f:
+            return json.load(f).get("build")
+    except Exception:
+        return None
+
+
 def _boost_left_min(c):
     """Whole minutes left on a boost, or 0 when none is running."""
     if c.state != "BOOST" or c.boost_until is None:
         return 0
-    ms = time.ticks_diff(c.boost_until, time.ticks_ms())
+    ms = _diff(c.boost_until, _ticks())
     return max(0, int((ms + 59999) // 60000))      # round up: 1 s left reads 1
 
 
-class Telemetry:
-    def __init__(self, cfg, link, log=None):
+class Snapshot:
+    """What the controller is right now, in one dict. No network needed.
+
+    Owns the two pieces of state that only make sense over time -- the daily
+    fan runtime and the build fingerprint -- so that whoever asks for the
+    payload gets the same numbers, whether that is an MQTT publish or an
+    HTTP request from a browser on the LAN.
+    """
+
+    def __init__(self, cfg, log=None):
         self.cfg = cfg
-        self.link = link
         self._log = log or (lambda *a: None)
 
-        room = cfg.ROOM
-        self.status_topic = "fan/%s/status" % room
-        self.state_topic = "fan/%s/state" % room
-        self.cmd_topic = "fan/%s/cmd" % room
-        self.set_topic = "fan/%s/set" % room
-
-        self._announced = False
-        self._last_pub = None
-        self._last_sig = None
-
         self.fw = fingerprint()
-        self._log("telemetry: build %s" % self.fw)
+        self.app = app_build()
+        self._log("telemetry: build %s, app %s" % (self.fw, self.app))
 
         self._run_ms = 0                # fan runtime accumulator, today
         self._run_since = None
@@ -126,20 +172,20 @@ class Telemetry:
 
     def note_fan(self, on):
         """Track fan-on time. Called whenever the commanded state changes."""
-        now = time.ticks_ms()
+        now = _ticks()
         if on and self._run_since is None:
             self._run_since = now
         elif not on and self._run_since is not None:
-            self._run_ms += time.ticks_diff(now, self._run_since)
+            self._run_ms += _diff(now, self._run_since)
             self._run_since = None
 
-    def _runtime_min(self):
+    def runtime_min(self):
         total = self._run_ms
         if self._run_since is not None:
-            total += time.ticks_diff(time.ticks_ms(), self._run_since)
+            total += _diff(_ticks(), self._run_since)
         return round(total / 60000.0, 1)
 
-    def _roll_day(self):
+    def roll_day(self):
         """Reset the daily counter at local midnight, once the clock is sane.
 
         Before NTP lands the RTC sits at its power-on default, so yearday is
@@ -156,7 +202,78 @@ class Telemetry:
             self._run_day = day
             self._run_ms = 0
             if self._run_since is not None:
-                self._run_since = time.ticks_ms()
+                self._run_since = _ticks()
+
+    # -- state ---------------------------------------------------------------
+
+    def payload(self, c, raw_light, rssi=None, link=None):
+        """The one snapshot every surface reads.
+
+        `link` is optional: with no broker configured there is none, and the
+        link fields report the absence rather than being left out. A missing
+        key would make the app draw an empty tile where the truthful answer
+        is "there is no broker, by choice".
+        """
+        self.roll_day()
+        return {
+            "state":    c.state,
+            "temp":     round(c.temp, 1) if c.temp is not None else None,
+            "rh":       round(c.rh, 1) if c.rh is not None else None,
+            "dp":       round(c.dew_point(), 1) if c.dew_point() is not None else None,
+            "base":     round(c.baseline, 1) if c.baseline is not None else None,
+            "exc":      round(c.excess_rh, 1),
+            "light":    raw_light,
+            "light_pc": round(min(100.0, raw_light * 100.0 / 65535), 1),
+            "light_on": bool(c.light_on),
+            "fan_on":   bool(c.fan.value()),
+            # What the fan is actually doing, not what it was told. A fan
+            # turning while commanded off must read non-zero, or the one
+            # number that would reveal a bypassed switch stays hidden.
+            "rpm":      c.rpm or getattr(c, "rpm_idle", 0),
+            "fault":    c.state == "FAULT",
+            "reason":   c.fault_reason or None,
+            "run_min":  self.runtime_min(),
+            "boost_left": _boost_left_min(c),
+            "rssi":     rssi,
+            "up_min":   round(_ticks() / 60000.0, 1),
+            "reconn":   getattr(link, "connects", 0),
+            "outage_s": getattr(link, "outage_s", 0),
+            "mqtt":     getattr(link, "state", "disabled"),
+            "boot":     getattr(c, "boot_reason", "unknown"),
+            "fw":       self.fw,
+            "app":      self.app,
+            "cfg":      c.st.as_dict(),
+        }
+
+
+
+class Telemetry:
+    """Publishing a Snapshot over MQTT, plus Home Assistant discovery.
+
+    Only constructed when there is a link to publish over. Everything that
+    is true of the controller with or without a broker lives in Snapshot.
+    """
+
+    def __init__(self, cfg, link, snap, log=None):
+        self.cfg = cfg
+        self.link = link
+        self.snap = snap
+        self._log = log or (lambda *a: None)
+
+        room = cfg.ROOM
+        self.status_topic = "fan/%s/status" % room
+        self.state_topic = "fan/%s/state" % room
+        self.cmd_topic = "fan/%s/cmd" % room
+        self.set_topic = "fan/%s/set" % room
+
+        self._announced = False
+        self._last_pub = None
+        self._last_sig = None
+
+    @property
+    def fw(self):
+        """The fingerprint, which belongs to the build, not to the link."""
+        return self.snap.fw
 
     # -- discovery -----------------------------------------------------------
 
@@ -278,38 +395,6 @@ class Telemetry:
         """Re-announce after a reconnect; the broker may have lost retained state."""
         self._announced = False
 
-    # -- state ---------------------------------------------------------------
-
-    def _payload(self, c, raw_light, rssi):
-        span = max(1, self.cfg.LIGHT_ON)
-        return {
-            "state":    c.state,
-            "temp":     round(c.temp, 1) if c.temp is not None else None,
-            "rh":       round(c.rh, 1) if c.rh is not None else None,
-            "dp":       round(c.dew_point(), 1) if c.dew_point() is not None else None,
-            "base":     round(c.baseline, 1) if c.baseline is not None else None,
-            "exc":      round(c.excess_rh, 1),
-            "light":    raw_light,
-            "light_pc": round(min(100.0, raw_light * 100.0 / 65535), 1),
-            "light_on": bool(c.light_on),
-            "fan_on":   bool(c.fan.value()),
-            # What the fan is actually doing, not what it was told. A fan
-            # turning while commanded off must read non-zero, or the one
-            # number that would reveal a bypassed switch stays hidden.
-            "rpm":      c.rpm or getattr(c, "rpm_idle", 0),
-            "fault":    c.state == "FAULT",
-            "reason":   c.fault_reason or None,
-            "run_min":  self._runtime_min(),
-            "boost_left": _boost_left_min(c),
-            "rssi":     rssi,
-            "up_min":   round(time.ticks_ms() / 60000.0, 1),
-            "reconn":   self.link.connects,
-            "outage_s": self.link.outage_s,
-            "boot":     getattr(c, "boot_reason", "unknown"),
-            "fw":       self.fw,
-            "cfg":      c.st.as_dict(),
-        }
-
     @staticmethod
     def _signature(p):
         """Fields whose change should publish immediately rather than wait.
@@ -325,30 +410,34 @@ class Telemetry:
                 p["boost_left"], (p["rpm"] or 0) // 500,
                 tuple(sorted(p["cfg"].items())))
 
-    def publish(self, c, raw_light, rssi=None, force=False):
+    def publish(self, c, raw_light, rssi=None, force=False, payload=None):
         """Publish state on the interval, or at once when something changes.
 
         Thirty seconds keeps history readable; an immediate publish on any
         state, fan, light or fault transition keeps it truthful. A fan that
         ran for 20 s should not be invisible between two samples.
+
+        `payload` lets the caller pass a snapshot it has already built, so the
+        stored history and the broker see the identical sample rather than two
+        readings taken microseconds apart.
         """
-        self._roll_day()
         if not self.link.online:
             return False
         if not self._announced and not self.announce():
             return False
 
-        p = self._payload(c, raw_light, rssi)
+        p = payload if payload is not None else self.snap.payload(
+            c, raw_light, rssi, self.link)
         sig = self._signature(p)
         due = (self._last_pub is None or
-               time.ticks_diff(time.ticks_ms(), self._last_pub)
+               _diff(_ticks(), self._last_pub)
                >= self.cfg.PUBLISH_INTERVAL_S * 1000)
 
         if not (force or due or sig != self._last_sig):
             return False
 
         if self.link.publish(self.state_topic, json.dumps(p), retain=True):
-            self._last_pub = time.ticks_ms()
+            self._last_pub = _ticks()
             self._last_sig = sig
             return True
         return False
