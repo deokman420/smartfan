@@ -147,9 +147,10 @@ What a desktop browser on a bench cannot settle:
 
 * **A phone, in the room**, one-handed and steamy. That is the whole point of
   the thing.
-* **The service worker across a bundle push.** It caches the app for offline
-  use, which is excellent until a new bundle is on flash and the phone serves
-  the old one from cache.
+* ~~**The service worker across a bundle push.**~~ Settled by deleting it.
+  It never ran when served by the fan: `http://fan.local` is not a secure
+  context, so `navigator.serviceWorker` does not exist there. It worked only
+  from the dev server. See `app/README.md`.
 * **A seven-day window rolling over**, so the two history files actually
   rotate in anger.
 
@@ -183,3 +184,35 @@ In progress. See `docs/phase-4-app-plan.md` for the work order.
 
 Built and tested on the host; not yet flashed to the board in the ceiling.
 See `docs/phase-5-plan.md`, and the hardware item above for what is left.
+
+### Phase 6 — changing the WiFi from the app
+
+Decided, not built. Today a new network means USB and `provision.py`, which
+for a fan in a ceiling means a ladder.
+
+Most of the machinery already exists: `provision.py` writes credentials
+atomically (`secrets.new` then rename, so a power cut cannot leave a
+`secrets.py` that will not import), `_carry_over()` keeps the MQTT settings
+through a re-provision, and there is already a SoftAP with a captive portal.
+
+Two things have to be added, and neither is the API endpoint:
+
+**Try before commit.** `needs_provisioning()` fires when credentials are
+*absent*, never when they are *wrong*. Typing a password wrong from the app
+would put the fan on no network with valid-looking secrets and no AP — USB
+recovery only, which is the exact failure this feature exists to avoid. Join
+the new network while still holding the old secrets and only write on
+success. `ota.py` already works this way; this is the same shape.
+
+Add the matching boot-side fallback too: N failed joins raises the AP. That
+makes the whole class of problem recoverable without a ladder, including the
+one where the router changes underneath a fan nobody has touched.
+
+**A button press, not a password.** The API's protection today is that the
+fan is only reachable from your network, which is proportionate for reading
+humidity and pressing Boost. Writing WiFi credentials is not in that class:
+anyone on the LAN, guests included, could take the fan off the network. A
+long press opens a short provisioning window and the API only accepts
+credentials inside it. Physical presence as authorisation, which fits the
+rest of this device better than bolting on an account — and the button and
+its long-press handler are already there.

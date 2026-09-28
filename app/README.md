@@ -174,13 +174,40 @@ happened on the first real install. It is a **full-bleed square** because iOS
 applies its own rounded mask, and a pre-rounded icon gets clipped twice.
 Regenerate the PNGs from `icon.svg` with `python ../tools/make_icons.py`.
 
-The service worker is **network-first for navigations** and cache-first for
-the hashed assets under `_app/immutable`. Cache-first for everything was the
-obvious choice and wrong here: the fan is metres away on the same LAN, so the
-network is the better answer, and cache-first meant a push to the fan's flash
-reached the phone a launch late — the old shell served from cache while the
-new worker installed behind it. `/api/*` is excluded from the worker
-entirely; there is no version of a cached fan reading that is not a lie.
+### There is no service worker, deliberately
+
+There was one. It never ran.
+
+Served from `http://fan.local/`, the app is not a [secure
+context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts)
+— only `localhost` and `127.0.0.1` get that exemption — so
+`navigator.serviceWorker` does not exist and neither does `caches`. Measured
+against the real device, not assumed:
+
+```
+isSecureContext      : False
+serviceWorker in nav : False
+caches available     : False
+```
+
+It registered fine from the dev server, which is exactly why this went
+unnoticed: the one environment where it worked was the one nobody ships.
+
+Deleting it costs almost nothing, because the cache was never buying much
+here. The worker was already network-first for navigations for the reason
+that still holds — the fan is metres away on the same LAN, so the network is
+the better answer, and cache-first meant a push to the fan's flash reached
+the phone a launch late. A shell cache only helps when the app is open and
+the fan is unreachable, and then there is no data to show anyway.
+
+What it did cost was real: a file on the fan's flash that did nothing, and a
+claim in this README that was not true.
+
+The one genuine loss is Android's install prompt, which requires HTTPS plus
+a service worker. iOS Add-to-Home-Screen needs neither and still works. If
+the Android install is wanted, terminate TLS off-device — a proxy on a real
+hostname with a real certificate — rather than putting a private key and an
+mbedtls handshake on an RP2350 that already caps at three connections.
 
 ## Why Svelte, and why a PWA
 

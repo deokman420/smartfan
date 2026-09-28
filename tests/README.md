@@ -9,6 +9,7 @@ python tests/test_httpd.py           # host only, no board needed
 python tests/test_device_app.py      # host only, the app with no broker
 python tests/test_appicon.py         # host only, the tab icon and status bar
 python tests/test_theme.py           # host only, light / dark / system
+node   tests/test_dryrate.mjs        # host only, no browser at all
 python tests/test_app.py             # the app, needs broker + device
 python tests/test_improv.py          # host only, no board needed
 python tests/test_provision.py       # host only, no board needed
@@ -139,6 +140,29 @@ the document reaches `readyState === 'interactive'`. The inline script in
 every single load, it duplicates three lines of `theme.js`, and duplicated
 code that is never exercised is how a flash comes back six months later.
 Asking after `load` would only prove `theme.js` eventually ran.
+
+**`test_dryrate.mjs` — 20 checks.** The learned time-to-off estimator.
+Node, not Python, and no browser: the thing under test is arithmetic over an
+array, and `app/src/lib/dryrate.js` imports relatively so this can just
+import it.
+
+The fixture is `seed_history.py`, and that is the point rather than a
+convenience. It models this bathroom in closed form — `29·e^(-(s-12)/17) +
+1.2` — so tau is 17 min and the settling floor is 1.2 %RH *exactly*, and the
+fit can be scored against a right answer instead of against a previous run
+of itself. It currently lands at 17.16 min and 1.12 %RH, with every
+prediction inside 2.8 %.
+
+One check exists purely to stop a regression that already happened once:
+fitting the textbook two-parameter decay, with the asymptote pinned at zero,
+returned 19.5 min. A room settles slightly *above* its own baseline, the
+curve flattens as it nears that floor, and a straight line through the logs
+reads the flattening as a slower room. The floor is fitted now, and the test
+asserts the three-parameter fit beats the number the pinned one gave.
+
+The rest is the controller's own stop conditions, mirrored from `main.py`'s
+RUN branch — `MIN_RUN_S`, the post-light hold, and the `MAX_RUN_S` cap. An
+estimate that ignores those is not an estimate of anything the fan will do.
 
 **`test_provision.py` — 62 checks.** Host-only, with MicroPython stubbed,
 so it needs no board and touches none. The radio cannot be exercised here,

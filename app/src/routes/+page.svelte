@@ -32,6 +32,7 @@
   import Chart from '$lib/Chart.svelte';
   import Activity from '$lib/Activity.svelte';
   import { history, since, stats, F } from '$lib/history.js';
+  import { learnTau, timeToOff, runContext } from '$lib/dryrate.js';
   import { onMount } from 'svelte';
 
   let showSettings = $state(false);
@@ -156,6 +157,32 @@
   // in device mode it is one. Either way, anything down makes what is on
   // screen history rather than status.
   let live = $derived($link === 'online' && $deviceOnline && !$stale);
+
+  /* When the fan will stop, learned from this room's own past runs.
+     Measured at 1.2 ms over the full 6000-row history cap, so it simply
+     runs on every sample rather than being throttled behind a staleness
+     check that would cost more to reason about than it saves.
+
+     Display only, and deliberately downstream of everything: nothing in
+     the control path imports it, and the fan stops on a measured reading
+     crossing a threshold exactly as it did before. */
+  let learned = $derived(learnTau($history));
+  let runCtx = $derived(runContext($history));
+  let offIn = $derived(
+    state === 'RUN' && t && learned
+      ? timeToOff({
+          exc: t.exc,
+          ran: runCtx.ran,
+          lightOn: !!t.light_on,
+          darkFor: runCtx.darkFor,
+          learned,
+          fallOff: Number(cfg.RH_FALL_OFF),
+          minRunS: Number(cfg.MIN_RUN_S),
+          maxRunS: Number(cfg.MAX_RUN_S),
+          postLightS: Number(cfg.POST_LIGHT_S)
+        })
+      : null
+  );
 
   let cardRows = $derived(since($history, 6));
   let detailRows = $derived(since($history, range));
@@ -478,6 +505,38 @@
                 {#if state === 'BOOST' && t.boost_left > 0}
                   <p class="blurb tone-active">{dur(t.boost_left * 60)} remaining</p>
                   <div class="boost-bar" aria-hidden="true"><i style="width: {boostPct}%"></i></div>
+                {/if}
+                {#if offIn}
+                  {#if offIn.neverDries}
+                    <p class="blurb tone-warn">
+                      Settles above the stop point — this run ends on the
+                      {durMin(cfg.MAX_RUN_S / 60)} cap, in {dur(offIn.capIn)}
+                    </p>
+                  {:else if offIn.capped}
+                    <p class="blurb tone-warn">
+                      {dur(offIn.capIn)} to the {durMin(cfg.MAX_RUN_S / 60)} cap, and
+                      drying needs about {dur(offIn.needs)}
+                    </p>
+                  {:else if offIn.lightOn}
+                    <p class="blurb tone-active">
+                      About {dur(offIn.secs)} once the light goes off
+                    </p>
+                  {:else}
+                    <p class="blurb tone-active">About {dur(offIn.secs)} left</p>
+                  {/if}
+                  <p class="learned">
+                    {#if offIn.waiting && !offIn.capped}
+                      waiting on the light, not the humidity
+                    {:else if offIn.hi - offIn.lo >= 60}
+                      {dur(offIn.lo)}–{dur(offIn.hi)} across {offIn.runs}
+                      past run{offIn.runs === 1 ? '' : 's'}
+                    {:else}
+                      <!-- Runs this consistent give quartiles a minute apart,
+                           and "24 min-24 min" reads as a broken widget rather
+                           than as a confident one. -->
+                      learned from {offIn.runs} past run{offIn.runs === 1 ? '' : 's'}
+                    {/if}
+                  </p>
                 {/if}
               </div>
 
@@ -1434,6 +1493,16 @@
     line-height: 0.95;
     margin: 4px 0 8px;
     letter-spacing: -0.045em;
+  }
+  /* The estimate's own spread. Deliberately quieter than the number above
+     it: tau moves with the door, the season and the weather outside, and a
+     single confident figure would claim a precision this does not have. */
+  .learned {
+    margin: 2px 0 0;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
   }
   .blurb {
     margin: 0;

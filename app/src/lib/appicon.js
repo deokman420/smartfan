@@ -41,9 +41,8 @@ const SIZE = 64;
  * square is not the effect we are after. The plate is painted per frame
  * instead, from the same file's own values.
  *
- * The fetch is a service-worker cache hit (icon.svg is in `files`, so it is
- * in the shell), and on a cold load it is one request to the fan that served
- * the page. Nothing leaves the LAN.
+ * The fetch is one request to the fan that served the page, and the browser's
+ * ordinary HTTP cache serves it thereafter. Nothing leaves the LAN.
  */
 async function loadGlyph(href) {
   const svg = await (await fetch(href, { cache: 'force-cache' })).text();
