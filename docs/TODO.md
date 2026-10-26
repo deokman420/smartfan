@@ -17,6 +17,22 @@
 > `listener 9001` block in the phase 4 plan was never needed. See
 > `broker-setup.html`.
 
+> **Resolved 2026-10-26 — the device card reads "Bathroom Smartfan".** This
+> was on the list as an OTA still owed, and it had already gone out. The fan
+> reports `name: "Bathroom Smartfan"` on `/api/info`, and the OTA of
+> 2026-10-26 pulled only `webapi.py` and `store.py` out of the fourteen
+> shipped files — so `config.py`, which is where `DEVICE_NAME` lives, was
+> already byte-identical to the repo. `DEVICE_ID` is still `fan_bathroom`, as
+> the comment above it insists, so the entities and their history never moved.
+
+> **Resolved 2026-10-26 — the history seam fix is fully on the fan.** It was
+> on this list for an hour as the app half still owed, because the bundle can
+> only go over USB. `fw 485b54cd` by OTA and `app bcb319ed` by
+> `tools/build_www.py --push COM5`, and verified in a browser against the
+> fan: a session that ended seven minutes earlier now joins the live stream
+> as one line. See [`history-seam-fix.md`](history-seam-fix.md), which records
+> why the two halves travel by different routes and why neither works alone.
+
 Things consciously parked, with what unblocks each. Not a wish list — if it
 is here it is because it was decided rather than forgotten.
 
@@ -25,22 +41,6 @@ Sorted by what is in the way, not by importance.
 ---
 
 ## Blocked on a change only you can make
-
-### OTA push so the device card reads "Bathroom Smartfan"
-
-**Needed by:** finishing the rename.
-
-The dashboard title is host-side and already live. The device *card* name
-lives in `config.DEVICE_NAME`, which is on the device, so it needs an OTA
-before Home Assistant shows it.
-
-Nothing is broken meanwhile: `DEVICE_ID` is unchanged, so all 31 entities,
-their `entity_id`s and their history are intact. The device simply still
-introduces itself by the old name.
-
-**Unblocks with:** `python tools/ota_publish.py`
-
----
 
 ### GitHub repo name
 
