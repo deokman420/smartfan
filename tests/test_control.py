@@ -117,6 +117,7 @@ TMP = tempfile.mkdtemp(prefix="fan-control-")
 os.chdir(TMP)
 
 import config as cfg                                 # noqa: E402
+import settings                                      # noqa: E402
 import main                                          # noqa: E402
 
 
@@ -124,10 +125,29 @@ def advance(seconds):
     CLOCK[0] += int(seconds * 1000)
 
 
-def build():
-    """A controller in a dark, dry, settled room, fan off, in IDLE."""
+def build(boot="watchdog or reset", mode=None, selftest_s=0):
+    """A controller in a dark, dry, settled room, fan off, in IDLE.
+
+    The self-test arms itself in the constructor, from the boot cause and
+    from MODE as it stands on flash -- so both are set by patching what the
+    constructor will read, not by poking at the object afterwards. It is off
+    by default here: every test that is not about it wants a controller that
+    does not grab the fan on the way up.
+    """
+    cfg.SELFTEST_S = selftest_s
+    FAN_RPM[0] = 4200
+    # main.py does `from machine import reset_cause`, so the name it calls was
+    # bound at import. Patching the stub module alone changes nothing -- a
+    # mistake this harness made, and one that made the test pass for the
+    # wrong reason.
+    cause = 1 if boot == "power-on" else 3
+    machine.reset_cause = lambda: cause
+    main.reset_cause = lambda: cause
+    pre = settings.Settings(log=lambda *a: None)
+    pre.reset()                               # a known file, not the last test's
+    if mode:
+        pre.set("MODE", mode)
     c = main.Controller()
-    c.st._over.clear()
     c.state = main.IDLE
     c.entered_at = CLOCK[0]
     c.rh = 53.7
@@ -139,15 +159,30 @@ def build():
     return c
 
 
-def step(c, passes=1):
-    """One pass of the loop's decision half: decide, then drive the fan.
+# What the physical fan does when it is energised. 0 is a fan that has died
+# in the ceiling, which is the whole point of the self-test.
+FAN_RPM = [4200]
 
-    drive_outputs also blinks LEDs and reads the button, neither of which
-    this file is about, so it stands in for just the line that matters.
+
+def step(c, passes=1):
+    """One pass of the loop's sampling half, in the loop's own order.
+
+    The order is not incidental and the bug this file was written for lived
+    in it: the tach is read from the pin as the previous pass left it, the
+    self-test gets first refusal on the fan, and only then do the health
+    check and decide() run. drive_outputs also blinks LEDs and polls the
+    button, neither of which this file is about, so its one line that
+    matters stands in for it.
     """
     for _ in range(passes):
-        c.decide()
-        c.set_fan(c.state in (main.RUN, main.BOOST))
+        driven = bool(c.fan.value())
+        c.rpm = FAN_RPM[0] if driven else 0
+        c.rpm_idle = 0
+        if not c.step_selftest():
+            c.check_fan_health()
+            c.decide()
+        c.set_fan(c.selftest == "running"
+                  or c.state in (main.RUN, main.BOOST))
 
 
 def mode(c, value):
@@ -249,6 +284,77 @@ step(c, 2)
 check("and does not spend the automatic cap on the way out",
       c.state == main.RUN and not c.maxed,
       "%s maxed=%s ran=%.0fs" % (c.state, c.maxed, c.fan_seconds()))
+
+print("\nthe power-on self-test\n")
+
+# A healthy fan. The test drives it, the tach answers, and it gets out of
+# the way -- the fan must not be left running and the state must not be
+# touched.
+c = build(boot="power-on", selftest_s=6)
+check("a power-on arms the self-test", c.selftest == "running")
+step(c)
+check("it drives the fan before any state wants to",
+      c.fan.value() == 1 and c.state == main.IDLE, c.state)
+advance(cfg.SPINUP_S + 1)
+step(c)
+check("a fan that turns passes",
+      c.selftest == "passed" and c.state == main.IDLE, c.selftest)
+check("and is switched back off", c.fan.value() == 0)
+
+# A dead fan: driven, and the tach reports nothing.
+c = build(boot="power-on", selftest_s=6)
+FAN_RPM[0] = 0
+step(c)
+advance(cfg.SPINUP_S + 1)
+step(c)
+check("a fan that does not turn is still being given time",
+      c.state == main.IDLE and c.fan.value() == 1,
+      "%.0fs of %ds" % (c.fan_seconds(), cfg.SELFTEST_S))
+advance(cfg.SELFTEST_S)
+step(c)
+check("a fan that does not turn faults",
+      c.state == main.FAULT and c.fault_kind == "selftest", c.fault_kind)
+check("and the fan is not left energised", c.fan.value() == 0)
+check("and the fault says what to check",
+      "did not turn at power-on" in c.fault_reason and "tach" in c.fault_reason,
+      c.fault_reason[:58])
+
+# It must not expire on its own. A mid-run stall backs off and retries; a
+# fan that never turned has nothing to retry, and a fault that clears
+# itself unseen is the same as no fault at all.
+advance(cfg.FAULT_RETRY_S * 3)
+step(c, 3)
+check("a self-test fault does not clear on a timer",
+      c.state == main.FAULT and c.fan.value() == 0,
+      "%s after %d min" % (c.state, cfg.FAULT_RETRY_S * 3 // 60))
+
+# And Force on must not drive a fan that would not turn. FAULT already
+# outranks the mode overrides; this is the case that reasoning exists for.
+mode(c, "Force on")
+step(c, 2)
+check("Force on cannot run the fan through a self-test fault",
+      c.state == main.FAULT and c.fan.value() == 0,
+      "%s fan=%d" % (c.state, c.fan.value()))
+
+# But a human can clear it.
+mode(c, "Auto")
+c.handle_button("short")
+step(c)
+check("the button clears it", c.state == main.IDLE and c.fault_kind is None,
+      c.state)
+
+# The three ways it declines to run.
+c = build(boot="watchdog or reset", selftest_s=6)
+check("an OTA or watchdog restart does not spin the fan",
+      c.selftest == "skipped", str(c.selftest))
+c = build(boot="power-on", mode="Force off", selftest_s=6)
+check("Force off is not overruled by a diagnostic",
+      c.selftest == "skipped", str(c.selftest))
+c = build(boot="power-on", selftest_s=0)
+check("SELFTEST_S = 0 disables it", c.selftest == "disabled",
+      str(c.selftest))
+check("and the result is reported either way",
+      "selftest" in c.snap.payload(c, 5000), "missing from the payload")
 
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))

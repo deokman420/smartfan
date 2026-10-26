@@ -77,6 +77,23 @@ STUCK_S = 12
 FAULT_RETRY_S  = 300   # wait this long before retrying a stalled fan
 MAX_FAN_FAULTS = 3     # consecutive stalls before latching for good
 
+# Power-on self-test. MIN_RPM above is the only thing that notices a fan
+# which has died in the ceiling, and it can only notice while the fan is
+# being driven -- so a dead fan stayed invisible until the next shower asked
+# for it, which could be days. This drives the fan briefly at boot so the
+# question is asked at a moment somebody is present to hear the answer.
+#
+# Long enough to clear SPINUP_S and then measure a real tach window, which
+# is one SAMPLE_S. Set to 0 to disable.
+SELFTEST_S = 6
+
+# Only on a genuine power-on, not on every restart. The alternative is a
+# burst of fan every OTA push and every watchdog reset, and the port cannot
+# tell those two apart anyway -- machine.reset() is implemented via the
+# watchdog, so both report as "watchdog or reset" (see _boot_reason). Set
+# False to test on every boot.
+SELFTEST_PWRON_ONLY = True
+
 # --- Robustness -------------------------------------------------------
 # The watchdog is fed ONLY by the control loop. If the loop stops -- a hung
 # network stack, a wedged driver, a bug -- the board resets rather than

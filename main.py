@@ -230,6 +230,7 @@ class Controller:
         self.fan_faults = 0        # consecutive stalls
         self.maxed = False         # hit MAX_RUN_S with the trigger still true
         self.forced = False        # the current state was imposed by MODE
+        self.selftest = None       # 'running' while the boot test drives the fan
         self.updater = None        # set while an OTA is in progress
         self.ota_state = "idle"
 
@@ -249,6 +250,27 @@ class Controller:
 
         # Everything the device knows about itself, with or without a broker.
         self.snap = Snapshot(cfg, log=print)
+
+        # Arm the power-on self-test. Decided here rather than in the loop so
+        # the reason is printed once, at the top of the log, where someone
+        # reading a boot has it in front of them.
+        #
+        # Not while MODE says Force off. That is the one setting that means
+        # "do not run this fan", chosen by somebody who may be in the bath or
+        # nursing a sensor they do not trust, and a diagnostic is not a good
+        # enough reason to overrule it.
+        if cfg.SELFTEST_S <= 0:
+            self.selftest = "disabled"
+            print("selftest: disabled")
+        elif self.st.mode == "Force off":
+            self.selftest = "skipped"
+            print("selftest: skipped, mode is Force off")
+        elif cfg.SELFTEST_PWRON_ONLY and self.boot_reason != "power-on":
+            self.selftest = "skipped"
+            print("selftest: skipped, boot was %s" % self.boot_reason)
+        else:
+            self.selftest = "running"
+            print("selftest: proving the fan turns, up to %ds" % cfg.SELFTEST_S)
 
         self.hist = None
         if _STORE and getattr(cfg, "HISTORY_ENABLED", True):
@@ -444,6 +466,14 @@ class Controller:
             # Clear only the kind of fault that actually recovered. A stalled
             # fan used to be cleared by a healthy DHT22, which turned a real
             # hardware fault into an endless RUN -> FAULT -> IDLE loop.
+            if self.fault_kind == "selftest":
+                # Nothing here can retest it. There is no run to retry, and
+                # re-driving a motor that would not turn is how a seized
+                # bearing gets cooked. It clears on the button, on `clear`,
+                # or on the next power-on that passes -- all of which mean
+                # somebody is present.
+                return
+
             if self.fault_kind == "sensor":
                 if self.dht_fails == 0:
                     self.fault_kind = None
@@ -531,6 +561,43 @@ class Controller:
             return
         self.set_state(IDLE, "dry, +%.1f%%" % self.excess_rh)
 
+    def step_selftest(self):
+        """Prove the fan turns, at boot. True while the test still owns it.
+
+        The fan is driven by drive_outputs for as long as this returns True,
+        so the tach gets a real window rather than being asked about a fan
+        nobody switched on.
+
+        Deliberately thin, because the hard part already existed:
+        check_fan_health has always faulted a commanded fan that reports no
+        RPM. What was missing was anything that commands the fan when a human
+        is present. So this supplies the command and the verdict, and the
+        verdict is its own fault kind -- "the fan did not turn at power-on"
+        is a more useful sentence than "fan stalled", and it must not expire
+        on a retry timer the way a mid-run stall does.
+        """
+        if self.selftest != "running":
+            return False
+
+        ran = self.fan_seconds()
+        if ran >= cfg.SPINUP_S and self.rpm >= cfg.MIN_RPM:
+            self.selftest = "passed"
+            print("selftest: fan reached %d rpm after %.0fs" % (self.rpm, ran))
+            return False
+
+        if ran >= cfg.SELFTEST_S:
+            self.selftest = "failed"
+            self.fault_kind = "selftest"
+            self.fault_reason = (
+                "fan did not turn at power-on (%d rpm after %ds, needs %d) "
+                "- check the fan, its supply and the tach lead"
+                % (self.rpm, int(ran), cfg.MIN_RPM))
+            self.set_fan(False)
+            self.set_state(FAULT, self.fault_reason)
+            return False
+
+        return True
+
     def check_fan_health(self):
         """A commanded fan that reports no RPM is a real, silent failure."""
         if self.state == FAULT:
@@ -572,7 +639,11 @@ class Controller:
     # -- output -------------------------------------------------------
 
     def drive_outputs(self):
-        self.set_fan(self.state in (RUN, BOOST))
+        # The self-test commands the fan before any state has an opinion
+        # about it -- at boot the controller is in LEARN, which drives
+        # nothing. See step_selftest.
+        self.set_fan(self.selftest == "running"
+                     or self.state in (RUN, BOOST))
 
         phase = (time.ticks_ms() // 400) % 2
 
@@ -807,8 +878,13 @@ class Controller:
                 if self.state == LEARN and self.baseline is None and self.rh:
                     self.baseline = self.rh
 
-                self.check_fan_health()
-                self.decide()
+                # The self-test owns the fan and the verdict while it runs, so
+                # the generic stall check does not race it to a less specific
+                # fault, and decide() does not switch the fan off underneath
+                # it. Both resume on the pass after it finishes.
+                if not self.step_selftest():
+                    self.check_fan_health()
+                    self.decide()
                 sampled = True
 
             # Outputs first, then the network. If a connect attempt blocks for

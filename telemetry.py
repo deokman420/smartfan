@@ -246,6 +246,15 @@ class Snapshot:
             # beside. None while WiFi is down, which the app treats the
             # same as absent.
             "ip":       getattr(link, "ip", None),
+            # How the power-on self-test went: 'passed', 'failed', or None
+            # for a boot that did not run one. A failure is already loud --
+            # it is a FAULT with a reason -- but a pass was indistinguishable
+            # from never having run, which makes the whole test unverifiable
+            # by the person relying on it. Not in _signature(), so it
+            # triggers no extra publishes, and not in _SENSORS, so Home
+            # Assistant gains no entity for something that changes once a
+            # boot.
+            "selftest": getattr(c, "selftest", None),
             "boot":     getattr(c, "boot_reason", "unknown"),
             "fw":       self.fw,
             "app":      self.app,
