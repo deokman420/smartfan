@@ -17,14 +17,11 @@
  * state where "the broker is up but the fan is not reporting". Either the
  * fan answers or nothing does.
  */
-import { record, backfill } from '$lib/history.js';
+import { record } from '$lib/history.js';
+import { loadHistory as fetchHistory } from './backfill.js';
 
 const POLL_MS = 2000;
 const TIMEOUT_MS = 4000;
-
-// Backfill covers the gap in this browser's buffer, with an overlap so a
-// boundary sample cannot fall between the two sources.
-const OVERLAP_S = 600;
 
 function base(s) {
   // Same host we were served from: use relative URLs. That is the ordinary
@@ -52,49 +49,6 @@ async function ask(url, options, ms = TIMEOUT_MS) {
     clearTimeout(id);
   }
 }
-
-/**
- * The device's history format: a comment line, then one CSV row per bucket.
- *
- *   #interval=300 fields=t,rh,base,exc,temp,dp,light,rpm,fan,lit,st
- *   1790000000,71.5,60.0,11.5,21.4,14.2,7.6,4100,1,1,2
- *
- * Empty fields are nulls, and a short last line is a row that was being
- * appended when the power went out — skipped rather than guessed at, which
- * is what the device's own parser does with it too.
- */
-export function parseRows(text) {
-  let interval = 300;
-  const rows = [];
-  for (const line of text.split('\n')) {
-    if (!line) continue;
-    if (line[0] === '#') {
-      const m = /interval=(\d+)/.exec(line);
-      if (m) interval = Number(m[1]) || 300;
-      continue;
-    }
-    const parts = line.split(',');
-    if (parts.length !== FIELD_COUNT) continue;
-    const row = new Array(FIELD_COUNT);
-    let ok = true;
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i] === '') {
-        row[i] = null;
-        continue;
-      }
-      const n = Number(parts[i]);
-      if (!Number.isFinite(n)) {
-        ok = false;
-        break;
-      }
-      row[i] = n;
-    }
-    if (ok) rows.push(row);
-  }
-  return { rows, interval };
-}
-
-const FIELD_COUNT = 11;
 
 export function create(getSettings, sink) {
   let timer = null;
@@ -147,28 +101,15 @@ export function create(getSettings, sink) {
     }
   }
 
-  async function loadHistory() {
+  function loadHistory() {
     // The device keeps five-minute means for a week. Without this the charts
     // only ever know what this browser has personally watched, which is the
     // one honest complaint the old app could not answer.
     //
-    // CSV, not JSON, and that is the device's constraint rather than a
-    // preference: parsing a week into objects and serialising it costs about
-    // 890 bytes of heap per row on an RP2350, which is roughly four times the
-    // memory the whole board has. It sends the stored lines as they are, and
-    // the parsing happens here, where there is room for it.
-    try {
-      const since = knewUpTo ? Math.max(0, Math.floor(knewUpTo / 1000) - OVERLAP_S) : 0;
-      const res = await ask(url(`/api/history?since=${since}`), {}, 15000);
-      if (!res.ok) return;
-      const { rows, interval } = parseRows(await res.text());
-      if (rows.length) backfill(rows, interval);
-    } catch (err) {
-      // History is a nicety and the live stream is the point, so this never
-      // becomes a banner. It does get said out loud, because a silent catch
-      // here is how a backfill that quietly stopped working stays unnoticed.
-      console.warn('history backfill failed:', err);
-    }
+    // Same-origin in the ordinary case -- the page came off the fan's own
+    // flash -- so there is no CORS question to answer here. backfill.js owns
+    // the fetch because the broker transport needs it too.
+    return fetchHistory(base(getSettings()), knewUpTo);
   }
 
   async function post(path, body) {

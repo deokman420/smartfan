@@ -16,6 +16,7 @@
  * never in the control path, and nothing here should ever make it so.
  */
 import { record } from '$lib/history.js';
+import { loadHistory, canReachDevice } from './backfill.js';
 
 function topics(room) {
   return {
@@ -29,6 +30,44 @@ function topics(room) {
 export function create(getSettings, sink) {
   let client = null;
   let t = topics('bathroom');
+  let backfilled = false;
+  // The newest sample this browser held BEFORE connecting. Captured up
+  // front because the first reading is recorded immediately, and asking
+  // "what is newer than my newest row" a moment later asks for the last
+  // half minute rather than for the week that is actually missing.
+  let knewUpTo = 0;
+
+  /**
+   * Ask the fan for its stored week, once, using the address it just
+   * reported.
+   *
+   * The broker carries readings, not records: the fan publishes the
+   * current sample every 30 s and nothing retained goes further back. So
+   * a broker-mode browser used to chart only what it had personally
+   * watched -- a new phone opened empty, which is the complaint store.py
+   * exists to answer. The rows are on the fan's flash either way; this
+   * just fetches them over the one route that serves them.
+   *
+   * Deliberately not routed through the broker. Publishing a week of CSV
+   * in MQTT chunks means buffering payloads on a device whose heap could
+   * not hold 512 parsed rows, with an 8 s watchdog and a control loop
+   * that must not stall, to serve a case plain HTTP already covers.
+   *
+   * Best effort, and never a banner. It needs the fan's own address and
+   * an http page (see canReachDevice), so it is skipped rather than
+   * attempted when either is missing -- the live stream is unaffected
+   * and the charts fill from now on exactly as they did before.
+   */
+  function tryBackfill(payload) {
+    if (backfilled) return;
+    const ip = payload?.ip;
+    if (!ip || !canReachDevice()) {
+      backfilled = true;      // nothing will change on a later reading
+      return;
+    }
+    backfilled = true;
+    loadHistory(`http://${ip}`, knewUpTo);
+  }
 
   function publish(topic, message) {
     if (!client || sink.state() !== 'online') return false;
@@ -58,6 +97,8 @@ export function create(getSettings, sink) {
       teardown();
       const s = getSettings();
       t = topics(s.room);
+      backfilled = false;
+      knewUpTo = sink.newestSample();
 
       sink.link.set('connecting');
       sink.linkError.set('');
@@ -109,6 +150,7 @@ export function create(getSettings, sink) {
           // Charts are fed from the same stream that drives the readings, so
           // there is no second source that can disagree with the tiles.
           record(parsed);
+          tryBackfill(parsed);
         } catch {
           /* a malformed payload is not a reason to tear the link down */
         }

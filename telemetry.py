@@ -239,6 +239,13 @@ class Snapshot:
             "reconn":   getattr(link, "connects", 0),
             "outage_s": getattr(link, "outage_s", 0),
             "mqtt":     getattr(link, "state", "disabled"),
+            # The address the app can reach this fan on, which the
+            # broker route has no other way to learn: a reading arrives
+            # over MQTT with no return path in it, so a broker-mode
+            # browser could not ask for the stored history it is sitting
+            # beside. None while WiFi is down, which the app treats the
+            # same as absent.
+            "ip":       getattr(link, "ip", None),
             "boot":     getattr(c, "boot_reason", "unknown"),
             "fw":       self.fw,
             "app":      self.app,
