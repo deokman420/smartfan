@@ -229,6 +229,7 @@ class Controller:
         self.fault_until = None    # earliest retry for a fan fault
         self.fan_faults = 0        # consecutive stalls
         self.maxed = False         # hit MAX_RUN_S with the trigger still true
+        self.forced = False        # the current state was imposed by MODE
         self.updater = None        # set while an OTA is in progress
         self.ota_state = "idle"
 
@@ -397,12 +398,42 @@ class Controller:
         # FAULT still wins: forcing a stalled fan on would just re-stall it.
         mode = self.st.mode
         if mode != "Auto" and self.state != FAULT:
+            self.forced = True
             if mode == "Force off":
                 if self.state != IDLE:
                     self.set_state(IDLE, "forced off")
             elif self.state != RUN:
                 self.set_state(RUN, "forced on")
             return
+
+        # Releasing an override. The state we are sitting in was imposed by
+        # MODE, not reached by any automatic rule, so it must not be
+        # inherited: coming out of Force on used to leave the fan in RUN, and
+        # RUN's own exit refuses to leave before MIN_RUN_S. The fan then ran
+        # on for up to three more minutes in a dark, dry room with nothing
+        # calling for it -- measured at 190 s. Forcing it off first worked
+        # around it, because Force off sets IDLE outright.
+        #
+        # MIN_RUN_S is there so the automatic logic cannot short-cycle the
+        # fan, and a forced run is not the automatic logic's run. Ending an
+        # override is a deliberate act, in the same class as Force off, which
+        # has always stopped the fan at once.
+        #
+        # Dropping to IDLE does not mean the fan stops: execution carries on
+        # into the IDLE branch below on this same pass, so if the room does
+        # want the fan it goes straight back to RUN with a reason of its own
+        # and the fan never sees a transition.
+        if self.forced:
+            self.forced = False
+            if self.state != IDLE:
+                self.set_state(IDLE, "override released")
+                # And the forced run must not spend the automatic cap either.
+                # Without this, airing the room out for an hour and then
+                # returning to Auto with the room still humid would start an
+                # automatic run already past MAX_RUN_S, which latches it
+                # immediately.
+                if self.fan.value():
+                    self.fan_on_at = time.ticks_ms()
 
         if self.state == LEARN:
             if ms_since(self.entered_at) > 60000 and self.baseline is not None:
