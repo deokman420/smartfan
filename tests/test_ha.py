@@ -27,7 +27,7 @@ import websocket
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-HA_HOST = os.environ.get("HA_HOST", "192.168.0.5:8123")
+HA_HOST = os.environ.get("HA_HOST", "ha.local.phbeks.com")
 DASH = "bathroom-fan"
 
 env = io.open(os.path.join(ROOT, ".env"), encoding="utf-8").read()

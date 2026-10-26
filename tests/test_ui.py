@@ -27,7 +27,7 @@ from playwright.sync_api import sync_playwright
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SHOTS = os.path.join(HERE, "screenshots")
-HA = os.environ.get("HA_URL", "http://192.168.0.5:8123")
+HA = os.environ.get("HA_URL", "https://ha.local.phbeks.com")
 DASH = "/bathroom-fan/main"
 HEADED = "--headed" in sys.argv
 

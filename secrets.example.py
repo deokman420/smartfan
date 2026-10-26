@@ -31,7 +31,11 @@ WIFI_COUNTRY = "US"          # regulatory domain; wrong value limits channels
 # Use a dedicated broker account per device, not the Home Assistant login --
 # so one compromised or misbehaving device can be revoked without touching
 # the others.
-MQTT_HOST = "192.168.0.5"
+# Mosquitto is an HA add-on, so the broker moved to the Pi with HA on 2026-10-23.
+# The proxy name cannot carry MQTT (1883 is closed on ha.local.phbeks.com,
+# open on the box), and there is no mqtt.local.phbeks.com yet. So this stays
+# an address and must be updated by hand when the HA host moves.
+MQTT_HOST = "192.168.0.24"
 MQTT_PORT = 1883
 MQTT_USER = "pico-fan-bathroom"
 MQTT_PASS = "your-mqtt-password"

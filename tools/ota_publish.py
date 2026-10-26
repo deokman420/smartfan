@@ -84,7 +84,7 @@ def device_build():
         env = io.open(os.path.join(ROOT, ".env"), encoding="utf-8").read()
         tok = re.search(r'HASS_LLAT\s*=\s*"?([^"\s]+)', env).group(1)
         req = urllib.request.Request(
-            "http://192.168.0.5:8123/api/states/"
+            "https://ha.local.phbeks.com/api/states/"
             "sensor.bathroom_fan_controller_build",
             headers={"Authorization": "Bearer " + tok})
         with urllib.request.urlopen(req, timeout=8) as f:

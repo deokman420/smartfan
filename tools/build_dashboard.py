@@ -10,7 +10,7 @@ claims a state the device is not actually in.
 import io, json, re, sys
 import websocket
 
-HA_WS = "ws://192.168.0.5:8123/api/websocket"
+HA_WS = "wss://ha.local.phbeks.com/api/websocket"
 # Deliberately NOT renamed alongside the display title. This script
 # creates-or-updates by url_path, so changing it would leave the old
 # dashboard orphaned beside a new one -- and break the bookmark.
@@ -306,7 +306,7 @@ def main():
     unused = sorted(e for e in live
                     if "bathroom_fan_controller" in e and e not in refs)
     print("entities not shown: %s" % (", ".join(unused) if unused else "none"))
-    print("URL: http://192.168.0.5:8123/%s/main" % URL_PATH)
+    print("URL: https://ha.local.phbeks.com/%s/main" % URL_PATH)
     ws.close()
     return 0
 
