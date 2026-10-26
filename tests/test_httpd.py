@@ -382,12 +382,41 @@ def test_server(tmp):
               "len=%s conn=%s" % (hdr.get("Content-Length"),
                                   hdr.get("Connection")))
 
-        cut = int(lines[-1].split(",")[0])
+        # The last row on the wire is the bucket still being filled, not the
+        # last one written to flash. That single row is the whole seam fix:
+        # without it the newest timestamp a client can see is up to two
+        # intervals behind the clock, which is wider than the gap the charts
+        # draw as a break, so every client opened on a hole.
+        open_at = hist.partial()[0]
+        stored = [r[0] for r in hist.read(0, 10_000)]
+        check("the open bucket is streamed after the stored ones",
+              int(lines[-1].split(",")[0]) == open_at and
+              open_at not in stored, str(open_at))
+        # The loop leaves the clock one interval past its last sample, so the
+        # seam is measured from that sample rather than from `clock`.
+        last_sample = clock[0] - Cfg.HISTORY_INTERVAL_S
+        check("the seam is narrower than one interval",
+              0 <= last_sample - open_at < Cfg.HISTORY_INTERVAL_S,
+              "%d s" % (last_sample - open_at))
+        check("the open bucket continues the stored series",
+              open_at - max(stored) == Cfg.HISTORY_INTERVAL_S,
+              "%d s" % (open_at - max(stored)))
+
+        cut = int(lines[-2].split(",")[0])
         st, _, body = get(port, "/api/history?since=%d" % cut)
         got = [ln for ln in body.decode().split("\n") if ln and ln[0] != "#"]
         check("since= skips what the caller already has",
-              len(got) == 1 and int(got[0].split(",")[0]) == cut,
+              len(got) == 2 and int(got[0].split(",")[0]) == cut,
               "%d rows" % len(got))
+        check("a top-up still carries the open bucket",
+              int(got[-1].split(",")[0]) == open_at, got[-1][:20])
+
+        # Asking from beyond it must not resurrect it, or a client that is
+        # already current gets the same partial row on every poll.
+        st, _, body = get(port, "/api/history?since=%d" % (open_at + 1))
+        got = [ln for ln in body.decode().split("\n") if ln and ln[0] != "#"]
+        check("since= past the open bucket returns nothing",
+              got == [], "%d rows" % len(got))
 
         # The whole point of the rewrite: no version of this request may build
         # the rows in memory. read() is now bounded so that it cannot, even if
@@ -625,6 +654,41 @@ def test_store(tmp):
     check("after a restart it appends to the file it was filling",
           again._target == hist._target,
           "%s vs %s" % (again._target, hist._target))
+
+    # The open bucket, which is the few minutes no reader could see. Flash
+    # stops at the last bucket that CLOSED, so the newest row a client could
+    # get was between one and two intervals old -- and the app drew the
+    # resulting seam as a hole ending at the moment it connected.
+    open_row = hist.partial()
+    bucket_start = now[0] // Cfg.HISTORY_INTERVAL_S * Cfg.HISTORY_INTERVAL_S
+    check("the open bucket is readable before it closes",
+          open_row is not None and open_row[0] == bucket_start,
+          str(open_row[0]) if open_row else "none")
+    check("the open bucket is not on flash yet",
+          bucket_start not in [r[0] for r in hist.read()], str(bucket_start))
+    check("the open bucket means only its own samples",
+          abs(open_row[1] - 71.0) < 0.01, str(open_row[1]))
+
+    # Reading it must not consume it. The complete row still has to be
+    # appended when the bucket rolls over, or drawing a chart would cost a
+    # record -- and that is a bug nobody would see for a week.
+    hist.partial()
+    hist.partial()
+    sample(73.0)                              # same bucket: mean becomes 72.0
+    check("reading the open bucket does not disturb it",
+          abs(hist.partial()[1] - 72.0) < 0.01, str(hist.partial()[1]))
+    now[0] += Cfg.HISTORY_INTERVAL_S
+    sample(99.0)                              # rolls it, closing the bucket
+    closed = hist.read(bucket_start)
+    check("a bucket that was read still closes complete",
+          closed and closed[0][0] == bucket_start and
+          abs(closed[0][1] - 72.0) < 0.01,
+          str([r[1] for r in closed]))
+
+    # Nothing sampled in this bucket yet is not a row of zeroes.
+    hist._bucket, hist._n = None, 0
+    check("an empty open bucket is nothing, not a blank row",
+          hist.partial() is None, str(hist.partial()))
 
     hist.clear()
     check("clear empties both files", hist.stats()["rows"] == 0)

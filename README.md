@@ -298,6 +298,14 @@ about **890 bytes of heap each**, measured — roughly 1.8 MB against the
 are already line-oriented text, so they are streamed straight off flash one
 line at a time and the app does the parsing, where there is room for it.
 
+The last row is the bucket still being filled, which is on no file yet.
+Without it the newest row a client could get was the last bucket to *close* —
+between one and two intervals behind the clock, and stamped with its bucket's
+start — so the join between the stored series and the browser's own live
+stream was always wider than the gap the charts draw as a break. Every client
+opened on a hole of several minutes ending at the moment it connected, and
+the data was never missing: it was in the accumulator, unasked for.
+
 Served by `httpd.py`, which is stepped from the control loop for a few
 milliseconds per pass, after the outputs are already driven. **Control is
 never waiting on a browser**, and a wedged request cannot stall the fan —

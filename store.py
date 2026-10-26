@@ -23,6 +23,11 @@ which parse() skips. A single file rewritten in place would put every record
 at risk on every write, to save half the flash of something that fits
 comfortably anyway.
 
+A bucket reaches flash only when it closes, so the files are always minutes
+behind the clock. `partial()` reads the open one out without closing it, and
+webapi sends it as the last row -- see its docstring for the hole that left
+in every client's charts.
+
 Row order matches the app's `F` field indices in app/src/lib/history.js, so
 a backfill drops straight into the same buffer the live stream feeds. The
 order is append-only for the same reason it is there: changing it silently
@@ -148,30 +153,43 @@ class History:
         self._n += 1
 
     def _close(self, bucket):
-        """Turn the accumulator into a row. Returns the row, or None."""
-        n = self._n
-        sums, cnts, flags = self._sum, self._cnt, self._flags
+        """Turn the accumulator into a row and reset it. Row, or None."""
+        row = _row(bucket, self.interval_s,
+                   self._sum, self._cnt, self._flags, self._n)
         self._sum, self._cnt, self._flags, self._n = {}, {}, {}, 0
-        if not n:
+        return row
+
+    def partial(self):
+        """The bucket still accumulating, as a row, without closing it.
+
+        A reader asking for history gets everything on flash, and flash by
+        definition stops at the last bucket that *closed*. So the newest row
+        it could see was between one and two intervals behind the clock --
+        and since a row carries its bucket's START, the seam between the
+        stored series and a browser's live stream was always wider than one
+        interval. The app draws anything wider than that as a break, so
+        every client opened on a hole of several minutes ending at the
+        moment it connected. The data was never missing; it was simply still
+        in this accumulator, unasked for.
+
+        It is a mean of a part-filled bucket and that is the honest reading
+        of it: same bucket start, same field order, fewer samples behind it.
+        The row is not written here and the accumulator is untouched, so the
+        complete version still gets appended when the bucket rolls over.
+        """
+        if self._bucket is None:
             return None
-
-        def mean(key, digits=1):
-            count = cnts.get(key, 0)
-            if not count:
-                return None
-            return round(sums.get(key, 0.0) / count, digits)
-
-        return [
-            bucket * self.interval_s,
-            mean("rh"), mean("base"), mean("exc"), mean("temp"), mean("dp"),
-            mean("light_pc"), int(mean("rpm", 0) or 0),
-            flags.get("fan", 0), flags.get("lit", 0), flags.get("st"),
-        ]
+        try:
+            return _row(self._bucket, self.interval_s,
+                        self._sum, self._cnt, self._flags, self._n)
+        except Exception as e:
+            self._log("history: partial (%s)" % e)
+            return None
 
     # -- files -------------------------------------------------------------
 
     def _append(self, row):
-        line = ",".join("" if v is None else str(v) for v in row) + "\n"
+        line = format_row(row)
         try:
             if self._count(self._path(self._target)) >= self.per_file:
                 self._target = self._rotate()
@@ -309,6 +327,42 @@ class History:
             "writes": self.writes,
             "failed": self.failed,
         }
+
+
+def _row(bucket, interval_s, sums, cnts, flags, n):
+    """An accumulator's sums and flags as one row, or None if it is empty.
+
+    Module level and pure, because two callers need it now: closing a bucket
+    for the file, and reading the open bucket out for a client. A method that
+    reset as it built would have meant copying the arithmetic to serve the
+    second one, and two copies of a mean drift.
+    """
+    if not n:
+        return None
+
+    def mean(key, digits=1):
+        count = cnts.get(key, 0)
+        if not count:
+            return None
+        return round(sums.get(key, 0.0) / count, digits)
+
+    return [
+        bucket * interval_s,
+        mean("rh"), mean("base"), mean("exc"), mean("temp"), mean("dp"),
+        mean("light_pc"), int(mean("rpm", 0) or 0),
+        flags.get("fan", 0), flags.get("lit", 0), flags.get("st"),
+    ]
+
+
+def format_row(row):
+    """One row as a stored line, newline included.
+
+    The wire format and the file format are the same format -- webapi streams
+    the files out untouched -- so a row appended here and a row sent from the
+    open bucket have to be written by the same function or they are two
+    formats that merely look alike.
+    """
+    return ",".join("" if v is None else str(v) for v in row) + "\n"
 
 
 def _parse(line):

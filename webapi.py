@@ -15,7 +15,8 @@ Endpoints:
 
     GET  /api/state              the snapshot, same JSON as fan/<room>/state
     GET  /api/info               identity, build, link and history status
-    GET  /api/history?since=<s>  stored rows as CSV text, oldest first
+    GET  /api/history?since=<s>  stored rows as CSV text, oldest first,
+                                 ending with the bucket still being filled
     GET  /api/wifi               provisioning window state and current SSID
     GET  /api/wifi/scan          visible networks; only while the window is open
     GET  /api/broker             host, port and account -- never the password
@@ -51,9 +52,10 @@ already refuses `update` here. See wifi.py.
 from httpd import Response, json_response, text_response
 
 try:
-    from store import FIELDS
+    from store import FIELDS, format_row
 except ImportError:                     # history disabled or not installed
     FIELDS = ()
+    format_row = None
 
 
 def wifi_try_s():
@@ -87,10 +89,14 @@ class Rows:
     line needs nothing and travels with the data it describes.
     """
 
-    def __init__(self, paths, interval_s, since=0):
+    def __init__(self, paths, interval_s, since=0, tail=b""):
         self._paths = list(paths)
         self._since = since
         self._f = None
+        # The open bucket, already a line, sent after the files run out. See
+        # History.partial: without it the newest row a client can get is the
+        # last bucket that closed, which is always minutes behind the clock.
+        self._tail = tail
         self._buf = b"#interval=%d fields=%s\n" % (
             interval_s, ",".join(FIELDS).encode() if FIELDS else b"")
 
@@ -112,13 +118,25 @@ class Rows:
         100 kB produced roughly 400 kB of garbage on the device -- collectable,
         but it forced the collector to run repeatedly inside the control loop
         for no reason at all.
+
+        The open bucket goes out last, and it has to be returned on the very
+        call that the files run dry rather than the one after: httpd's writer
+        treats the first empty read as the end of the body and closes the
+        file there, so an empty read followed by a tail would send nothing.
         """
         if self._buf:
             out, self._buf = self._buf, b""
             return out
-        if not self._since:
-            return self._read_block(n)
+        out = self._read_block(n) if not self._since else self._read_lines(n)
+        if out:
+            return out
+        if self._tail:
+            out, self._tail = self._tail, b""
+            return out
+        return b""
 
+    def _read_lines(self, n):
+        """Up to n bytes of whole lines, skipping anything before `since`."""
         parts = []
         size = 0
         while size < n:
@@ -281,7 +299,26 @@ class Api:
             return Response(200, b"", "text/csv; charset=utf-8", headers)
         return Response(200, b"", "text/csv; charset=utf-8", headers,
                         source=Rows(self.history.paths(),
-                                    self.history.interval_s, since))
+                                    self.history.interval_s, since,
+                                    tail=self._open_bucket(since)))
+
+    def _open_bucket(self, since):
+        """The bucket still accumulating, as one trailing CSV line.
+
+        Best effort and never fatal: the stored week is the answer to this
+        request and the open bucket is the last few minutes of it. If the
+        clock is unset, or nothing has been sampled since boot, there is no
+        row to send and the response is exactly what it was before.
+        """
+        if format_row is None:
+            return b""
+        try:
+            row = self.history.partial()
+            if not row or row[0] < since:
+                return b""
+            return format_row(row).encode()
+        except Exception:
+            return b""
 
     # -- wifi ---------------------------------------------------------------
 

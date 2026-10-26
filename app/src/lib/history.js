@@ -33,7 +33,25 @@ const KEY = 'smartfan.history';
 const MAX = 6000;
 const WINDOW_H = 7 * 24;
 const MIN_GAP_MS = 15_000; // the device also publishes on change
-export const GAP_MS = 5 * 60_000; // longer than this is a break, not a line
+
+/**
+ * Longer than this is a break, not a line.
+ *
+ * It has to sit between one stored interval and two. Consecutive stored rows
+ * are exactly one interval apart, so anything at or below that must join up
+ * or a perfectly complete week draws as 2,016 separate dots; a single bucket
+ * the device never wrote leaves a two-interval step, and that must break or
+ * the chart invents a straight line across an outage.
+ *
+ * It used to be exactly one interval, which is the lower bound rather than a
+ * value inside the range -- and the seam where the device's stored rows meet
+ * this browser's live stream lands a little past it, because a stored row
+ * carries its bucket's start while the live sample that follows arrives
+ * somewhere inside that bucket. So every connect drew a break it had no
+ * business drawing. Half an interval of margin is enough for that and still
+ * nowhere near two.
+ */
+export const GAP_MS = 5.5 * 60_000;
 
 // Index into a stored sample. Append only -- changing the order silently
 // reinterprets every sample already in a user's browser.
@@ -118,6 +136,35 @@ export function record(p) {
 }
 
 /**
+ * Write the buffer out now, whatever the throttle says.
+ *
+ * The throttle means up to a minute of samples exists only in memory, and a
+ * page that is closed loses them -- a gap right at the end of every session,
+ * which is the end a user is looking at when they next open the app. The
+ * device has those minutes on flash, but the backfill cannot be relied on to
+ * carry them: a stored row is a five-minute mean and the hole is finer than
+ * that. Cheaper to not lose them.
+ */
+export function flush() {
+  const rows = get(history);
+  if (!rows.length) return;
+  lastWrite = Date.now();
+  persist(rows);
+}
+
+// `pagehide` and a hidden `visibilitychange`, which is the pair that actually
+// fires. `beforeunload` is not dispatched when a phone discards a background
+// tab -- the single most likely way this app stops running -- and `unload` is
+// worse. Both of these can fire for a page that comes back, and a redundant
+// write of a few hundred kB once in a while is the cheaper mistake.
+if (typeof document !== 'undefined') {
+  addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
+  });
+}
+
+/**
  * Fold the fan's own stored rows in, keeping whatever we already have.
  *
  * The device sends `[unix_seconds, ...]` in the same field order as F, which
@@ -125,38 +172,93 @@ export function record(p) {
  * exactly this reason. Timestamps are converted to ms here, at the one place
  * that knows both conventions.
  *
- * Live samples win over stored ones for the same bucket. A backfilled row is
- * a five-minute mean; a live row is a real reading, and where both exist the
- * reading is the truer answer.
+ * Live samples win over stored ones where the two genuinely describe the same
+ * moment. A backfilled row is a five-minute mean; a live row is a real
+ * reading, and where both exist the reading is the truer answer.
+ *
+ * "The same moment" used to mean "the same bucket", and that was too coarse
+ * in the one place it mattered. A stored row is a single point stamped at its
+ * bucket's start, so one live sample anywhere in a bucket claimed the whole
+ * five minutes of it -- which is exactly what a session that ended mid-bucket
+ * leaves behind. The mean covering the rest of that bucket was then dropped
+ * as a duplicate of a reading taken minutes earlier, and the tail of the
+ * bucket simply went missing. Worse, the first live reading of a new session
+ * claimed the bucket the device is still filling, so the open-bucket row that
+ * store.py now serves would have been thrown away by the very sample that
+ * triggered the request for it.
+ *
+ * So coverage, not bucket identity: a stored row is redundant only when live
+ * samples actually span the window it summarises -- one in each half of it.
+ * Where the app was running, both halves are full and the mean is dropped
+ * exactly as before, so nothing interleaves. Where a session stopped partway
+ * through a bucket, or started partway through one, the following window is
+ * half empty and its mean is kept.
+ *
+ * Two halves rather than a distance, because distance cannot tell the two
+ * apart: a live sample two minutes before a bucket begins is just as close to
+ * it as one two minutes inside, and only the second says anything about what
+ * the bucket contains.
  */
 export function backfill(rows, intervalS = 300) {
   if (!Array.isArray(rows) || !rows.length) return 0;
   const have = get(history);
   const bucket = Math.max(1000, intervalS * 1000);
-  // Keys of what we hold, at the backfill's own resolution, so an incoming
-  // mean that overlaps live samples is dropped rather than interleaved.
-  const seen = new Set(have.map((r) => Math.floor(r[F.t] / bucket)));
+  const half = bucket / 2;
+  // Ascending, because record appends and this re-sorts, so the lookups
+  // below are binary searches rather than a scan per incoming row. A first
+  // backfill offers 2,016 rows against a buffer holding thousands.
+  const held = have.map((r) => r[F.t]);
+  // Where a bucket we have already backfilled sits, so a later fetch of the
+  // same bucket replaces it instead of being discarded as a duplicate. The
+  // open bucket is re-fetched on every reconnect -- OVERLAP_S guarantees it
+  // -- and it is more complete each time. A stored row lands exactly on a
+  // bucket boundary in ms and a live sample never does, so an exact hit here
+  // is always our own earlier copy and never a reading.
+  const ours = new Map();
+  for (let i = 0; i < have.length; i++) ours.set(have[i][F.t], i);
 
   const cutoff = Date.now() - WINDOW_H * 3600_000;
   const add = [];
+  const swap = new Map();
+  const taken = new Set();
   for (const row of rows) {
     if (!Array.isArray(row) || row.length < 2) continue;
     const t = Number(row[0]) * 1000;
     if (!Number.isFinite(t) || t < cutoff || t > Date.now() + 60_000) continue;
-    const key = Math.floor(t / bucket);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    // The two stored files overlap after a rotation, so one response can
+    // carry the same bucket twice.
+    if (taken.has(t)) continue;
+    taken.add(t);
     const next = row.slice();
     next[F.t] = t;
+    const at = ours.get(t);
+    if (at !== undefined) {
+      swap.set(at, next);
+      continue;
+    }
+    if (between(held, t, t + half) && between(held, t + half, t + bucket)) continue;
     add.push(next);
   }
-  if (!add.length) return 0;
+  if (!add.length && !swap.size) return 0;
 
-  const merged = have.concat(add).sort((a, b) => a[F.t] - b[F.t]);
+  const kept = swap.size ? have.map((r, i) => swap.get(i) || r) : have;
+  const merged = kept.concat(add).sort((a, b) => a[F.t] - b[F.t]);
   const trimmed = merged.length > MAX ? merged.slice(merged.length - MAX) : merged;
   history.set(trimmed);
   persist(trimmed);
   return add.length;
+}
+
+/** Whether an ascending array holds anything in [lo, hi). */
+function between(sorted, lo, hi) {
+  let a = 0;
+  let b = sorted.length;
+  while (a < b) {
+    const mid = (a + b) >> 1;
+    if (sorted[mid] < lo) a = mid + 1;
+    else b = mid;
+  }
+  return a < sorted.length && sorted[a] < hi;
 }
 
 function num(v) {
