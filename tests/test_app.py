@@ -337,7 +337,7 @@ with sync_playwright() as pw:
               latest["state"] or "still boosting")
 
     # --- settings round-trip ----------------------------------------------
-    page.get_by_role("button", name="Connection settings").click()
+    page.get_by_role("button", name="Settings").click()
     check("settings opens", page.locator("#host").is_visible())
     check("settings shows the port in use",
           page.locator("#port").input_value() == "1884")
