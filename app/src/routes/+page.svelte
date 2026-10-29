@@ -145,8 +145,9 @@
     },
     {
       id: 'light',
-      title: 'Light level',
-      blurb: 'Occupancy is inferred from the room light.',
+      title: 'Light against its ambient',
+      blurb:
+        'Occupancy is inferred from the room light — from the gap between the two lines, never from the height of the solid one. Daylight carries both together; the fixture opens a step between them.',
       unit: '%',
       bands: F.lit,
       bandOn: 'Lights on',
@@ -154,7 +155,10 @@
       bandStory: 'The room was lit',
       bandIdle: 'The room stayed dark',
       bandColor: 'var(--purple)',
-      series: [{ field: F.light, label: 'Light', color: 'var(--purple)', fill: true }]
+      series: [
+        { field: F.light, label: 'Light', color: 'var(--purple)', fill: true },
+        { field: F.amb, label: 'Ambient', color: 'var(--blue)', dash: true }
+      ]
     },
     {
       id: 'fan',

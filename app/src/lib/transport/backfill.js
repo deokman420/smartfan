@@ -20,7 +20,14 @@
  */
 import { backfill } from '$lib/history.js';
 
-const FIELD_COUNT = 11;
+// Rows are append-only, so a device can legitimately be a firmware behind
+// this app and send a row narrower than FIELD_COUNT. That is not a corrupt
+// row, it is an older one, and dropping it would throw away the whole
+// stored week every time a column is added -- which is exactly what the
+// strict equality here used to do. Anything from MIN_FIELDS up is accepted
+// and padded with nulls, which the charts already draw as absent.
+const FIELD_COUNT = 12;
+const MIN_FIELDS = 11;
 const HISTORY_TIMEOUT_MS = 15_000;
 
 // Backfill covers the gap in this browser's buffer, with an overlap so a
@@ -48,8 +55,8 @@ export function parseRows(text) {
       continue;
     }
     const parts = line.split(',');
-    if (parts.length !== FIELD_COUNT) continue;
-    const row = new Array(FIELD_COUNT);
+    if (parts.length < MIN_FIELDS || parts.length > FIELD_COUNT) continue;
+    const row = new Array(FIELD_COUNT).fill(null);
     let ok = true;
     for (let i = 0; i < parts.length; i++) {
       if (parts[i] === '') {

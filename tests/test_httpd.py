@@ -382,6 +382,31 @@ def test_server(tmp):
               [int(ln.split(",")[0]) for ln in lines[1:]] ==
               sorted(int(ln.split(",")[0]) for ln in lines[1:]))
 
+        # The light ambient is the newest column, and the one the light
+        # chart needs: a raw reading means nothing on its own now that the
+        # fixture is found by its distance from this line. It is appended,
+        # so it is last, and a bucket that never saw one still writes the
+        # field -- empty -- rather than a short row.
+        check("the light ambient rides along as the last column",
+              store.FIELDS[-1] == "amb" and
+              all(ln.split(",")[-1].strip() == ""
+                  for ln in lines[1:]),
+              "no ambient was fed, so every one should be empty")
+
+        amb = store.History(Cfg.HISTORY_INTERVAL_S, log=lambda *a: None)
+        amb._epoch = lambda: clock[0]
+        for i in range(3):
+            amb.note({"rh": 60.0, "base": 60.0, "exc": 0.0, "temp": 21.0,
+                      "dp": 14.0, "light_pc": 40.0, "light_amb_pc": 30.0,
+                      "rpm": 0, "fan_on": False, "light_on": True,
+                      "state": "RUN"})
+        row = store._row(0, Cfg.HISTORY_INTERVAL_S, amb._sum, amb._cnt,
+                         amb._flags, amb._n)
+        check("a fed ambient is averaged into that column",
+              row is not None and len(row) == len(store.FIELDS)
+              and row[-1] == 30.0,
+              "row[-1]=%r" % (row[-1] if row else None))
+
         # The response has no Content-Length -- its length is not known until
         # it has all been read off flash -- so the close is the terminator.
         check("a streamed response is delimited by the close",

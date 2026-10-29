@@ -37,7 +37,7 @@ reinterprets every row already on a device.
 import time
 
 FIELDS = ("t", "rh", "base", "exc", "temp", "dp", "light", "rpm", "fan",
-          "lit", "st")
+          "lit", "st", "amb")
 
 STATE_CODE = {"LEARN": 0, "IDLE": 1, "RUN": 2, "BOOST": 3, "FAULT": 4}
 
@@ -128,7 +128,8 @@ class History:
             return False
 
     def _add(self, p):
-        for k in ("rh", "base", "exc", "temp", "dp", "light_pc", "rpm"):
+        for k in ("rh", "base", "exc", "temp", "dp", "light_pc",
+                  "light_amb_pc", "rpm"):
             v = p.get(k)
             if v is None:
                 continue
@@ -351,6 +352,12 @@ def _row(bucket, interval_s, sums, cnts, flags, n):
         mean("rh"), mean("base"), mean("exc"), mean("temp"), mean("dp"),
         mean("light_pc"), int(mean("rpm", 0) or 0),
         flags.get("fan", 0), flags.get("lit", 0), flags.get("st"),
+        # The learned light ambient, appended for the same reason "st" was:
+        # a reading of 35% means nothing on its own now that the fixture is
+        # found by its distance from this line rather than by a level. Rows
+        # written before it existed simply end early, and every reader here
+        # and in the app treats a missing trailing field as absent.
+        mean("light_amb_pc"),
     ]
 
 

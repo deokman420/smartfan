@@ -22,6 +22,7 @@
  */
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = dirname(here);
@@ -196,6 +197,83 @@ console.log('\nthe seam between stored means and the live stream\n');
   clearHistory();
   check('the buffer can be written out on demand',
         typeof flush === 'function' && flush() === undefined);
+}
+
+// The CSV parser, which is where a schema change does its damage. It lives
+// in backfill.js, which imports history.js through SvelteKit's `$lib` alias
+// -- meaningless to node -- so the source is rewritten to a real file URL
+// and imported from memory. Cheaper than a bundler, and it tests the file
+// that ships rather than a copy of it.
+{
+  const src = (await readFile(join(root, 'app', 'src', 'lib', 'transport',
+                                   'backfill.js'), 'utf8'))
+    .replace("'$lib/history.js'",
+             JSON.stringify(pathToFileURL(join(root, 'app', 'src', 'lib',
+                                               'history.js')).href));
+  const { parseRows } = await import(
+    'data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
+
+  const WIDE = '1790000000,60,58,2,21,14,40,0,0,1,2,30.5';
+  const OLD = '1790000000,60,58,2,21,14,40,0,0,1,2';
+
+  const wide = parseRows(WIDE).rows;
+  check('a row carrying the ambient keeps it',
+        wide.length === 1 && wide[0][F.amb] === 30.5,
+        JSON.stringify(wide[0]?.[F.amb]));
+
+  // The one that matters. Every row already on a device's flash is a column
+  // short of what this app now expects, and the parser used to require an
+  // exact width -- so adding a column silently threw the whole stored week
+  // away. Short is old, not corrupt.
+  const old = parseRows(OLD).rows;
+  check('a row from before the column still parses',
+        old.length === 1 && old[0].length === wide[0].length,
+        '%s fields'.replace('%s', String(old[0]?.length)));
+  check('...with the missing ambient read as absent, not zero',
+        old.length === 1 && old[0][F.amb] === null,
+        JSON.stringify(old[0]?.[F.amb]));
+  check('...and the columns before it land where they did',
+        old.length === 1 &&
+        old[0][F.rh] === 60 && old[0][F.light] === 40 && old[0][F.st] === 2);
+
+  // A genuinely malformed row is still refused. The tolerance is for rows a
+  // firmware behind, not for anything that happens to split on commas.
+  check('a row narrower than the oldest schema is refused',
+        parseRows('1790000000,60,58,2,21,14,40,0,0,1').rows.length === 0);
+  check('an empty ambient field reads as absent too',
+        parseRows(OLD + ',').rows[0][F.amb] === null);
+}
+
+// segments() is what turns that null into a break rather than a line to
+// zero, and it is the reason absent has to stay absent.
+{
+  const rows = [
+    [1000, 60, 60, 0, 21, 14, 40, 0, 0, 0, 1, null],
+    [2000, 60, 60, 0, 21, 14, 41, 0, 0, 0, 1, 30],
+    [3000, 60, 60, 0, 21, 14, 42, 0, 0, 0, 1, 31]
+  ];
+  const segs = segments(rows, F.amb);
+  check('rows without an ambient are skipped, not drawn as zero',
+        segs.length === 1 && segs[0].length === 2 &&
+        segs[0].every(([, v]) => v >= 30));
+}
+
+// A live reading carries the ambient into the buffer the same way.
+{
+  clearHistory();
+  clock = 10 * MIN;
+  record({ rh: 60, base: 58, exc: 2, temp: 21, dp: 14, light_pc: 40,
+           light_amb_pc: 30.5, rpm: 0, fan_on: false, light_on: false,
+           state: 'IDLE' });
+  check('record() stores the ambient a live payload carries',
+        read()[0]?.[F.amb] === 30.5, JSON.stringify(read()[0]?.[F.amb]));
+
+  clearHistory();
+  clock = 20 * MIN;
+  record({ rh: 60, base: 58, exc: 2, temp: 21, dp: 14, light_pc: 40,
+           rpm: 0, fan_on: false, light_on: false, state: 'IDLE' });
+  check('...and a payload without one records absence',
+        read()[0]?.[F.amb] === null, JSON.stringify(read()[0]?.[F.amb]));
 }
 
 Date.now = realNow;

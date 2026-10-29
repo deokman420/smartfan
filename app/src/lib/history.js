@@ -66,7 +66,8 @@ export const F = {
   rpm: 7,
   fan: 8,
   lit: 9,
-  st: 10 // controller state, appended so older samples stay valid
+  st: 10, // controller state, appended so older samples stay valid
+  amb: 11 // learned light ambient, appended for the same reason
 };
 
 /** Stored in F.st. Older samples simply omit it. */
@@ -120,7 +121,8 @@ export function record(p) {
     num(p.rpm),
     p.fan_on ? 1 : 0,
     p.light_on ? 1 : 0,
-    STATE_CODE[p.state] ?? null
+    STATE_CODE[p.state] ?? null,
+    num(p.light_amb_pc)
   ];
 
   const next = rows.length >= MAX ? rows.slice(rows.length - MAX + 1) : rows.slice();
