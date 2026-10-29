@@ -62,12 +62,18 @@ class FakePin:
         pass
 
 
+# What the LDR is reading, in raw counts. A list so a test can move it
+# between samples: the light decision is now made from the SHAPE of a
+# sequence, so a constant-valued stub cannot exercise it at all.
+LIGHT = [3000]                # a dark bathroom at night
+
+
 class FakeADC:
     def __init__(self, pin):
         pass
 
     def read_u16(self):
-        return 5000           # dark
+        return LIGHT[0]
 
 
 class FakeWDT:
@@ -109,6 +115,10 @@ sys.modules["dht"] = dht
 _time.ticks_ms = lambda: CLOCK[0]
 _time.ticks_diff = lambda a, b: a - b
 _time.ticks_add = lambda t, d: t + d
+# read_light blanks the LEDs and waits for the ADC to settle. On the host the
+# wait is the only part with no meaning, and sleeping through it would make a
+# test nobody runs -- the fake clock is what time means here.
+_time.sleep_ms = lambda ms: None
 
 # Settings writes settings.json beside the cwd, and the real one on the
 # device holds runtime overrides that must never be confused with a test's.
@@ -156,6 +166,12 @@ def build(boot="watchdog or reset", mode=None, selftest_s=0):
     c.rpm = 0
     c.light_on = False
     c.dark_since = CLOCK[0] - 3600_000       # dark for an hour
+    # Seed the light detector as a settled dark room, the way an hour of
+    # samples would have left it. Without this the first sample of every
+    # test reads as a step away from an unlearned ambient.
+    LIGHT[0] = 3000
+    c.lightdet.amb = 3000.0
+    c.lightdet.prev = 3000
     return c
 
 
@@ -178,6 +194,7 @@ def step(c, passes=1):
         driven = bool(c.fan.value())
         c.rpm = FAN_RPM[0] if driven else 0
         c.rpm_idle = 0
+        c.read_light()
         if not c.step_selftest():
             c.check_fan_health()
             c.decide()
@@ -355,6 +372,188 @@ check("SELFTEST_S = 0 disables it", c.selftest == "disabled",
       str(c.selftest))
 check("and the result is reported either way",
       "selftest" in c.snap.payload(c, 5000), "missing from the payload")
+
+print("\nthe light detector, against readings this bathroom actually took\n")
+
+# Both traces below are real, read off the device's own stored history for
+# 2026-10-27 to 10-29 and converted from the percentages it records back to
+# raw counts. They are the two cases the detector has to tell apart, and the
+# whole point is that an absolute threshold cannot: the sunlight one peaks
+# HIGHER than the fixture one.
+
+
+def ramp(c, counts, seconds):
+    """Move the light to `counts` over `seconds`, sampling every SAMPLE_S.
+
+    Linear between samples, which is how the sky behaves at this timescale
+    and is also the shape the 5 min history buckets record.
+    """
+    start = float(LIGHT[0])
+    steps = max(1, int(seconds / cfg.SAMPLE_S))
+    for i in range(1, steps + 1):
+        LIGHT[0] = int(start + (counts - start) * i / steps)
+        advance(cfg.SAMPLE_S)
+        step(c)
+
+
+def switch(c, on):
+    """Hit the wall switch, and take the sample that sees it.
+
+    53000 counts is what this bathroom's fixture actually reads, and 3000 is
+    the room without it. Going through read_light rather than assigning
+    light_on means these tests exercise the detector and the state machine
+    together, which is how they fail in a ceiling.
+    """
+    LIGHT[0] = 53000 if on else 3000
+    advance(cfg.SAMPLE_S)
+    step(c)
+
+
+# --- the false trigger: 10-28 14:05, 2 h 55 min of fan in a dry room ------
+#
+# Sunlight climbed 27.2 % -> 55.4 % over about two hours and came back down.
+# The room stayed dry throughout (exc never left -0.6..+2.1). Under the old
+# absolute LIGHT_ON = 22000 this crossed at 14:05 and the fan ran until
+# 17:00. Nothing here may start it.
+c = build()
+ramp(c, 17800, 3600)                 # 08:40 -> 13:30, 4.4 % -> 27.2 %
+check("a morning of rising daylight does not read as a light",
+      not c.light_on, "rise %+d" % c.light_rise())
+check("and does not start the fan", c.state == main.IDLE and c.fan.value() == 0,
+      c.state)
+
+ramp(c, 36300, 7200)                 # 13:30 -> 15:20, up to the 55.4 % peak
+check("nor does the brightest sun this room has seen in the afternoon",
+      not c.light_on, "light %d rise %+d" % (LIGHT[0], c.light_rise()))
+check("the fan stayed off through all of it",
+      c.state == main.IDLE and c.fan.value() == 0, c.state)
+check("and the ambient tracked the sun up instead of being outrun by it",
+      abs(LIGHT[0] - c.light_amb) < cfg.LIGHT_RISE_ON,
+      "light %d amb %d" % (LIGHT[0], c.light_amb))
+
+ramp(c, 3500, 2400)                  # 16:45 -> 17:30, sunset back to dark
+check("and the sun going back down is not an event either",
+      not c.light_on and c.state == main.IDLE, c.state)
+
+# --- the real thing: 10-29 06:40, a pre-dawn shower -----------------------
+#
+# 2.5 % -> 81.1 % between two samples. 51511 counts in one step. This must
+# be caught, and caught on the first sample -- a fan that starts a minute
+# into a shower is a fan with a wet ceiling.
+c = build()
+LIGHT[0] = 53000                     # somebody hit the switch
+advance(cfg.SAMPLE_S)
+step(c)
+check("the fixture switching on is caught in a single sample",
+      c.light_on, "rise %+d" % c.light_rise())
+check("and starts the fan at once",
+      c.state == main.RUN and c.fan.value() == 1, c.state)
+
+# It must also hold while the bulb is burning -- the ambient is frozen, so
+# it cannot climb to meet the fixture and declare the room dark.
+for _ in range(60):
+    advance(cfg.SAMPLE_S)
+    step(c)
+check("and holds while the bulb is lit, rather than being learned away",
+      c.light_on, "rise %+d after 2 min" % c.light_rise())
+
+# And the off-edge, into a room the sun has brightened since. This is the
+# trap a frozen ambient sets: pre-dawn ambient was 3000, the light has been
+# on through sunrise, and the room it reveals reads 25000. A detector that
+# measured against the stale 3000 would call that a second light-on and
+# never let go.
+LIGHT[0] = 25000
+advance(cfg.SAMPLE_S)
+step(c)
+check("the off-edge is caught even though the room is now brighter than "
+      "before it", not c.light_on, "rise %+d" % c.light_rise())
+check("and the ambient re-anchored to the daylight it revealed",
+      abs(c.light_amb - 25000) < 1000, "amb %d" % c.light_amb)
+
+print("\nthe MAX_RUN_S latch, against a light that will not go out\n")
+
+# The 10-28 bug itself, reduced. A light signal that stays asserted used to
+# clear the latch on the pass after it was set, because IDLE tested the
+# level and called it a new occupancy event. 175 minutes against a 60 minute
+# cap. Here the light is forced on directly: this test is about the latch,
+# not the detector, and it has to hold even if the detector is ever wrong.
+_reanchor = cfg.LIGHT_MAX_ON_S
+cfg.LIGHT_MAX_ON_S = 10 ** 9         # stand the detector's own bound down
+
+c = build()
+switch(c, True)
+check("a light-on event starts a run", c.state == main.RUN, c.state)
+advance(cfg.MAX_RUN_S + 1)
+step(c)
+check("the cap latches the run off", c.state == main.IDLE and c.maxed,
+      "%s maxed=%s" % (c.state, c.maxed))
+# The regression. The light is still on and the room is dry, which is
+# exactly the state that used to re-RUN immediately.
+advance(cfg.SAMPLE_S)
+step(c, 5)
+check("and a light still on does not clear it a pass later",
+      c.state == main.IDLE and c.fan.value() == 0 and c.maxed,
+      "%s maxed=%s light_on=%s" % (c.state, c.maxed, c.light_on))
+check("the room being dry does not clear it either, while the light is on",
+      c.maxed, "maxed=%s exc=%+.1f" % (c.maxed, c.excess_rh))
+
+# A genuinely new event still gets its run. The latch rejects a level, not
+# a person coming back into the room.
+switch(c, False)
+check("the light going off releases the latch in a dry room",
+      not c.maxed and not c.light_on, "maxed=%s" % c.maxed)
+switch(c, True)
+check("and the next real light-on runs the fan again",
+      c.state == main.RUN and c.fan.value() == 1, c.state)
+
+cfg.LIGHT_MAX_ON_S = _reanchor
+
+print("\nlight alone is occupancy, not an instruction to ventilate\n")
+
+# The belt to the braces. However well the detector works, it reads one LDR
+# through a window; this is what bounds a bad reading to ten minutes.
+c = build()
+switch(c, True)
+check("the fan starts on the light", c.state == main.RUN, c.state)
+advance(cfg.LIGHT_ONLY_MAX_S - cfg.MIN_RUN_S)
+step(c)
+check("and a light-only run is not cut short of the cap",
+      c.state == main.RUN and c.fan.value() == 1,
+      "ran %.0fs of %ds" % (c.fan_seconds(), cfg.LIGHT_ONLY_MAX_S))
+advance(cfg.MIN_RUN_S + cfg.SAMPLE_S)
+step(c)
+check("past the cap, a dry room stops the fan with the light still on",
+      c.state == main.IDLE and c.fan.value() == 0,
+      "%s ran %.0f min" % (c.state, c.fan_seconds() / 60))
+check("and it latches, so IDLE does not start the whole run again",
+      c.maxed, "maxed=%s" % c.maxed)
+advance(cfg.SAMPLE_S)
+step(c, 5)
+check("it stays off for as long as the light stays on",
+      c.state == main.IDLE and c.fan.value() == 0, c.state)
+check("well short of the old MAX_RUN_S", cfg.LIGHT_ONLY_MAX_S < cfg.MAX_RUN_S,
+      "%ds vs %ds" % (cfg.LIGHT_ONLY_MAX_S, cfg.MAX_RUN_S))
+
+# ...but a wet room is a real reason, and the cap must not touch it. This is
+# the line between "someone left the light on" and "someone is showering".
+c = build()
+switch(c, True)
+c.rh = c.baseline + cfg.RH_RISE_ON + 1       # the shower starts
+advance(cfg.LIGHT_ONLY_MAX_S + cfg.MIN_RUN_S)
+step(c)
+check("a humid room runs straight through the light-only cap",
+      c.state == main.RUN and c.fan.value() == 1,
+      "%s exc=%+.1f ran %.0f min" % (c.state, c.excess_rh,
+                                     c.fan_seconds() / 60))
+check("and is not latched by it", not c.maxed, "maxed=%s" % c.maxed)
+# And it still ends the ordinary way, once the room is actually dry.
+c.rh = c.baseline
+switch(c, False)
+advance(cfg.POST_LIGHT_S + cfg.SAMPLE_S)
+step(c, 2)
+check("then ends on the humidity, the way it always did",
+      c.state == main.IDLE and c.fan.value() == 0,
+      "%s exc=%+.1f" % (c.state, c.excess_rh))
 
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))

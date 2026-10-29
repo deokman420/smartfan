@@ -8,6 +8,16 @@ Absolute humidity thresholds don't work for this — a muggy August day sits at
 65 %RH by itself and the fan never stops. So everything is expressed as a **rise
 above a slowly learned baseline** for that particular room.
 
+Absolute *light* thresholds don't work either, for the same reason and more
+sharply. Measured here, direct sun reaches 85 % of the ADC's range while the
+ceiling fixture reads 81 %: daylight is **brighter than the bulb**, so no level
+separates them, and the fan ran 175 minutes in a dry room on sunlight alone
+before this was understood. What does separate them is speed — the fixture moves
+the reading 51511 counts in a single 2 s sample, and the fastest the sky has ever
+managed in this room is 51. So the light is found by the **step away from a
+learned ambient**, never by a level, and light alone stops holding the fan on
+after `LIGHT_ONLY_MAX_S`. Details and the measurements are in `config.py`.
+
 **Status:** phase 1 complete and commissioned on hardware. Fan switching, both
 sensors, both status LEDs, the button and the tachometer all verified.
 
@@ -55,6 +65,7 @@ Parked items, each with what unblocks it: [`docs/TODO.md`](docs/TODO.md).
 | `calibrate.py` | Bench helpers — `light()`, `sensor()`, `fan()`, `leds()`. |
 | `ota.py` | Over-the-air updates with automatic rollback. |
 | `boot.py` | Runs before `main.py`. The recovery path — never updated over the air. |
+| `light.py` | Is the room light on? The ambient tracker that tells the fixture from daylight. |
 | `net.py` | WiFi + MQTT supervision, polled from the loop. Never blocks it. |
 | `telemetry.py` | The device's own snapshot, plus Home Assistant discovery and publishing. |
 | `mqtt.py` | MQTT 3.1.1 client. Publish-only until phase 2b. |

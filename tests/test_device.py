@@ -197,15 +197,30 @@ check("rollback after <= 2 tries", o.get("TRIES") == "2", o.get("TRIES", "?"))
 # --- config sanity --------------------------------------------------------
 out = mp("""
 import config as cfg
-print('LIGHT', cfg.LIGHT_ON, cfg.LIGHT_OFF)
+print('LIGHT', cfg.LIGHT_RISE_ON, cfg.LIGHT_RISE_OFF, cfg.LIGHT_STEP_ON)
+print('LIGHTAMB', cfg.LIGHT_AMB_UP, cfg.LIGHT_ONLY_MAX_S)
 print('RH', cfg.RH_RISE_ON, cfg.RH_FALL_OFF)
 print('RUN', cfg.MIN_RUN_S, cfg.MAX_RUN_S)
 print('RPM', cfg.MIN_RPM)
 """)
 c = {l.split()[0]: l.split()[1:] for l in out.splitlines() if l.split()}
-lon, loff = (int(x) for x in c.get("LIGHT", [0, 0]))
-check("LIGHT_ON above LIGHT_OFF", lon > loff, "%d > %d" % (lon, loff))
-check("light hysteresis >= 5000", lon - loff >= 5000, "gap %d" % (lon - loff))
+lon, loff, lstep = (int(x) for x in c.get("LIGHT", [0, 0, 0]))
+check("LIGHT_RISE_ON above LIGHT_RISE_OFF", lon > loff, "%d > %d" % (lon, loff))
+check("light hysteresis >= 2000", lon - loff >= 2000, "gap %d" % (lon - loff))
+# A switch-like jump has to be at least as big as the offset it is supposed
+# to establish, or the step test is the slack one and does no filtering.
+check("LIGHT_STEP_ON at least LIGHT_RISE_ON", lstep >= lon,
+      "%d >= %d" % (lstep, lon))
+aup, lonly = (int(x) for x in c.get("LIGHTAMB", [0, 0]))
+# The whole mechanism rests on this gap: the ambient must absorb anything the
+# sky can do and still leave the fixture's own edge standing well clear.
+# Measured in this room, the sky's fastest is 51 counts per sample and the
+# fixture's edge is 51511.
+check("ambient slew above the measured sky rate", aup >= 500,
+      "%d counts/sample" % aup)
+check("ambient slew well below a switch edge", aup * 4 <= lstep,
+      "%d vs step %d" % (aup, lstep))
+check("light-only cap below MAX_RUN", lonly > 0, "%ds" % lonly)
 rise, fall = (float(x) for x in c.get("RH", [0, 0]))
 check("RH_RISE_ON above RH_FALL_OFF", rise > fall, "%.1f > %.1f" % (rise, fall))
 mn, mx = (int(x) for x in c.get("RUN", [0, 0]))

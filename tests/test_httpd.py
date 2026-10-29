@@ -158,6 +158,9 @@ class FakeController:
         self.st = _Settings()
         self.boot_reason = "power-on"
         self.raw_light = 5000
+        # The learned ambient the light decision is made against. A settled
+        # dark room: the reading sits right on it, so the fixture is off.
+        self.light_amb = 5000.0
         self.link = None
         self.ip = "192.168.0.42"
         self.mqtt_host = ""
@@ -168,6 +171,9 @@ class FakeController:
     # what Snapshot.payload reads
     def dew_point(self):
         return 14.2
+
+    def light_rise(self):
+        return int(self.raw_light - self.light_amb)
 
     @property
     def excess_rh(self):
@@ -193,7 +199,9 @@ class Cfg:
     ROOM_NAME = "Bathroom"
     DEVICE_ID = "fan_bathroom"
     DEVICE_NAME = "Bathroom Smartfan"
-    LIGHT_ON = 22000
+    LIGHT_STEP_ON = 10000
+    LIGHT_RISE_ON = 8000
+    LIGHT_RISE_OFF = 4000
     SAMPLE_S = 2
     PUBLISH_INTERVAL_S = 30
     HOSTNAME = "fan"

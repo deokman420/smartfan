@@ -20,6 +20,7 @@ import dht
 
 import config as cfg
 from settings import Settings
+import light
 import ota
 
 # Snapshot needs no network: it is the device's view of itself, and the HTTP
@@ -219,6 +220,12 @@ class Controller:
         self.light_on = False
         self.dark_since = None
 
+        # Daylight here reads brighter than the bulb does, so the fixture is
+        # found by its step away from a learned ambient rather than by any
+        # level. light.py carries the measurements and the reasoning.
+        self.lightdet = light.Detector(self.st, log=print)
+        self.light_prev = False    # light_on as decide() last saw it, for edges
+
         self.baseline = None
         self.rh = None
         self.temp = None
@@ -338,12 +345,17 @@ class Controller:
         self.led_ok.value(ok)
         self.led_run.value(run)
 
-        if raw >= self.st.LIGHT_ON:
-            self.light_on = True
-        elif raw <= self.st.LIGHT_OFF:
-            self.light_on = False
+        self.update_light(raw)
         self.raw_light = raw
         return raw
+
+    def update_light(self, raw):
+        """Hand the sample to the detector and publish its verdict.
+
+        light_on stays an attribute of the controller because decide(), the
+        log, the HTTP API and Home Assistant all read it.
+        """
+        self.light_on = self.lightdet.update(raw)
 
     def read_climate(self):
         """Returns True if the DHT22 answered with a good reading."""
@@ -401,10 +413,27 @@ class Controller:
     def fan_off_seconds(self):
         return 0 if self.fan_off_at is None else ms_since(self.fan_off_at) / 1000.0
 
+    # The two numbers that explain a light verdict, for the log, the API and
+    # the app. Read through to the detector so they cannot drift from it.
+    @property
+    def light_amb(self):
+        return self.lightdet.amb
+
+    def light_rise(self):
+        return self.lightdet.rise(self.raw_light)
+
     # -- the decision -------------------------------------------------
 
     def decide(self):
         now = time.ticks_ms()
+
+        # A RISING edge, not the level. IDLE used to clear the MAX_RUN_S latch
+        # on `if self.light_on` -- which reads "a new occupancy event" but
+        # tests a level, so a light merely still on cleared the latch on the
+        # pass after it was set and RUN started again. Measured on 10-28: 175
+        # minutes against a 60 minute cap. Latch release has to be an event.
+        rising = self.light_on and not self.light_prev
+        self.light_prev = self.light_on
 
         if self.light_on:
             self.dark_since = None
@@ -519,16 +548,22 @@ class Controller:
 
             # A new occupancy event clears the latch: someone is back in the
             # room, which is a fresh reason to run regardless of what the
-            # last event managed.
-            if self.light_on:
+            # last event managed. The light coming ON is that event; the
+            # light merely BEING on is not.
+            if rising:
                 self.maxed = False
+            if self.light_on and not self.maxed:
                 self.set_state(RUN, "light on")
             elif self.maxed:
                 # Still latched. Release once the humidity has actually come
                 # down -- the same condition that would have ended the run
                 # properly. Until then, running again would achieve nothing
                 # the last thirty minutes did not.
-                if self.excess_rh <= self.st.RH_FALL_OFF:
+                #
+                # And not while the light still reads on: a dry room already
+                # satisfies the humidity half, so that half alone cannot hold
+                # a latch set by a light that will not go out.
+                if not self.light_on and self.excess_rh <= self.st.RH_FALL_OFF:
                     self.maxed = False
             elif self.excess_rh >= self.st.RH_RISE_ON:
                 self.set_state(RUN, "humidity +%.1f%%" % self.excess_rh)
@@ -552,6 +587,19 @@ class Controller:
                                  "dries or the light comes back on")
             return
         if ran < self.st.MIN_RUN_S:
+            return
+        # Light alone is occupancy, not a standing instruction to ventilate.
+        # Past LIGHT_ONLY_MAX_S the humidity has to justify the rest, which it
+        # does through the RH_FALL_OFF check below for as long as the room is
+        # wet. However good the detector gets it still reads one LDR through a
+        # window, and this is what bounds a bad reading to ten minutes rather
+        # than an afternoon. It latches for the same reason MAX_RUN_S does.
+        if (self.light_on and ran >= self.st.LIGHT_ONLY_MAX_S
+                and self.excess_rh <= self.st.RH_FALL_OFF):
+            self.maxed = True
+            self.set_state(IDLE, "light on %d min with a dry room - latched "
+                                 "until the light goes off"
+                                 % (self.st.LIGHT_ONLY_MAX_S // 60))
             return
         if self.light_on:
             return
@@ -786,14 +834,16 @@ class Controller:
 
     def log(self, raw_light):
         dp = self.dew_point()
-        print("%-5s rh=%s%% t=%sC dp=%s base=%s exc=%+.1f light=%d(%s) "
-              "fan=%d rpm=%d %s" % (
+        print("%-5s rh=%s%% t=%sC dp=%s base=%s exc=%+.1f "
+              "light=%d amb=%s rise=%+d(%s) fan=%d rpm=%d %s" % (
                   self.state,
                   self.rh, self.temp,
                   "%.1f" % dp if dp is not None else "--",
                   "%.1f" % self.baseline if self.baseline is not None else "--",
                   self.excess_rh,
-                  raw_light, "ON" if self.light_on else "off",
+                  raw_light,
+                  "%d" % self.light_amb if self.light_amb is not None else "--",
+                  self.light_rise(), "ON" if self.light_on else "off",
                   self.fan.value(), self.rpm,
                   self.fault_reason if self.state == FAULT else ""))
 

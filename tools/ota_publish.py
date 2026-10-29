@@ -33,7 +33,7 @@ ROOT = os.path.dirname(HERE)
 # Shipped to the device. boot.py and ota.py are excluded on purpose: they are
 # the recovery path, and a recovery path you can break remotely is not one.
 # Push those over USB when they genuinely change.
-SHIP = ("main.py", "config.py", "settings.py", "telemetry.py",
+SHIP = ("main.py", "config.py", "settings.py", "telemetry.py", "light.py",
         "net.py", "mqtt.py", "ringbuf.py", "calibrate.py", "provision.py",
         "improv.py", "httpd.py", "webapi.py", "store.py", "wifi.py")
 

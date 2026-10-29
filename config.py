@@ -14,17 +14,84 @@ PIN_LED_OK  = 19   # green
 PIN_LED_RUN = 20   # red
 
 # --- Light sensing --------------------------------------------------
-# Raw ADC, 0-65535. Bright reads high. Run calibrate.py in the actual
-# bathroom, with the fixture on and off, and put your numbers here.
-# Keep a wide gap so a flickering LED bulb cannot chatter the state.
-# Measured in the bathroom 2026-09-26, sensor in its mounting position:
-#   light off  4800-6225   (window, door gap -- never truly dark)
-#   light on  30000-32500
+# Raw ADC, 0-65535. Bright reads high.
 #
-# Set at one third and two thirds of that span. The previous value of 6000
-# sat INSIDE the dark-state noise, so the controller never reliably saw the
-# light go out and the fan ran indefinitely. A threshold has to clear the
-# quiet band, not sit in it.
+# Occupancy is a STEP above the ambient light, never an absolute level.
+# Absolute thresholds cannot work here for exactly the reason absolute
+# humidity thresholds cannot: a sunny afternoon sits high all by itself.
+# Measured in this bathroom over the four days to 2026-10-29:
+#
+#   truly dark, night            1600-3300   ( 2.5-5.0 %)
+#   fixture on, room dark            53000   (81 %)
+#   direct sun, no fixture       up to 36300 (55 %) and still climbing
+#   brightest ambient seen           55800   (85 %)
+#
+# Sun and fixture share one band, and the old LIGHT_ON = 22000 sat less than
+# halfway up the daylight ramp. The fan ran 75 min on 10-27 and 175 min on
+# 10-28 in a bone-dry room, on sunlight alone. No choice of threshold fixes
+# that, because the brightest ambient is above the fixture, not below it.
+#
+# What separates them is the RATE, and it is not close. Measured, per 2 s
+# sample, over those same four days:
+#
+#   the fixture switching on     +51511 counts in ONE sample
+#   the fastest ambient drift       +51 counts per sample (10-26 13:25)
+#
+# A factor of a thousand. So: track the ambient, and call it the fixture
+# only when the reading jumps away from that ambient faster than any sky
+# can move. The thresholds below sit two orders of magnitude clear of the
+# sun and one order clear of the fixture.
+LIGHT_STEP_ON  = 10000   # one-sample jump that means somebody hit a switch
+LIGHT_RISE_ON  = 8000    # ...and it must land at least this far above ambient,
+                         # so a jump out of a deep shadow is not a light
+LIGHT_RISE_OFF = 4000    # back within this of ambient -> the fixture is off
+
+# How the ambient estimate is allowed to move. Asymmetric, because the two
+# directions mean different things: a reading that FALLS cannot be a fixture
+# switching on, so it is ambient and is believed quickly, while a reading
+# that RISES might be, so it is absorbed only as fast as weather can
+# plausibly account for.
+#
+# LIGHT_AMB_UP is a hard ceiling in counts per sample rather than an EMA
+# weight, and that is the point: anything slower than this is absorbed
+# COMPLETELY and can never accumulate into a false trigger. An EMA cannot
+# promise that -- a cloud edge crossing the sun shifts indoor light by tens
+# of percent in twenty seconds, which an EMA lags and a slew limit eats. At
+# 2500 it sits 49x above the fastest drift ever measured here and 20x below
+# the fixture's own edge.
+LIGHT_AMB_UP     = 2500  # max counts per sample the ambient may rise
+LIGHT_AMB_DOWN_A = 0.25  # EMA weight for a falling reading; tau ~8 s
+
+# The backstop. The ambient is frozen while the fixture is believed on --
+# otherwise it would climb to meet the fixture and the light would read off
+# with the bulb still burning. A frozen ambient can go stale, so a light_on
+# that outlives this is treated as a lost edge: re-anchor the ambient to
+# whatever the room reads now and start again. Every light misreading is
+# therefore bounded, and bounded without anyone on a ladder.
+#
+# Nothing resolves the fixture once the ambient is near the rail: at 85 %
+# the divider is compressed enough that the bulb adds a few hundred counts,
+# under LIGHT_STEP_ON, so a blazing afternoon simply does not see the light.
+# That fails safe -- a missed occupancy, not a fan running for three hours --
+# and no threshold can do better from this sensor. A shade or snoot aimed at
+# the fixture is the fix for that one, and it is a hardware fix.
+LIGHT_MAX_ON_S = 1800
+
+# Light alone is occupancy, not a standing instruction to ventilate. Past
+# this much run time the fixture stops holding the fan on by itself and
+# humidity has to justify the rest -- which both matches how a bathroom is
+# used and bounds the cost of any future bad light reading to ten minutes,
+# whatever its cause.
+LIGHT_ONLY_MAX_S = 600
+
+# Vestigial, and deliberately so. ota.py installs a whole batch or nothing,
+# and a batch much past 60 kB does not install at all (see docs/TODO.md), so
+# a change this wide has to go over in stages -- which means config.py can
+# land one push AHEAD of the main.py that stops reading these. Without them
+# the old main.py in the ceiling loses cfg.LIGHT_ON mid-flight, raises on its
+# next sample, and rides the watchdog down to a rollback. Nothing reads them
+# once the matching main.py is installed; they cost two lines, and staged
+# updates are the normal case here rather than the exception.
 LIGHT_ON  = 22000
 LIGHT_OFF = 14000
 

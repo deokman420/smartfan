@@ -16,32 +16,52 @@ import config as cfg
 
 
 def light(seconds=60):
-    """Print LDR readings so you can pick LIGHT_ON / LIGHT_OFF.
+    """Print LDR readings, and measure the fixture's own step.
 
-    Run it in the actual bathroom, in the actual mounting position.
-    Turn the fixture on for half the time and off for the other half,
-    then set LIGHT_ON just under the bright floor and LIGHT_OFF just
-    over the dark ceiling. A wide gap between them is what stops an
-    LED bulb's flicker from chattering the fan on and off.
+    Run it in the actual bathroom, in the actual mounting position, and
+    flick the fixture on and off a few times while it runs.
+
+    What matters is no longer the bright and dark LEVELS -- daylight in a
+    room with a window reaches higher than the bulb does, so there is no
+    level that separates them. What matters is the biggest one-sample JUMP,
+    because that is the fixture and nothing in the sky can do it. Set
+    LIGHT_STEP_ON to roughly a fifth of the jump printed below, which leaves
+    room for the jump shrinking on a bright day as the divider compresses.
     """
     adc = ADC(Pin(cfg.PIN_LDR))
     lo, hi = 65535, 0
+    jump = 0
+    prev = None
     end = time.ticks_add(time.ticks_ms(), seconds * 1000)
     while time.ticks_diff(end, time.ticks_ms()) > 0:
         raw = adc.read_u16()
         lo = min(lo, raw)
         hi = max(hi, raw)
+        if prev is not None:
+            jump = max(jump, abs(raw - prev))
+        prev = raw
         bar = "#" * (raw * 40 // 65536)
         print("%6d  min=%-6d max=%-6d %s" % (raw, lo, hi, bar))
         time.sleep_ms(250)
     span = hi - lo
-    print("\nobserved %d .. %d" % (lo, hi))
+    print("\nobserved %d .. %d  (span %d)" % (lo, hi, span))
+    print("biggest one-sample jump: %d" % jump)
     if span < 5000:
         print("span is small -- the LDR may be shaded, or the divider")
         print("resistor is a poor match for this cell")
+    elif jump < 5000:
+        print("no switch-sized jump seen. Did the fixture get flicked?")
+        print("Without a jump the controller cannot tell it from daylight.")
     else:
-        print("suggested LIGHT_ON  = %d" % (lo + span * 2 // 3))
-        print("suggested LIGHT_OFF = %d" % (lo + span // 3))
+        print("suggested LIGHT_STEP_ON  = %d" % (jump // 5))
+        print("suggested LIGHT_RISE_ON  = %d" % (jump // 6))
+        print("suggested LIGHT_RISE_OFF = %d" % (jump // 12))
+    if hi > 56000:
+        print("")
+        print("NOTE: %d is close to the 65535 rail. Up there the bulb adds"
+              % hi)
+        print("only a few hundred counts and cannot be detected at all.")
+        print("Shade the LDR or aim it at the fixture, not the window.")
 
 
 def sensor(n=10):

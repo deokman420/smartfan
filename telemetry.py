@@ -56,7 +56,7 @@ FW_VERSION = "2c.3"
 # network -- without it, the only way to know what an OTA actually put on a
 # device in a ceiling is to go and get it.
 TRACKED = ("main.py", "config.py", "settings.py", "telemetry.py",
-           "net.py", "mqtt.py", "ringbuf.py", "calibrate.py",
+           "light.py", "net.py", "mqtt.py", "ringbuf.py", "calibrate.py",
            "provision.py", "improv.py", "httpd.py", "webapi.py",
            "store.py", "wifi.py")
 
@@ -215,6 +215,14 @@ class Snapshot:
         is "there is no broker, by choice".
         """
         self.roll_day()
+        # Read through getattr, because an OTA batch has to stay small enough
+        # to install and so telemetry.py can legitimately be running a push
+        # AHEAD of the main.py that grew these. Asking a Controller that
+        # predates them raises inside the one call every surface depends on:
+        # measured, it took out /api/state and the history writer for the eight
+        # minutes between two pushes, while the fan itself carried on fine.
+        amb = getattr(c, "light_amb", None)
+        rise = c.light_rise() if hasattr(c, "light_rise") else 0
         return {
             "state":    c.state,
             "temp":     round(c.temp, 1) if c.temp is not None else None,
@@ -225,6 +233,17 @@ class Snapshot:
             "light":    raw_light,
             "light_pc": round(min(100.0, raw_light * 100.0 / 65535), 1),
             "light_on": bool(c.light_on),
+            # The learned ambient, and how far the reading sits above it.
+            # `light` alone cannot explain a light verdict now that the verdict
+            # is made on the difference -- an app or a log showing only the raw
+            # number cannot tell a lit room from a sunny one.
+            "light_amb": int(amb) if amb is not None else None,
+            "light_rise": rise,
+            # As a percentage too, because the chart plots it against
+            # `light_pc` and two series cannot share an axis in different
+            # units. The raw pair above stays for the readings card.
+            "light_amb_pc": (round(amb * 100.0 / 65535, 1)
+                             if amb is not None else None),
             "fan_on":   bool(c.fan.value()),
             # What the fan is actually doing, not what it was told. A fan
             # turning while commanded off must read non-zero, or the one

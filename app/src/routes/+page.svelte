@@ -319,8 +319,10 @@
   const TUNABLES = [
     { key: 'RH_RISE_ON', label: 'Start at', unit: '%', step: 0.5, hint: 'above baseline' },
     { key: 'RH_FALL_OFF', label: 'Stop below', unit: '%', step: 0.5, hint: 'above baseline' },
-    { key: 'LIGHT_ON', label: 'Light on', unit: '', step: 500, hint: 'raw reading' },
-    { key: 'LIGHT_OFF', label: 'Light off', unit: '', step: 500, hint: 'raw reading' },
+    { key: 'LIGHT_STEP_ON', label: 'Switch step', unit: '', step: 500, hint: 'jump in one sample' },
+    { key: 'LIGHT_RISE_ON', label: 'Rise to start', unit: '', step: 500, hint: 'above ambient' },
+    { key: 'LIGHT_RISE_OFF', label: 'Rise to stop', unit: '', step: 500, hint: 'above ambient' },
+    { key: 'LIGHT_ONLY_MAX_S', label: 'Light-only run', unit: 's', step: 60, hint: 'then humidity only' },
     { key: 'MIN_RUN_S', label: 'Minimum run', unit: 's', step: 30, hint: 'once started' },
     { key: 'MAX_RUN_S', label: 'Maximum run', unit: 's', step: 60, hint: 'then latches off' },
     { key: 'POST_LIGHT_S', label: 'After lights out', unit: 's', step: 30, hint: 'keep running' },
@@ -335,8 +337,8 @@
     },
     {
       title: 'Light',
-      blurb: 'Occupancy is inferred from the room light, between these two raw readings.',
-      keys: ['LIGHT_ON', 'LIGHT_OFF']
+      blurb: 'Daylight in this room reads higher than the bulb does, so the fixture is found by the jump it makes away from the learned ambient, never by a level. Light alone runs the fan for the last of these; after that the humidity has to justify it.',
+      keys: ['LIGHT_STEP_ON', 'LIGHT_RISE_ON', 'LIGHT_RISE_OFF', 'LIGHT_ONLY_MAX_S']
     },
     {
       title: 'Timing',
@@ -815,7 +817,11 @@
                 <div>
                   <span class="k">Raw reading</span>
                   <span class="v mono-v">{int(t.light)}</span>
-                  <span class="sub">on above {int(cfg.LIGHT_ON)}</span>
+                  <span class="sub">
+                    {t.light_amb == null
+                      ? 'learning ambient'
+                      : `${t.light_rise >= 0 ? '+' : ''}${int(t.light_rise)} over ambient ${int(t.light_amb)}`}
+                  </span>
                 </div>
               </div>
               <div class="level" aria-hidden="true"><i style="width: {lightPct}%"></i></div>

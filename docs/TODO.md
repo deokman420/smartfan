@@ -250,3 +250,38 @@ Two things fell out of it:
   nothing to publish over it until the next reboot. Its constructor does no
   I/O and `publish()` returns immediately while offline, so an unused one
   costs a few topic strings.
+
+### An OTA batch much past 60 kB does not install — needs USB
+
+`ota.py` installs a whole batch or nothing. Past roughly 60 kB of staged bytes
+the batch stages every file and then dies before the install step, and the
+error goes only to a serial console nobody is holding. From the network the
+symptom is silent: the device re-downloads the same files on every push, never
+resets, and keeps running the old code.
+
+Measured on this device: ~47 kB installed, ~48 kB installed, ~62 kB installed,
+~98 kB did not, ~106 kB did not. Note it is the *batch total*, not any single
+file — a 47 kB `main.py` pushed on its own installed fine. Every staged file is
+written as `name.new` while the original and any `name.bak` are still on flash,
+so a push needs roughly twice its own size free.
+
+Two things to do, and the first matters more:
+
+* **Say something when it fails.** The install failure is invisible from the
+  network. `ota_state` is set on the Controller and then never published, so
+  the one surface that could report it does not. Publishing it — and a free-
+  space figure in `/api/info` — would have turned an afternoon of bisecting
+  into one glance.
+* **Stop needing the space.** Stream each download to its `.new` file instead
+  of buffering the body, and stage/swap one file at a time so peak usage is one
+  file rather than the batch.
+
+What unblocks it: `ota.py` is excluded from OTA on purpose, because it is the
+recovery path and a recovery path you can break remotely is not one. So this is
+a USB push, and it should go over the cable together with a test that pushes a
+deliberately oversized batch and watches it install.
+
+Until then, keep a push under ~60 kB, and remember that staging means a module
+can ship one push ahead of the `main.py` it depends on — see the `getattr` in
+`Snapshot.payload` and the vestigial `LIGHT_ON` in `config.py`. Written up in
+[`daylight-is-brighter-than-the-bulb.md`](daylight-is-brighter-than-the-bulb.md).

@@ -27,8 +27,10 @@ FILE = "settings.json"
 SPECS = {
     "RH_RISE_ON":   ("number", 3.0, 20.0, 0.5, "%",   "Humidity rise to start", "mdi:water-plus"),
     "RH_FALL_OFF":  ("number", 1.0, 10.0, 0.5, "%",   "Humidity fall to stop",  "mdi:water-minus"),
-    "LIGHT_ON":     ("number", 500, 65000, 100, None, "Light on threshold",     "mdi:brightness-6"),
-    "LIGHT_OFF":    ("number", 200, 64000, 100, None, "Light off threshold",    "mdi:brightness-4"),
+    "LIGHT_STEP_ON":    ("number", 2000, 40000, 500, None, "Light switch step",  "mdi:brightness-6"),
+    "LIGHT_RISE_ON":    ("number", 1000, 40000, 500, None, "Light rise to start", "mdi:brightness-5"),
+    "LIGHT_RISE_OFF":   ("number", 500, 39000, 500, None, "Light rise to stop",  "mdi:brightness-4"),
+    "LIGHT_ONLY_MAX_S": ("number", 60, 3600, 60, "s",      "Light-only run",     "mdi:timer-sand-complete"),
     "MIN_RUN_S":    ("number", 30, 900, 10, "s",      "Minimum run",            "mdi:timer-play"),
     "MAX_RUN_S":    ("number", 300, 7200, 60, "s",    "Maximum run",            "mdi:timer-alert"),
     "POST_LIGHT_S": ("number", 0, 900, 10, "s",       "Run after lights out",   "mdi:timer-sand"),
@@ -40,11 +42,12 @@ MODES = ("Auto", "Force off", "Force on")
 
 # Pairs that must stay ordered. Range clamping alone cannot express this:
 # RH_FALL_OFF above RH_RISE_ON would give a fan that starts and stops on the
-# same breath, and LIGHT_OFF above LIGHT_ON removes the hysteresis entirely.
+# same breath, and a light-off rise above the light-on rise removes the
+# hysteresis entirely.
 ORDERED = (
-    ("RH_RISE_ON", "RH_FALL_OFF", 0.5),      # rise must exceed fall
-    ("LIGHT_ON", "LIGHT_OFF", 500),          # on must exceed off
-    ("MAX_RUN_S", "MIN_RUN_S", 60),          # max must exceed min
+    ("RH_RISE_ON", "RH_FALL_OFF", 0.5),            # rise must exceed fall
+    ("LIGHT_RISE_ON", "LIGHT_RISE_OFF", 1000),     # on must exceed off
+    ("MAX_RUN_S", "MIN_RUN_S", 60),                # max must exceed min
 )
 
 
