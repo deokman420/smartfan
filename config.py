@@ -140,6 +140,34 @@ VOC_RECOVER_S   = 900    # no VOC triggering this long after a steam event,
 # long since latched, so this changes what the controller BELIEVES, not
 # what the fan is doing. 0 disables the bound and restores the deadlock.
 VOC_HOLD_MAX_S  = 7200
+# How long the fan rests after an odor run hits MAX_RUN_S, before it may
+# run again on odor that is still there.
+#
+# MAX_RUN_S plus the latch means "I have done what I can for this event",
+# and for humidity that is true: a shower puts a finite amount of water in
+# the room, the fan either clears it or cannot, and a room it cannot dry
+# does not get drier for running longer. Odor is not like that. It comes
+# from a source that can stop at any moment -- the hob goes off, the
+# cooking ends -- and the air then clears quickly. Worse, the latch
+# releases only when the deviation falls under VOC_FALL_OFF, which is
+# exactly what cannot happen while the source is still going. So the fan
+# gave up an hour in and then sat out the rest of the event, becoming
+# available again only once there was nothing left to do. Observed
+# 2026-11-02: a run started at 07:38 on gas-hob odor hit the cap at 08:40
+# with the deviation at +229, seven times the stop point, and stayed
+# latched with the air still bad.
+#
+# So an odor latch rests rather than gives up. Twenty minutes against
+# MAX_RUN_S makes it roughly three parts running to one resting on a long
+# event, which keeps clearing air while bounding the duty cycle -- and
+# re-asks the question three times an hour instead of once. The original
+# bug the cap was written for was an INSTANT restart (RUN 23:17:26 -> IDLE
+# -> RUN 23:17:28); a rest this long is not that.
+#
+# Only the odor half rests. A humidity latch still waits for the room to
+# dry, or the fan would cycle for ever on a room it cannot win. 0 restores
+# the old give-up-for-good behaviour.
+VOC_REST_S      = 1200
 VOC_MAX_FAILS   = 10     # consecutive I2C failures before the path stands down
 
 # --- Timing, seconds --------------------------------------------------

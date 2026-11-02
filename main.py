@@ -279,6 +279,7 @@ class Controller:
         self.fault_until = None    # earliest retry for a fan fault
         self.fan_faults = 0        # consecutive stalls
         self.maxed = False         # hit MAX_RUN_S with the trigger still true
+        self.maxed_at = None       # when, so an odor latch can rest and retry
         self.forced = False        # the current state was imposed by MODE
         self.selftest = None       # 'running' while the boot test drives the fan
         self.updater = None        # set while an OTA is in progress
@@ -527,6 +528,32 @@ class Controller:
                 and self.excess_rh <= self.st.RH_FALL_OFF
                 and (self._voc_quiet() or self._voc_hold_expired())
                 and self.voc is not None and self.voc.settled)
+
+    def _odor_latch_rested(self):
+        """May a latch held open only by odor let go and try again?
+
+        Every term is load-bearing. The room must be dry and the light off,
+        so humidity and occupancy have both finished with this latch and
+        odor is demonstrably the only thing holding it -- releasing a
+        humidity latch early is the for-ever cycle MAX_RUN_S exists to
+        prevent. The path must be armed, so an absent, disabled or
+        stood-down sensor can never spin the fan back up. And the rest has
+        to have actually elapsed.
+
+        A stuck-high reading cannot run the fan for ever on this: a frozen
+        raw value is one the baseline learns toward, which brings the
+        deviation to 0 and makes the first branch fire instead, and a
+        baseline that is merely stale is corrected inside
+        cfg.VOC_HOLD_MAX_S. The worst case is a bounded duty cycle for a
+        couple of hours, not an unbounded one.
+        """
+        if not self.st.VOC_REST_S or self.maxed_at is None:
+            return False
+        if self.light_on or self.excess_rh > self.st.RH_FALL_OFF:
+            return False
+        if not self._voc_armed() or self._voc_quiet():
+            return False
+        return ms_since(self.maxed_at) / 1000.0 >= self.st.VOC_REST_S
 
     def _voc_hold_expired(self):
         """Has the odor path held the baseline still for longer than it may?
@@ -825,6 +852,16 @@ class Controller:
                         and self.excess_rh <= self.st.RH_FALL_OFF
                         and self._voc_quiet()):
                     self.maxed = False
+                elif self._odor_latch_rested():
+                    # Dry room, light off, and the only thing still holding
+                    # the latch is odor -- which is the one reason whose
+                    # source can stop at any moment, and the one whose
+                    # release condition cannot come true while it has not.
+                    # Resting and re-asking beats sitting out the event.
+                    # config.py carries the asymmetry and the figure.
+                    self.maxed = False
+                    print("odor: latch rested %d min, free to run again"
+                          % (self.st.VOC_REST_S // 60))
             elif self.excess_rh >= self.st.RH_RISE_ON:
                 self.set_state(RUN, "humidity +%.1f%%" % self.excess_rh)
             elif (self._voc_armed() and self.excess_voc is not None
@@ -850,6 +887,7 @@ class Controller:
             # Hitting the cap means "I have done what I can for this event",
             # not "brief pause".
             self.maxed = True
+            self.maxed_at = time.ticks_ms()
             self.set_state(IDLE, "max run time - latched until the room "
                                  "dries or the light comes back on")
             return
@@ -868,6 +906,7 @@ class Controller:
                 and self.excess_rh <= self.st.RH_FALL_OFF
                 and self._voc_quiet()):
             self.maxed = True
+            self.maxed_at = time.ticks_ms()
             self.set_state(IDLE, "light on %d min with a dry room - latched "
                                  "until the light goes off"
                                  % (self.st.LIGHT_ONLY_MAX_S // 60))

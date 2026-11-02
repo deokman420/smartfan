@@ -879,6 +879,73 @@ check("...and the baseline recovering is what releases it",
       stuck.maxed is False,
       "exc=%s base=%s" % (stuck.excess_voc, stuck.vocdet.base))
 
+# -- the odor latch rests rather than giving up ---------------------------
+#
+# MAX_RUN_S plus the latch is right for humidity and wrong for odor: the
+# latch releases only when the deviation falls under VOC_FALL_OFF, which is
+# exactly what cannot happen while the source is still going. Observed on
+# the device on 2026-11-02 -- a run started on gas-hob odor hit the cap an
+# hour later at +229, seven times the stop point, and then sat out the rest
+# of the event. These assert the rest, and assert that only odor gets one.
+rest = armed(rise=80, fall=30, base=30842.0, raw=30600)   # +242, dry, dark
+rest.rh = rest.baseline
+rest.maxed = True
+rest.maxed_at = CLOCK[0]
+step(rest, 2)
+check("a maxed odor latch does not release at once",
+      rest.maxed is True and rest.state == main.IDLE,
+      "%s maxed=%s" % (rest.state, rest.maxed))
+advance(cfg.VOC_REST_S - 60)
+step(rest)
+check("...nor a minute short of the rest", rest.maxed is True)
+advance(120)
+step(rest)
+check("...but does once it has rested", rest.maxed is False)
+# And the whole point: it then goes back to work on air that is still bad.
+step(rest)
+check("...and goes back to work on the event it was sitting out",
+      rest.state == main.RUN and rest.fan.value() == 1,
+      "%s %s" % (rest.state, rest.state_reason))
+
+# The humidity half must NOT rest, or a room the fan cannot dry cycles for
+# ever -- the exact failure MAX_RUN_S was written for, measured once as
+# RUN 23:17:26 -> IDLE -> RUN 23:17:28.
+wet = armed(rise=80, fall=30, base=29000.0, raw=29000)    # odor quiet
+wet.rh = wet.baseline + cfg.RH_RISE_ON + 2.0              # and still wet
+wet.maxed = True
+wet.maxed_at = CLOCK[0]
+advance(cfg.VOC_REST_S * 3)
+step(wet, 2)
+check("a wet room's latch never rests, however long it waits",
+      wet.maxed is True and wet.state == main.IDLE,
+      "%s maxed=%s exc=%+.1f" % (wet.state, wet.maxed, wet.excess_rh))
+
+# Nor may a latch rest while the light is on: that is occupancy, and the
+# light-only rules own it. A rested release here would undo the
+# LIGHT_ONLY_MAX_S latch on a bad LDR reading.
+litup = armed(rise=80, fall=30, base=30842.0, raw=30600)
+litup.rh = litup.baseline
+litup.maxed = True
+litup.maxed_at = CLOCK[0]
+switch(litup, True)
+advance(cfg.VOC_REST_S * 2)
+check("a latch held with the light on does not rest",
+      litup._odor_latch_rested() is False)
+switch(litup, False)
+
+# A sensor that has stood down cannot spin the fan back up on a rest. This
+# is the same shape as the stand-down checks further down: the detector
+# keeps its last reading, so an ungated rest would retry for ever on a
+# number from a part that is gone.
+gone = armed(rise=80, fall=30, base=30842.0, raw=30600)
+gone.rh = gone.baseline
+gone.maxed = True
+gone.maxed_at = CLOCK[0]
+gone.voc.ok = False
+advance(cfg.VOC_REST_S * 2)
+check("a stood-down sensor cannot rest the latch open",
+      gone._odor_latch_rested() is False)
+
 # The hold is about a CONTINUOUS deviation, so air that clears must reset
 # the clock. Otherwise two unrelated events an hour apart would add up to a
 # cap expiry and learn straight through the second one.
