@@ -325,6 +325,18 @@ with sync_playwright() as pw:
           float(rise) == float(p["cfg"]["RH_RISE_ON"]),
           "%s vs %s" % (rise, p["cfg"]["RH_RISE_ON"]))
 
+    # The odor pair has to be tunable from here too. They were announced to
+    # Home Assistant from the start but missing from this page, so the one
+    # threshold most likely to need a field adjustment was the one that
+    # needed a second app to adjust it.
+    vrise = page.locator("#VOC_RISE_ON").input_value()
+    vfall = page.locator("#VOC_FALL_OFF").input_value()
+    check("the odor thresholds are on the page, and match the device",
+          float(vrise) == float(p["cfg"]["VOC_RISE_ON"])
+          and float(vfall) == float(p["cfg"]["VOC_FALL_OFF"]),
+          "%s/%s vs %s/%s" % (vrise, vfall, p["cfg"]["VOC_RISE_ON"],
+                              p["cfg"]["VOC_FALL_OFF"]))
+
     # --- charts -----------------------------------------------------------
     go("Charts")
     cards = page.locator(".chart-card")

@@ -391,6 +391,8 @@
     { key: 'LIGHT_RISE_ON', label: 'Rise to start', unit: '', step: 500, hint: 'above ambient' },
     { key: 'LIGHT_RISE_OFF', label: 'Rise to stop', unit: '', step: 500, hint: 'above ambient' },
     { key: 'LIGHT_ONLY_MAX_S', label: 'Light-only run', unit: 's', step: 60, hint: 'then humidity only' },
+    { key: 'VOC_RISE_ON', label: 'Start at', unit: '', step: 10, hint: 'ticks below baseline' },
+    { key: 'VOC_FALL_OFF', label: 'Stop below', unit: '', step: 10, hint: 'ticks below baseline' },
     { key: 'MIN_RUN_S', label: 'Minimum run', unit: 's', step: 30, hint: 'once started' },
     { key: 'MAX_RUN_S', label: 'Maximum run', unit: 's', step: 60, hint: 'then latches off' },
     { key: 'POST_LIGHT_S', label: 'After lights out', unit: 's', step: 30, hint: 'keep running' },
@@ -407,6 +409,12 @@
       title: 'Light',
       blurb: 'Daylight in this room reads higher than the bulb does, so the fixture is found by the jump it makes away from the learned ambient, never by a level. Light alone runs the fan for the last of these; after that the humidity has to justify it.',
       keys: ['LIGHT_STEP_ON', 'LIGHT_RISE_ON', 'LIGHT_RISE_OFF', 'LIGHT_ONLY_MAX_S']
+    },
+    {
+      title: 'Odor',
+      blurb:
+        'Measured in sensor ticks away from the room’s learned clean-air level, not in any unit of smell — what matters is the size of the deviation. A real event in this room reads around a hundred; quiet air wanders under forty. Set to zero to watch the sensor without ever letting it start the fan.',
+      keys: ['VOC_RISE_ON', 'VOC_FALL_OFF']
     },
     {
       title: 'Timing',
