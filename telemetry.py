@@ -237,6 +237,7 @@ class Snapshot:
         voc_present = getattr(c, "voc", None) is not None
         voc_raw = getattr(vdet, "raw", None) if vdet is not None else None
         voc_base = getattr(vdet, "base", None) if vdet is not None else None
+        voc_exc = getattr(c, "excess_voc", None)
         return {
             "state":    c.state,
             "temp":     round(c.temp, 1) if c.temp is not None else None,
@@ -264,8 +265,10 @@ class Snapshot:
             # as the worst air the room has ever had.
             "voc":      int(voc_raw) if voc_raw is not None else None,
             "voc_base": int(voc_base) if voc_base is not None else None,
-            "voc_exc":  (int(c.excess_voc)
-                         if hasattr(c, "excess_voc") else None),
+            # None-preserving: excess_voc is None when there is no opinion
+            # and 0 when the air is exactly as clean as normal, and int()
+            # on the first would raise.
+            "voc_exc":  (None if voc_exc is None else int(voc_exc)),
             "voc_ok":   (bool(getattr(c.voc, "ok", False))
                          if voc_present else None),
             "fan_on":   bool(c.fan.value()),
@@ -474,7 +477,14 @@ class Telemetry:
         # down should be visible at once.
         return (p["state"], p["fan_on"], p["light_on"], p["fault"],
                 p["boost_left"], (p["rpm"] or 0) // 500,
-                p.get("voc_ok"), (p.get("voc_exc") or 0) // 25,
+                # Bucketed, but None keeps a bucket of its own. Folding it
+                # in with 0 would have meant a sensor appearing or going
+                # away -- None to 0, or 0 to None -- changed nothing in the
+                # signature and so published nothing, leaving every surface
+                # showing the old value until the next interval.
+                p.get("voc_ok"),
+                (None if p.get("voc_exc") is None
+                 else p["voc_exc"] // 25),
                 tuple(sorted(p["cfg"].items())))
 
     def publish(self, c, raw_light, rssi=None, force=False, payload=None):

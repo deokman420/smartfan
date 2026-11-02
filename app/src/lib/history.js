@@ -273,6 +273,12 @@ function between(sorted, lo, hi) {
 }
 
 function num(v) {
+  // null and '' must survive as null. Number(null) is 0 and 0 is finite,
+  // so this used to turn "the device has no reading" into a reading of
+  // zero -- which for an odour tick count plots as the worst air ever
+  // recorded, and for an excess is indistinguishable from air exactly as
+  // clean as normal. Only undefined was being caught, via NaN.
+  if (v == null || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }

@@ -712,20 +712,15 @@
                     {t.light_on ? 'On' : 'Off'}
                   </span>
                 </div>
-                <!-- The odour tile reads the raw tick count to decide whether
-                     there is a sensor, not the excess: excess is 0 both for
-                     clean air and for no sensor at all, and a strip that
-                     cannot tell those apart is worse than one that omits the
-                     row. `Clean` is only claimed once a baseline exists. -->
+                <!-- Four distinct things, four distinct words. voc_exc is
+                     null when the odour path has no opinion and a number
+                     when it does, so `Clean` is a measurement and not a
+                     guess: +0 means air exactly as clean as this room's
+                     normal, which is a different fact from having no
+                     sensor, and both used to arrive here as 0. -->
                 <div class="fact">
                   <span class="k">Odour</span>
-                  {#if t.voc == null}
-                    <span class="fact-v">
-                      {t.voc_ok === false ? 'Stood down' : 'Not fitted'}
-                    </span>
-                  {:else if t.voc_base == null}
-                    <span class="fact-v">Learning</span>
-                  {:else}
+                  {#if t.voc_exc != null}
                     <span
                       class="fact-v {vocRiseOn && t.voc_exc >= vocRiseOn
                         ? 'tone-warn'
@@ -733,6 +728,12 @@
                     >
                       {t.voc_exc > 0 ? `+${int(t.voc_exc)}` : 'Clean'}
                     </span>
+                  {:else if t.voc_ok === false}
+                    <span class="fact-v">Stood down</span>
+                  {:else if t.voc == null}
+                    <span class="fact-v">Not fitted</span>
+                  {:else}
+                    <span class="fact-v">Learning</span>
                   {/if}
                 </div>
                 <div class="fact" class:alert={t.fault}>
@@ -900,11 +901,15 @@
                 <div class="read-row">
                   <div>
                     <span class="k">Excess</span>
-                    <span class="v display">{int(t.voc_exc)}</span>
+                    <span class="v display">
+                      {t.voc_exc == null ? '—' : int(t.voc_exc)}
+                    </span>
                     <span class="sub">
-                      {vocRiseOn
-                        ? `fan starts at ${int(vocRiseOn)}`
-                        : 'watching only — never starts the fan'}
+                      {t.voc_exc == null
+                        ? 'no baseline to judge against yet'
+                        : vocRiseOn
+                          ? `fan starts at ${int(vocRiseOn)}`
+                          : 'watching only — never starts the fan'}
                     </span>
                   </div>
                   <div>

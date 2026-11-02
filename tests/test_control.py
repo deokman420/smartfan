@@ -705,8 +705,15 @@ check("and then stops touching the bus", dead.i2c.writes == before)
 
 det = vocmod.Detector(settings.Settings(log=lambda *a: None),
                       log=lambda *a: None)
-check("unseeded detector reports no excess", det.excess(28000) == 0)
+# None, not 0. An unseeded detector has no opinion, and 0 is a real
+# reading -- air exactly as clean as normal.
+check("unseeded detector reports None, not 0", det.excess(28000) is None)
 det.update(29000, True)
+# The discriminating case, and the reason the distinction exists: a seeded
+# detector reading exactly at baseline must say 0 and not None. Returning
+# None for both, or 0 for both, passes every other assertion here.
+check("a reading exactly at baseline is 0, not None",
+      det.excess(29000) == 0 and det.excess(29000) is not None)
 check("first quiet sample seeds the baseline", det.base == 29000.0,
       "%s" % det.base)
 # The sign: the raw signal falls as the air gets worse.
@@ -743,14 +750,14 @@ c = armed()
 step(c)
 check("odour starts the fan in a dark, dry room",
       c.state == main.RUN and c.fan.value() == 1,
-      "%s exc=%d" % (c.state, c.excess_voc))
+      "%s exc=%s" % (c.state, c.excess_voc))
 
 # Observe-only is the shipping default, and it has to be genuinely inert.
 c = armed(rise=0, fall=0, raw=20000)
 step(c)
 check("VOC_RISE_ON of 0 never triggers, however bad the air",
       c.state == main.IDLE and c.fan.value() == 0,
-      "%s exc=%d" % (c.state, c.excess_voc))
+      "%s exc=%s" % (c.state, c.excess_voc))
 
 # A damp room suppresses odour triggering for VOC_RECOVER_S, because drying
 # moves the MOX signal on its own and would hand the fan a second reason to
@@ -791,7 +798,7 @@ check("a run is held open by odour alone", c.state == main.RUN,
 c.voc.voc = 29000
 step(c, 2)
 check("and ends when the air clears", c.state == main.IDLE,
-      "%s exc=%d" % (c.state, c.excess_voc))
+      "%s exc=%s" % (c.state, c.excess_voc))
 
 # -- absence, and failure -------------------------------------------------
 #
@@ -800,7 +807,8 @@ check("and ends when the air clears", c.state == main.IDLE,
 
 c = build()
 check("an empty bus leaves the odour path disabled", c.voc is None)
-check("and reports no excess", c.excess_voc == 0)
+check("and reports no excess at all, rather than zero excess",
+      c.excess_voc is None)
 step(c)
 check("controller still idles normally without it",
       c.state == main.IDLE and c.fan.value() == 0, c.state)
@@ -833,7 +841,7 @@ advance(cfg.MIN_RUN_S + cfg.POST_LIGHT_S + cfg.SAMPLE_S)
 step(c, 2)
 check("a stood-down sensor cannot hold the fan on",
       c.state == main.IDLE and c.fan.value() == 0,
-      "%s exc=%d" % (c.state, c.excess_voc))
+      "%s exc=%s" % (c.state, c.excess_voc))
 check("...and reports absence, not its last reading",
       c.vocdet.raw is None, "raw=%s" % c.vocdet.raw)
 
@@ -847,7 +855,7 @@ c = armed()
 c.voc.ok = False                 # raw left exactly as it was
 check("a stood-down sensor is inert while its last reading is still held",
       c._voc_active() is False and c._voc_quiet() is True,
-      "active=%s quiet=%s exc=%d"
+      "active=%s quiet=%s exc=%s"
       % (c._voc_active(), c._voc_quiet(), c.excess_voc))
 
 # The same thing one level up: a latch that a dead sensor could not release.

@@ -63,13 +63,27 @@ class Detector:
     def excess(self, raw=None):
         """How far the air sits the wrong way from baseline, in ticks.
 
-        Positive means worse than normal. Zero while unseeded, so an
-        unlearned detector cannot trigger anything.
+        Positive means worse than normal. **None means no opinion** -- no
+        reading yet, or no baseline to judge one against.
+
+        This returned 0 for "no opinion", which collided with the 0 that
+        means "exactly as clean as normal". Those are different facts and
+        the difference matters at every layer above: Home Assistant drew a
+        flat 0 for an absent sensor where it should have drawn nothing, the
+        recorder stored a real-looking zero, and the status strip could not
+        tell "clean" from "not fitted" without going behind this method's
+        back to check the raw reading. None costs every caller an explicit
+        test, which is the point -- a caller that forgets it now raises
+        instead of quietly treating absence as good air.
+
+        Callers that compare this against a threshold must check for None
+        first. In MicroPython `None >= 0` raises TypeError, so a missed
+        check fails loudly in the control loop rather than arming the fan.
         """
         if raw is None:
             raw = self.raw
         if self.base is None or raw is None:
-            return 0
+            return None
         return int(self.base - raw)
 
     def update(self, raw, learning):

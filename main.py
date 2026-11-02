@@ -485,7 +485,14 @@ class Controller:
         """
         if not self._voc_active():
             return True
-        return self.excess_voc <= self.st.VOC_FALL_OFF
+        exc = self.excess_voc
+        # No opinion is not an objection. _voc_active() already requires a
+        # baseline, so this is the narrow case of a reading having gone
+        # away under a baseline that stands -- and a path with nothing to
+        # say must not be what holds the fan open.
+        if exc is None:
+            return True
+        return exc <= self.st.VOC_FALL_OFF
 
     # -- helpers ------------------------------------------------------
 
@@ -507,7 +514,12 @@ class Controller:
 
     @property
     def excess_voc(self):
-        """Ticks below the learned clean-air baseline; positive means worse.
+        """Ticks below the learned clean-air baseline, or None.
+
+        Positive means worse air. None means the odour path has no opinion:
+        no sensor, no reading, or no baseline yet. It is never 0 for those,
+        because 0 is a real reading -- air exactly as clean as normal. See
+        voc.Detector.excess().
 
         The SGP41's raw signal falls as reducing-gas concentration rises, so
         the deviation meaning "bad air" is baseline minus current. voc.py
@@ -702,7 +714,8 @@ class Controller:
                     self.maxed = False
             elif self.excess_rh >= self.st.RH_RISE_ON:
                 self.set_state(RUN, "humidity +%.1f%%" % self.excess_rh)
-            elif self._voc_armed() and self.excess_voc >= self.st.VOC_RISE_ON:
+            elif (self._voc_armed() and self.excess_voc is not None
+                    and self.excess_voc >= self.st.VOC_RISE_ON):
                 # Reached only with the light off and the room dry, which is
                 # exactly the gap this sensor was bought to close: air that
                 # needs clearing with nobody there to press Boost and no
@@ -989,12 +1002,14 @@ class Controller:
 
         Every sensed quantity appears here beside the state it produced, so
         a bench session can see why the fan did what it did without the
-        dashboard. The odour pair is gated on vocdet.raw rather than on
-        excess_voc, which reads 0 both for clean air and for no sensor at
-        all -- a `--` has to mean absence or the line lies by omission.
+        dashboard. Each odour field is gated on its own value being present,
+        so `--` means "nothing to say" and a number always means a real
+        reading -- including `+0`, which is air exactly as clean as normal
+        and no longer indistinguishable from an absent sensor.
         """
         dp = self.dew_point()
         raw_voc = self.vocdet.raw
+        exc_voc = self.excess_voc
         print("%-5s rh=%s%% t=%sC dp=%s base=%s exc=%+.1f "
               "light=%d amb=%s rise=%+d(%s) voc=%s odr=%s "
               "fan=%d rpm=%d %s" % (
@@ -1007,7 +1022,7 @@ class Controller:
                   "%d" % self.light_amb if self.light_amb is not None else "--",
                   self.light_rise(), "ON" if self.light_on else "off",
                   "%d" % raw_voc if raw_voc is not None else "--",
-                  "%+d" % self.excess_voc if raw_voc is not None else "--",
+                  "%+d" % exc_voc if exc_voc is not None else "--",
                   self.fan.value(), self.rpm,
                   self.fault_reason if self.state == FAULT else ""))
 
