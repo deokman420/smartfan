@@ -67,7 +67,10 @@ export const F = {
   fan: 8,
   lit: 9,
   st: 10, // controller state, appended so older samples stay valid
-  amb: 11 // learned light ambient, appended for the same reason
+  amb: 11, // learned light ambient, appended for the same reason
+  voc: 12, // odour raw ticks, appended for the same reason again
+  vocBase: 13, // ...its learned baseline
+  vocExc: 14 // ...and the deviation the control loop acts on
 };
 
 /** Stored in F.st. Older samples simply omit it. */
@@ -122,7 +125,13 @@ export function record(p) {
     p.fan_on ? 1 : 0,
     p.light_on ? 1 : 0,
     STATE_CODE[p.state] ?? null,
-    num(p.light_amb_pc)
+    num(p.light_amb_pc),
+    // null, not 0, when the sensor is absent or still conditioning. A
+    // MOX reading of zero would draw as the worst air ever recorded,
+    // and the chart has to show a gap where there was no sensor.
+    num(p.voc),
+    num(p.voc_base),
+    num(p.voc_exc)
   ];
 
   const next = rows.length >= MAX ? rows.slice(rows.length - MAX + 1) : rows.slice();

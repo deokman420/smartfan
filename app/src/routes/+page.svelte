@@ -160,18 +160,68 @@
         { field: F.amb, label: 'Ambient', color: 'var(--blue)', dash: true }
       ]
     },
+    ...(hasVoc ? ODOUR_CHARTS : []),
     {
       id: 'fan',
       title: 'Fan speed',
-      blurb: 'Measured by the tachometer, not by what the fan was told.',
       unit: 'rpm',
       bands: F.fan,
       bandOn: 'Fan on',
       bandOff: 'Fan off',
       bandStory: 'The fan ran',
       bandIdle: 'The fan stayed off',
+      blurb: 'Measured by the tachometer, not by what the fan was told.',
       series: [{ field: F.rpm, label: 'Fan speed', color: 'var(--accent)', fill: true }]
     }
+  ]);
+
+  // Only offered when the room has actually recorded odour. A board with no
+  // SGP41 fitted would otherwise carry two charts that can never draw
+  // anything, and an empty chart tells the reader less than no chart does.
+  let hasVoc = $derived(t?.voc != null || $history.some((r) => r[F.voc] != null));
+
+  let ODOUR_CHARTS = $derived([
+    {
+      // Raw ticks and the learned baseline, read exactly like the humidity
+      // pair: the fan acts on the gap, never on the height of either line.
+      // The signal FALLS as the air gets worse, so the raw line dipping
+      // below its baseline is the event -- which is why this chart is worth
+      // having next to the excess one rather than instead of it.
+      id: 'odour',
+      title: 'Odour against its baseline',
+      blurb:
+        'The sensor reads gas resistance, which falls as the air gets worse — so a dip below the baseline is the event, not a rise above it.',
+      unit: 'ticks',
+      bands: F.fan,
+      bandOn: 'Fan on',
+      bandOff: 'Fan off',
+      bandStory: 'The fan ran',
+      bandIdle: 'The fan stayed off',
+      series: [
+        { field: F.voc, label: 'Odour', color: 'var(--green)', fill: true },
+        { field: F.vocBase, label: 'Baseline', color: 'var(--purple)', dash: true }
+      ]
+    },
+    {
+      id: 'odourExcess',
+      title: 'Excess odour',
+      blurb:
+        'The number the control loop acts on. While the start threshold reads 0 the sensor only watches — nothing here touches the fan.',
+      unit: 'ticks',
+      bands: F.fan,
+      bandOn: 'Fan on',
+      bandOff: 'Fan off',
+      bandStory: 'The fan ran',
+      bandIdle: 'The fan stayed off',
+      refs: () =>
+        Number(cfg.VOC_RISE_ON)
+          ? [
+              { value: Number(cfg.VOC_RISE_ON), label: 'starts' },
+              { value: Number(cfg.VOC_FALL_OFF), label: 'stops' }
+            ]
+          : [],
+      series: [{ field: F.vocExc, label: 'Excess', color: 'var(--green)', fill: true }]
+    },
   ]);
 
   const RANGES = [
@@ -804,6 +854,49 @@
                   <span class="sub">margin before condensation</span>
                 </div>
               </div>
+            </section>
+
+            <section class="panel card">
+              <h2>Odour</h2>
+              {#if t.voc == null}
+                <div class="read-row">
+                  <div>
+                    <span class="k">Sensor</span>
+                    <span class="v">{t.voc_ok === false ? 'Stood down' : 'Not fitted'}</span>
+                    <span class="sub">
+                      {t.voc_ok === false
+                        ? 'stopped answering, so the fan ignores it'
+                        : 'the fan runs on humidity and light alone'}
+                    </span>
+                  </div>
+                </div>
+              {:else}
+                <div class="read-row">
+                  <div>
+                    <span class="k">Excess</span>
+                    <span class="v display">{int(t.voc_exc)}</span>
+                    <span class="sub">
+                      {Number(cfg.VOC_RISE_ON)
+                        ? `fan starts at ${int(cfg.VOC_RISE_ON)}`
+                        : 'watching only — never starts the fan'}
+                    </span>
+                  </div>
+                  <div>
+                    <span class="k">Raw reading</span>
+                    <span class="v mono-v">{int(t.voc)}</span>
+                    <span class="sub">
+                      {t.voc_base == null
+                        ? 'learning baseline'
+                        : `baseline ${int(t.voc_base)} — lower is worse air`}
+                    </span>
+                  </div>
+                  <div>
+                    <span class="k">Sensor</span>
+                    <span class="v">{t.voc_ok ? 'OK' : 'Stood down'}</span>
+                    <span class="sub">gas resistance, two pixels</span>
+                  </div>
+                </div>
+              {/if}
             </section>
 
             <section class="panel card">

@@ -84,6 +84,29 @@ class FakeWDT:
         pass
 
 
+class FakeI2C:
+    """An empty bus: nothing answers, every transfer raises.
+
+    Deliberately empty rather than a working SGP41 stub. The odour path is
+    an enhancement, and the behaviour that matters most is that a missing
+    sensor leaves this controller identical to the one that predates it --
+    so every test in this file runs with the path absent, and any state
+    machine change that quietly depends on it fails here.
+    """
+
+    def __init__(self, bus_id, sda=None, scl=None, freq=0):
+        pass
+
+    def writeto(self, addr, buf):
+        raise OSError(5)
+
+    def readfrom(self, addr, n):
+        raise OSError(5)
+
+    def scan(self):
+        return []
+
+
 class FakeDHT:
     def __init__(self, pin):
         pass
@@ -101,6 +124,7 @@ class FakeDHT:
 machine = type(sys)("machine")
 machine.Pin = FakePin
 machine.ADC = FakeADC
+machine.I2C = FakeI2C
 machine.WDT = FakeWDT
 machine.reset_cause = lambda: 1
 machine.PWRON_RESET = 1
@@ -195,6 +219,10 @@ def step(c, passes=1):
         c.rpm = FAN_RPM[0] if driven else 0
         c.rpm_idle = 0
         c.read_light()
+        # In the loop's order: after the climate read, which supplies the
+        # odour sensor's compensation. A no-op while c.voc is None, which is
+        # every test above the odour section.
+        c.read_voc()
         if not c.step_selftest():
             c.check_fan_health()
             c.decide()
@@ -554,6 +582,282 @@ step(c, 2)
 check("then ends on the humidity, the way it always did",
       c.state == main.IDLE and c.fan.value() == 0,
       "%s exc=%+.1f" % (c.state, c.excess_rh))
+
+print("\n\nodour sensing: the driver, the detector, and the gates\n")
+
+import sgp41                                         # noqa: E402
+import voc as vocmod                                 # noqa: E402
+
+
+class EchoBus:
+    """Answers the way the real part does, with real CRCs over the wire.
+
+    Built so the CRC check is a round trip rather than an assertion about a
+    constant: the reply is framed by the same crc8 the driver verifies with,
+    so a wrong polynomial would have to be wrong identically in both
+    directions to pass.
+    """
+
+    def __init__(self, voc=29000, nox=18000, corrupt=False, dead=False):
+        self.voc, self.nox = voc, nox
+        self.corrupt, self.dead = corrupt, dead
+        self.last = None
+        self.writes = 0
+
+    def writeto(self, addr, buf):
+        if self.dead:
+            raise OSError(5)
+        self.writes += 1
+        self.last = (buf[0] << 8) | buf[1]
+
+    def readfrom(self, addr, n):
+        if self.dead:
+            raise OSError(5)
+        words = {0x3682: [0x0000, 0x068B, 0x380D],
+                 0x280E: [0xD400],
+                 0x2612: [self.voc],
+                 0x2619: [self.voc, self.nox]}.get(self.last)
+        if words is None:
+            raise OSError(5)
+        out = bytearray()
+        for w in words[:n // 3]:
+            wb = w.to_bytes(2, "big")
+            out += wb + bytes((sgp41.crc8(wb),))
+        if self.corrupt:
+            out[2] ^= 0xFF
+        return bytes(out)
+
+
+class FakeSGP41:
+    """The driver's contract, without the bus: a reading, or None."""
+
+    def __init__(self, voc=29000):
+        self.voc = voc
+        self.ok = True
+        self.fails = 0
+        self.reads = 0
+        self.raises = False
+
+    def read(self, rh=None, t=None):
+        self.reads += 1
+        if self.raises:
+            raise OSError(5)
+        return None if self.voc is None else (self.voc, 18000)
+
+    def start(self):
+        pass
+
+    def serial(self):
+        return "0000068B380D"
+
+    def heater_off(self):
+        pass
+
+
+# -- the driver -----------------------------------------------------------
+
+check("crc8 matches the datasheet vector", sgp41.crc8(b"\xbe\xef") == 0x92,
+      "0x%02X" % sgp41.crc8(b"\xbe\xef"))
+
+bus = EchoBus()
+s = sgp41.SGP41(bus)
+check("serial round-trips through CRC", s.serial() == "0000068B380D",
+      s.serial())
+check("self test reads 0xD400 as a pass", s.self_test() is True)
+
+bad = sgp41.SGP41(EchoBus(corrupt=True))
+check("a corrupted word is rejected, not returned", bad.serial() is None)
+
+# Conditioning must not block: the WDT is armed at 8 s and a 10 s wait
+# anywhere in the loop is a reset loop. So the window is a deadline, and
+# every call inside it returns at once with no reading.
+s = sgp41.SGP41(EchoBus())
+s.start()
+check("conditioning reports itself as such", s.conditioning is True)
+nones = sum(1 for _ in range(4) if (advance(2), s.read(45.0, 22.0))[1] is None)
+check("read() returns None throughout the window, never blocking", nones == 4,
+      "%d of 4" % nones)
+advance(3)
+check("the window closes on its own deadline", s.conditioning is False)
+got = s.read(45.0, 22.0)
+check("and a real reading follows", got == (29000, 18000), "%s" % (got,))
+
+# Compensation ticks, and the clamp that stops a nonsense reading biasing
+# every sample after it.
+check("ticks default to 50 %RH / 25 C when climate is absent",
+      sgp41.ticks(None, None) == (0x8000, 0x6666))
+check("ticks clamp rather than wrap", sgp41.ticks(150, 999) == (0xFFFF, 0xFFFF),
+      "%s" % (sgp41.ticks(150, 999),))
+
+# Stand-down, so a dead part stops costing a bus transaction and a 55 ms
+# block on every pass.
+dead = sgp41.SGP41(EchoBus(dead=True), max_fails=3, log=lambda *a: None)
+dead._until = None
+for _ in range(3):
+    dead.read(45.0, 22.0)
+check("stands down after max_fails", dead.ok is False and dead.fails == 3,
+      "ok=%s fails=%d" % (dead.ok, dead.fails))
+before = dead.i2c.writes
+dead.read(45.0, 22.0)
+check("and then stops touching the bus", dead.i2c.writes == before)
+
+# -- the detector ---------------------------------------------------------
+
+det = vocmod.Detector(settings.Settings(log=lambda *a: None),
+                      log=lambda *a: None)
+check("unseeded detector reports no excess", det.excess(28000) == 0)
+det.update(29000, True)
+check("first quiet sample seeds the baseline", det.base == 29000.0,
+      "%s" % det.base)
+# The sign: the raw signal falls as the air gets worse.
+check("a FALLING raw count means worse air", det.excess(28800) == 200,
+      "%d" % det.excess(28800))
+check("a rising raw count is not an event", det.excess(29200) == -200,
+      "%d" % det.excess(29200))
+det.update(20000, False)
+check("a busy room does not teach the baseline", det.base == 29000.0,
+      "%s" % det.base)
+det.relearn()
+check("relearn drops the baseline", det.base is None)
+
+# -- the gates ------------------------------------------------------------
+
+
+def armed(rise=200, fall=50, base=29000.0, raw=28700):
+    """A controller in a dark, dry, settled room with a working sensor."""
+    c = build()
+    c.voc = FakeSGP41(raw)
+    c.vocdet.base = base
+    # Prime the last reading too, the way a settled device holds one. Without
+    # this, excess_voc is 0 until read_voc() has run, and a test that pokes
+    # the gates directly reads 0 and proves nothing.
+    c.vocdet.raw = raw
+    # RISE first: _enforce_order pushes the other one out of the way of
+    # whichever was written last.
+    c.st.set("VOC_RISE_ON", rise)
+    c.st.set("VOC_FALL_OFF", fall)
+    return c
+
+
+c = armed()
+step(c)
+check("odour starts the fan in a dark, dry room",
+      c.state == main.RUN and c.fan.value() == 1,
+      "%s exc=%d" % (c.state, c.excess_voc))
+
+# Observe-only is the shipping default, and it has to be genuinely inert.
+c = armed(rise=0, fall=0, raw=20000)
+step(c)
+check("VOC_RISE_ON of 0 never triggers, however bad the air",
+      c.state == main.IDLE and c.fan.value() == 0,
+      "%s exc=%d" % (c.state, c.excess_voc))
+
+# A damp room suppresses odour triggering for VOC_RECOVER_S, because drying
+# moves the MOX signal on its own and would hand the fan a second reason to
+# run just as the first expired.
+c = armed()
+c.rh = c.baseline + 5.0          # above RH_FALL_OFF, below RH_RISE_ON
+step(c)
+check("a damp room gates the odour trigger off",
+      c.state == main.IDLE, "%s" % c.state)
+c.rh = c.baseline
+step(c)
+check("and stays gated through VOC_RECOVER_S",
+      c.state == main.IDLE, "%s" % c.state)
+advance(cfg.VOC_RECOVER_S + 1)
+step(c)
+check("then arms again once the recovery window passes",
+      c.state == main.RUN, "%s" % c.state)
+
+# The latch. Every independent reason to run must be quiet before it lets
+# go, or a stuck-high odour reading releases it on humidity alone.
+c = armed()
+c.maxed = True
+c.rh = c.baseline                # humidity half satisfied
+step(c)
+check("the maxed latch holds while the odour signal is still high",
+      c.maxed is True)
+c.voc.voc = 29000                # air clears
+step(c, 2)
+check("and releases once both signals are quiet", c.maxed is False)
+
+# A run ends on the room, not a timer.
+c = armed()
+step(c)
+advance(cfg.MIN_RUN_S + cfg.SAMPLE_S)
+step(c)
+check("a run is held open by odour alone", c.state == main.RUN,
+      "%s ran=%ds" % (c.state, c.fan_seconds()))
+c.voc.voc = 29000
+step(c, 2)
+check("and ends when the air clears", c.state == main.IDLE,
+      "%s exc=%d" % (c.state, c.excess_voc))
+
+# -- absence, and failure -------------------------------------------------
+#
+# The one that matters most. This path is an enhancement; none of it gets a
+# vote on whether the humidity path works.
+
+c = build()
+check("an empty bus leaves the odour path disabled", c.voc is None)
+check("and reports no excess", c.excess_voc == 0)
+step(c)
+check("controller still idles normally without it",
+      c.state == main.IDLE and c.fan.value() == 0, c.state)
+
+c = armed()
+c.voc.raises = True
+step(c, 3)
+check("a sensor that raises never reaches FAULT",
+      c.state != main.FAULT, c.state)
+
+c = armed(raw=None)              # driver returning None, as while conditioning
+step(c)
+check("a sensor with no reading yet cannot trigger",
+      c.state == main.IDLE, c.state)
+
+# A stood-down sensor must not hold a run open on its last good reading.
+c = armed()
+step(c)
+check("odour run started", c.state == main.RUN)
+# Stand it down with the air still reading BAD, and leave the baseline in
+# place. This is the shape that mattered: read() returns None for ever
+# after, so the detector keeps its last reading, and an _voc_active() that
+# did not test `ok` would compare that frozen value against VOC_FALL_OFF on
+# every pass -- holding the fan to MAX_RUN_S, latching, and never releasing.
+# Written without the relearn() that used to be here, which made this pass
+# by testing a fix that had not been written.
+c.voc.ok = False
+c.rh = c.baseline
+advance(cfg.MIN_RUN_S + cfg.POST_LIGHT_S + cfg.SAMPLE_S)
+step(c, 2)
+check("a stood-down sensor cannot hold the fan on",
+      c.state == main.IDLE and c.fan.value() == 0,
+      "%s exc=%d" % (c.state, c.excess_voc))
+check("...and reports absence, not its last reading",
+      c.vocdet.raw is None, "raw=%s" % c.vocdet.raw)
+
+# The gate itself, with the stale reading deliberately still in place. There
+# is exactly one pass between the sensor standing down inside read() and
+# read_voc() noticing and clearing the reading, and on that pass decide()
+# runs against a frozen value. Routing this through read_voc() instead would
+# test the clearing and leave the gate unproven -- which is how the first
+# version of this test passed with the `ok` term deleted.
+c = armed()
+c.voc.ok = False                 # raw left exactly as it was
+check("a stood-down sensor is inert while its last reading is still held",
+      c._voc_active() is False and c._voc_quiet() is True,
+      "active=%s quiet=%s exc=%d"
+      % (c._voc_active(), c._voc_quiet(), c.excess_voc))
+
+# The same thing one level up: a latch that a dead sensor could not release.
+c = armed()
+c.maxed = True
+c.rh = c.baseline
+c.voc.ok = False
+step(c, 2)
+check("a stood-down sensor cannot hold the maxed latch closed",
+      c.maxed is False)
 
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))

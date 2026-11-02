@@ -42,7 +42,19 @@ CONTRAST_AUDIT = """() => {
   const lum = (r,g,b) => { const c=[r,g,b].map(v=>{v/=255;
     return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4);});
     return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2]; };
-  const parse = s => (s.match(/[0-9.]+/g)||[]).map(Number);
+  // Chromium serialises color-mix() as `color(srgb 1 1 1 / 0.92)`, whose
+  // channels are 0-1 floats, not 0-255. Scraping digits out of that and
+  // treating it as rgb() gives rgb(1,1,1) -- near-black -- so every element
+  // sitting on a color-mix() surface was scored against the wrong
+  // background. That was 25 false failures here, including the whole nav
+  // bar: #455265 on #ffffff is 7.51:1, which the token file documents as
+  // AAA and which this audit was calling 2.63:1.
+  const parse = s => {
+    const n = (s.match(/[0-9.]+/g)||[]).map(Number);
+    if (/^color\(\s*srgb/i.test(s) && n.length >= 3)
+      return [n[0]*255, n[1]*255, n[2]*255, n.length > 3 ? n[3] : 1];
+    return n;
+  };
   // Walk up for the first opaque ancestor: the element's own background is
   // usually transparent, and scoring text against transparent silently
   // passes everything.
@@ -66,6 +78,13 @@ CONTRAST_AUDIT = """() => {
     const large = px >= 24 || (px >= 18.66 && parseInt(cs.fontWeight) >= 700);
     out.push({ t: el.textContent.trim().slice(0,34), ratio: +ratio.toFixed(2),
                px: +px.toFixed(1),
+               // The two colours, so a failure says WHICH pair is wrong
+               // rather than only how wrong it is. A ratio on its own sends
+               // the reader hunting through the token file.
+               fg: 'rgb(' + fg.slice(0,3).join(',') + ')',
+               bg: 'rgb(' + bg.slice(0,3).join(',') + ')',
+               cls: el.className && el.className.toString
+                      ? el.className.toString().slice(0,24) : '',
                aa: ratio >= (large?3:4.5), aaa: ratio >= (large?4.5:7) });
   });
   return out;
@@ -222,12 +241,32 @@ with sync_playwright() as pw:
           shown_state == p["state"], "%s vs %s" % (shown_state, p["state"]))
 
     go("Readings")
+    # Bracketed, because `latest` keeps moving: the subscriber thread folds
+    # in a new payload whenever the device publishes, so pinning this to the
+    # sample captured before the navigation is a race on whether a publish
+    # landed in between. The point is that the screen shows a reading THIS
+    # device sent, which any of the samples around the read establishes.
+    before = latest["payload"]
     body = page.locator(".wrap").inner_text()
-    check("humidity matches telemetry", "%.1f%%" % p["rh"] in body,
-          "%.1f%%" % p["rh"])
-    check("baseline is shown in its own right", "%.1f%%" % p["base"] in body)
-    check("raw light is shown in its own right",
-          "{:,}".format(p["light"]) in body, str(p["light"]))
+    after = latest["payload"]
+    rh_seen = {"%.1f%%" % s["rh"] for s in (p, before, after)
+               if s and s.get("rh") is not None}
+    check("humidity matches telemetry", any(v in body for v in rh_seen),
+          "screen shows none of %s" % sorted(rh_seen))
+    # Same bracketing for the same reason. The raw light reading in
+    # particular moves on every sample, and it has already failed a run
+    # here purely on a publish landing mid-navigation.
+    def any_of(fmt, key):
+        vals = {fmt(s[key]) for s in (p, before, after)
+                if s and s.get(key) is not None}
+        return any(v in body for v in vals), sorted(vals)
+
+    ok, vals = any_of(lambda v: "%.1f%%" % v, "base")
+    check("baseline is shown in its own right", ok,
+          "screen shows none of %s" % vals)
+    ok, vals = any_of(lambda v: "{:,}".format(v), "light")
+    check("raw light is shown in its own right", ok,
+          "screen shows none of %s" % vals)
     # Only rendered while boosting before; a sensor that vanishes when its
     # value is uninteresting still has to have somewhere to live.
     #
@@ -255,7 +294,15 @@ with sync_playwright() as pw:
     # --- charts -----------------------------------------------------------
     go("Charts")
     cards = page.locator(".chart-card")
-    check("every chart renders", cards.count() == 6, "%d cards" % cards.count())
+    # Six charts, plus the two odour ones -- but only when the device
+    # actually reports an odour reading. A board with no SGP41 fitted does
+    # not carry charts that can never draw anything, so the expected count
+    # follows the payload rather than being pinned to whatever this room's
+    # fan happened to have fitted the day the test was written.
+    expect = 8 if p.get("voc") is not None else 6
+    check("every chart renders", cards.count() == expect,
+          "%d cards, expected %d (voc=%r)"
+          % (cards.count(), expect, p.get("voc")))
     # A chart that silently falls back to the empty state still "renders".
     check("charts actually draw data",
           page.locator(".chart-card svg path.line").count() >= 5,
@@ -355,12 +402,28 @@ with sync_playwright() as pw:
     aa = [r for r in rows if not r["aa"]]
     aaa = [r for r in rows if not r["aaa"]]
     worst = min((r["ratio"] for r in rows), default=0)
+    # Named, not counted. "25 of 268 fail" says nothing a reader can act
+    # on; the ratio, the size and the text locate the rule to change.
+    def worst_few(bad, n=4):
+        seen, out = set(), []
+        for r in sorted(bad, key=lambda r: r["ratio"]):
+            key = (r["ratio"], r["t"][:18])
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append("%.2f:1 %.0fpx %r %s on %s [%s]"
+                       % (r["ratio"], r["px"], r["t"][:18],
+                          r.get("fg"), r.get("bg"), r.get("cls")))
+            if len(out) >= n:
+                break
+        return "; ".join(out)
+
     check("every text element passes WCAG AA", not aa,
-          "%d of %d fail" % (len(aa), len(rows)) if aa else
-          "%d elements, all views" % len(rows))
+          "%d of %d fail -- %s" % (len(aa), len(rows), worst_few(aa)) if aa
+          else "%d elements, all views" % len(rows))
     check("every text element passes WCAG AAA", not aaa,
-          "worst: %.2f:1 %r" % (aaa[0]["ratio"], aaa[0]["t"]) if aaa else
-          "lowest %.2f:1 across all views" % worst)
+          "%d of %d fail -- %s" % (len(aaa), len(rows), worst_few(aaa)) if aaa
+          else "lowest %.2f:1 across all views" % worst)
 
     check("no uncaught JS errors", not errors, "; ".join(errors[:2]))
 

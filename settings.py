@@ -27,6 +27,8 @@ FILE = "settings.json"
 SPECS = {
     "RH_RISE_ON":   ("number", 3.0, 20.0, 0.5, "%",   "Humidity rise to start", "mdi:water-plus"),
     "RH_FALL_OFF":  ("number", 1.0, 10.0, 0.5, "%",   "Humidity fall to stop",  "mdi:water-minus"),
+    "VOC_RISE_ON":  ("number", 0, 300, 5, None,       "Odour rise to start",    "mdi:scent"),
+    "VOC_FALL_OFF": ("number", 0, 300, 5, None,       "Odour fall to stop",     "mdi:scent-off"),
     "LIGHT_STEP_ON":    ("number", 2000, 40000, 500, None, "Light switch step",  "mdi:brightness-6"),
     "LIGHT_RISE_ON":    ("number", 1000, 40000, 500, None, "Light rise to start", "mdi:brightness-5"),
     "LIGHT_RISE_OFF":   ("number", 500, 39000, 500, None, "Light rise to stop",  "mdi:brightness-4"),
@@ -46,6 +48,8 @@ MODES = ("Auto", "Force off", "Force on")
 # hysteresis entirely.
 ORDERED = (
     ("RH_RISE_ON", "RH_FALL_OFF", 0.5),            # rise must exceed fall
+    ("VOC_RISE_ON", "VOC_FALL_OFF", 5),            # same, in ticks
+
     ("LIGHT_RISE_ON", "LIGHT_RISE_OFF", 1000),     # on must exceed off
     ("MAX_RUN_S", "MIN_RUN_S", 60),                # max must exceed min
 )
@@ -129,6 +133,16 @@ class Settings:
             if changed not in (hi_name, lo_name):
                 continue
             hi_v, lo_v = getattr(self, hi_name), getattr(self, lo_name)
+            # A zero upper bound means the feature is switched off -- that is
+            # what VOC_RISE_ON of 0 is for, and what the odour path ships at.
+            # There is no ordering to keep between two disabled thresholds,
+            # and enforcing the gap here would push the upper bound up to it:
+            # writing VOC_FALL_OFF would silently ARM odour triggering at 5
+            # ticks, against a signal whose quiet-room spread is 619. Caught
+            # by tests/test_control.py, which is the only reason it is not
+            # still in here.
+            if hi_v == 0:
+                continue
             if hi_v - lo_v >= gap:
                 continue
             if changed == hi_name:

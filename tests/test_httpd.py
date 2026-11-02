@@ -382,14 +382,18 @@ def test_server(tmp):
               [int(ln.split(",")[0]) for ln in lines[1:]] ==
               sorted(int(ln.split(",")[0]) for ln in lines[1:]))
 
-        # The light ambient is the newest column, and the one the light
-        # chart needs: a raw reading means nothing on its own now that the
-        # fixture is found by its distance from this line. It is appended,
-        # so it is last, and a bucket that never saw one still writes the
-        # field -- empty -- rather than a short row.
-        check("the light ambient rides along as the last column",
-              store.FIELDS[-1] == "amb" and
-              all(ln.split(",")[-1].strip() == ""
+        # The light ambient is the column the light chart needs: a raw
+        # reading means nothing on its own now that the fixture is found by
+        # its distance from this line. A bucket that never saw one still
+        # writes the field -- empty -- rather than a short row.
+        #
+        # Addressed by index, not by being last. This read FIELDS[-1] and
+        # split(",")[-1] until the odour columns were appended behind it,
+        # at which point it was asserting something about voc_exc while
+        # claiming to be about the ambient.
+        AMB = store.FIELDS.index("amb")
+        check("the light ambient rides along in its own column",
+              all(ln.split(",")[AMB].strip() == ""
                   for ln in lines[1:]),
               "no ambient was fed, so every one should be empty")
 
@@ -404,8 +408,8 @@ def test_server(tmp):
                          amb._flags, amb._n)
         check("a fed ambient is averaged into that column",
               row is not None and len(row) == len(store.FIELDS)
-              and row[-1] == 30.0,
-              "row[-1]=%r" % (row[-1] if row else None))
+              and row[AMB] == 30.0,
+              "row[%d]=%r" % (AMB, row[AMB] if row else None))
 
         # The response has no Content-Length -- its length is not known until
         # it has all been read off flash -- so the close is the terminator.
@@ -666,6 +670,23 @@ def test_store(tmp):
     rows = hist.read()
     check("a truncated last line is skipped, not raised",
           len(rows) == 2, "%d rows" % len(rows))
+
+    # The other half of that length check, and the one with history riding
+    # on it: a row written by a build that predates a column must survive
+    # the append that added it. On a device being updated that is the whole
+    # stored week, and the exact length test this replaced was silently
+    # discarding every pre-"amb" row on real flash.
+    for width, label in ((11, "pre-ambient"), (12, "pre-odour")):
+        legacy = ",".join(["1800002000"] + ["1"] * (width - 1))
+        got = store._parse(legacy)
+        check("a %s row still parses, padded to the current width" % label,
+              got is not None and len(got) == len(store.FIELDS)
+              and got[-1] is None,
+              "width %d -> %s" % (width, "None" if got is None
+                                  else "%d fields" % len(got)))
+    check("a width nothing ever wrote is refused",
+          store._parse(",".join(["1800002000"] + ["1"] * 12)) is None,
+          "13 fields")
 
     # Rotation, which is what bounds the pair of files.
     hist.per_file = 4

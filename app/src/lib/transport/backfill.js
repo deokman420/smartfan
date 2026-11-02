@@ -18,7 +18,7 @@
  * board has. It sends the stored lines as they are and the parsing happens
  * here, where there is room for it. See the Rows docstring in webapi.py.
  */
-import { backfill } from '$lib/history.js';
+import { backfill, F } from '$lib/history.js';
 
 // Rows are append-only, so a device can legitimately be a firmware behind
 // this app and send a row narrower than FIELD_COUNT. That is not a corrupt
@@ -26,7 +26,15 @@ import { backfill } from '$lib/history.js';
 // stored week every time a column is added -- which is exactly what the
 // strict equality here used to do. Anything from MIN_FIELDS up is accepted
 // and padded with nulls, which the charts already draw as absent.
-const FIELD_COUNT = 12;
+//
+// Derived from F, never written as a literal. This was `12` while F had
+// grown to fifteen, so the device sent perfectly good rows and the app
+// dropped every one of them -- a whole week of history discarded by a
+// number that only looked like a constant. It is the same mistake as the
+// strict equality the comment above is about, two lines below the warning.
+const FIELD_COUNT = Object.keys(F).length;
+// The narrowest row anything ever wrote. Unlike FIELD_COUNT this really is
+// historical and does not move.
 const MIN_FIELDS = 11;
 const HISTORY_TIMEOUT_MS = 15_000;
 

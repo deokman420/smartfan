@@ -15,12 +15,13 @@ States:
 """
 
 import time
-from machine import Pin, ADC, WDT, reset_cause
+from machine import Pin, ADC, I2C, WDT, reset_cause
 import dht
 
 import config as cfg
 from settings import Settings
 import light
+import voc
 import ota
 
 # Snapshot needs no network: it is the device's view of itself, and the HTTP
@@ -226,6 +227,35 @@ class Controller:
         self.lightdet = light.Detector(self.st, log=print)
         self.light_prev = False    # light_on as decide() last saw it, for edges
 
+        # The odour path is strictly an enhancement. A missing, dead or
+        # disabled sensor must leave this controller behaving exactly as it
+        # did without it -- so everything here is allowed to fail, nothing
+        # here can raise FAULT, and self.voc of None means "no opinion, ever".
+        # Stopping the humidity path over a secondary sensor would be a far
+        # worse outcome than losing odour sensing.
+        self.vocdet = voc.Detector(self.st, log=print)
+        self.voc = None            # sgp41.SGP41, or None if absent/disabled
+        self.voc_recover_until = None   # VOC_RECOVER_S after a steam event
+        if cfg.VOC_ENABLED:
+            try:
+                import sgp41
+                bus = I2C(0, sda=Pin(cfg.PIN_SDA), scl=Pin(cfg.PIN_SCL),
+                          freq=100000)
+                s = sgp41.SGP41(bus, max_fails=cfg.VOC_MAX_FAILS, log=print)
+                sn = s.serial()
+                if sn is None:
+                    # Either nothing is there, or two SGP4x are sharing the
+                    # bus and ANDing each other's replies into garbage. Both
+                    # read the same from here; sgp41.py's docstring has the
+                    # difference and how to tell.
+                    print("voc: no valid reply from 0x59, path disabled")
+                else:
+                    s.start()
+                    self.voc = s
+                    print("voc: SGP41 %s ready, conditioning" % sn)
+            except Exception as e:
+                print("voc: unavailable (%s)" % e)
+
         self.baseline = None
         self.rh = None
         self.temp = None
@@ -369,6 +399,94 @@ class Controller:
             self.dht_fails += 1
             return False
 
+    def read_voc(self):
+        """One odour sample, fed through the detector. Never raises.
+
+        The humidity reading is passed in as compensation: the SGP41 derives
+        its own raw signal from element resistance, which moves with RH and
+        temperature, and the fixed 50 %RH/25 C defaults would bias every
+        reading in a bathroom. The DHT22 is good enough for that job, which
+        is why this does not wait on an SHT40.
+        """
+        if self.voc is None:
+            return
+        try:
+            # Any humid spell suppresses odour triggering for a while after
+            # it. Drying a wet room moves the MOX signal on its own, so a
+            # shower would otherwise hand the fan a second reason to run
+            # just as the first one expired.
+            if self.excess_rh > self.st.RH_FALL_OFF:
+                self.voc_recover_until = time.ticks_add(
+                    time.ticks_ms(), self.st.VOC_RECOVER_S * 1000)
+
+            if not self.voc.ok:
+                # Stood down for good. Drop the last reading so every
+                # surface reports absence rather than a number frozen at
+                # whatever the sensor saw on its way out.
+                self.vocdet.raw = None
+                return
+
+            got = self.voc.read(self.rh, self.temp)
+            if got is None:
+                return          # still conditioning -- not an error
+            self.vocdet.update(got[0], self._voc_learning())
+        except Exception as e:
+            # A sensor fault here is logged and dropped. It must never reach
+            # set_state(FAULT): see __init__.
+            print("voc: read failed (%s)" % e)
+
+    def _voc_learning(self):
+        """Is the room quiet enough to learn a clean-air baseline from?
+
+        The policy lives here rather than in voc.py because it reads three
+        other signals. Learning during an event would teach the baseline to
+        treat the smell as normal, and then report clean air as a deviation.
+        """
+        return (self.state == IDLE
+                and not self.light_on
+                and self.excess_rh <= self.st.RH_FALL_OFF)
+
+    def _voc_active(self):
+        """Is the odour path allowed to influence the fan at all?
+
+        False while the sensor is absent, while it has stood down, while
+        VOC_RISE_ON is 0 (the observe-only rollout setting), or before a
+        baseline exists. Keeping this one predicate in front of every use is
+        what makes the observe-only week genuinely observe-only -- an
+        ungated hold or latch release reading a live sensor against a 0
+        threshold would change the fan's behaviour on day one.
+
+        The `ok` term is not decoration. A stood-down sensor keeps its last
+        reading, and read() returns None forever after, so without it the
+        frozen value is compared against VOC_FALL_OFF on every pass. If the
+        last thing the sensor ever saw was bad air, _voc_quiet() would be
+        False for ever: the fan held open to MAX_RUN_S, latched, and the
+        latch unable to release -- a dead sensor cycling the fan for good.
+        """
+        return (self.voc is not None
+                and self.voc.ok
+                and bool(self.st.VOC_RISE_ON)
+                and self.vocdet.base is not None)
+
+    def _voc_armed(self):
+        """As _voc_active, plus the post-steam recovery window."""
+        if not self._voc_active():
+            return False
+        if self.voc_recover_until is not None and time.ticks_diff(
+                self.voc_recover_until, time.ticks_ms()) > 0:
+            return False
+        return True
+
+    def _voc_quiet(self):
+        """True when the odour path has no objection to the fan stopping.
+
+        Returns True when the path is inert, so an absent or disabled sensor
+        can never hold a run open or keep the maxed latch closed.
+        """
+        if not self._voc_active():
+            return True
+        return self.excess_voc <= self.st.VOC_FALL_OFF
+
     # -- helpers ------------------------------------------------------
 
     def dew_point(self):
@@ -386,6 +504,16 @@ class Controller:
         if self.baseline is None or self.rh is None:
             return 0.0
         return self.rh - self.baseline
+
+    @property
+    def excess_voc(self):
+        """Ticks below the learned clean-air baseline; positive means worse.
+
+        The SGP41's raw signal falls as reducing-gas concentration rises, so
+        the deviation meaning "bad air" is baseline minus current. voc.py
+        carries that reasoning and the bench check for it.
+        """
+        return self.vocdet.excess()
 
     def set_state(self, new, reason=""):
         if new == self.state:
@@ -563,10 +691,23 @@ class Controller:
                 # And not while the light still reads on: a dry room already
                 # satisfies the humidity half, so that half alone cannot hold
                 # a latch set by a light that will not go out.
-                if not self.light_on and self.excess_rh <= self.st.RH_FALL_OFF:
+                #
+                # Every independent reason to run must be quiet before the
+                # latch lets go. Each new sensor adds a term here: a
+                # stuck-high odour reading would otherwise release the latch
+                # on humidity alone and the fan would cycle for ever.
+                if (not self.light_on
+                        and self.excess_rh <= self.st.RH_FALL_OFF
+                        and self._voc_quiet()):
                     self.maxed = False
             elif self.excess_rh >= self.st.RH_RISE_ON:
                 self.set_state(RUN, "humidity +%.1f%%" % self.excess_rh)
+            elif self._voc_armed() and self.excess_voc >= self.st.VOC_RISE_ON:
+                # Reached only with the light off and the room dry, which is
+                # exactly the gap this sensor was bought to close: air that
+                # needs clearing with nobody there to press Boost and no
+                # humidity to notice.
+                self.set_state(RUN, "odour +%d" % self.excess_voc)
             return
 
         # state == RUN
@@ -594,8 +735,12 @@ class Controller:
         # wet. However good the detector gets it still reads one LDR through a
         # window, and this is what bounds a bad reading to ten minutes rather
         # than an afternoon. It latches for the same reason MAX_RUN_S does.
+        # ...and only when nothing else still justifies the run. Latching a
+        # dry room while the odour signal is still high would stop the very
+        # event the second sensor exists to catch.
         if (self.light_on and ran >= self.st.LIGHT_ONLY_MAX_S
-                and self.excess_rh <= self.st.RH_FALL_OFF):
+                and self.excess_rh <= self.st.RH_FALL_OFF
+                and self._voc_quiet()):
             self.maxed = True
             self.set_state(IDLE, "light on %d min with a dry room - latched "
                                  "until the light goes off"
@@ -606,6 +751,10 @@ class Controller:
         if self.dark_since and ms_since(self.dark_since) / 1000.0 < self.st.POST_LIGHT_S:
             return
         if self.excess_rh > self.st.RH_FALL_OFF:
+            return
+        # The room ends the run, not a timer -- which is the whole point of a
+        # second sensed signal. Inert while the path is disabled or absent.
+        if not self._voc_quiet():
             return
         self.set_state(IDLE, "dry, +%.1f%%" % self.excess_rh)
 
@@ -783,6 +932,8 @@ class Controller:
         elif cmd == "relearn":
             self.maxed = False
             self.baseline = self.rh
+            # Both learned baselines, or Relearn half-answers the request.
+            self.vocdet.relearn()
             self.set_state(LEARN, "relearn via mqtt")
             self.entered_at = time.ticks_ms() - 59000
         elif cmd == "clear":
@@ -814,6 +965,7 @@ class Controller:
                 print("wifi: no provisioner (offline build)")
         elif press == "long":
             self.baseline = self.rh
+            self.vocdet.relearn()
             print("baseline relearned: %s" % self.baseline)
             self.set_state(LEARN, "manual relearn")
             self.entered_at = time.ticks_ms() - 59000   # short LEARN pass
@@ -833,9 +985,19 @@ class Controller:
                 self.set_state(BOOST, "button")
 
     def log(self, raw_light):
+        """One line per sample, the only view of the controller over USB.
+
+        Every sensed quantity appears here beside the state it produced, so
+        a bench session can see why the fan did what it did without the
+        dashboard. The odour pair is gated on vocdet.raw rather than on
+        excess_voc, which reads 0 both for clean air and for no sensor at
+        all -- a `--` has to mean absence or the line lies by omission.
+        """
         dp = self.dew_point()
+        raw_voc = self.vocdet.raw
         print("%-5s rh=%s%% t=%sC dp=%s base=%s exc=%+.1f "
-              "light=%d amb=%s rise=%+d(%s) fan=%d rpm=%d %s" % (
+              "light=%d amb=%s rise=%+d(%s) voc=%s odr=%s "
+              "fan=%d rpm=%d %s" % (
                   self.state,
                   self.rh, self.temp,
                   "%.1f" % dp if dp is not None else "--",
@@ -844,6 +1006,8 @@ class Controller:
                   raw_light,
                   "%d" % self.light_amb if self.light_amb is not None else "--",
                   self.light_rise(), "ON" if self.light_on else "off",
+                  "%d" % raw_voc if raw_voc is not None else "--",
+                  "%+d" % self.excess_voc if raw_voc is not None else "--",
                   self.fan.value(), self.rpm,
                   self.fault_reason if self.state == FAULT else ""))
 
@@ -918,6 +1082,8 @@ class Controller:
                                              cfg.SAMPLE_S * 1000)
                 raw_light = self.read_light()
                 self.read_climate()
+                # After the climate read, which supplies its compensation.
+                self.read_voc()
                 # Sample the tach whichever way the fan is commanded. Reading
                 # it only while driven is what made a stuck-on fan invisible.
                 measured = self.tach.rpm()

@@ -156,10 +156,23 @@ def main():
                 live = False
             check("it connects with nothing configured", live)
 
+            # Sampled either side of the read, not pinned to `first`.
+            # `first` is taken before the browser even starts, and the live
+            # humidity drifts while the page loads -- so this assertion
+            # failed or passed on identical consecutive runs purely on
+            # whether the reading crossed an integer boundary in between.
+            # What it means to prove is that the screen shows a number THIS
+            # device reported, rather than a fabricated or cached one, and
+            # bracketing the read proves that without the race.
+            before = state()
             body_text = page.locator(".wrap").inner_text()
+            after = state()
+            seen = {str(s.get("rh")).split(".")[0]
+                    for s in (first, before, after)
+                    if s and s.get("rh") is not None}
             check("the reading on screen is the one the API returned",
-                  str(first.get("rh")).split(".")[0] in body_text,
-                  "expected rh %s" % first.get("rh"))
+                  any(rh in body_text for rh in seen),
+                  "screen shows none of %s" % sorted(seen))
             check("no uncaught JS errors in the browser", not errors,
                   "; ".join(errors[:2]))
             page.screenshot(path="tests/screenshots/device-live.png",
@@ -196,8 +209,31 @@ def main():
           len(rows) > 0 or info["history"]["rows"] == 0,
           "%d rows (a fresh board writes its first after 5 minutes)" % len(rows))
     if rows:
-        check("every stored row has 11 fields",
-              all(len(r.split(",")) == 11 for r in rows))
+        # Derived from store.FIELDS, not pinned to a number. This assertion
+        # read "== 11" while the schema had twelve columns -- it went stale
+        # when "amb" was appended and nobody noticed, because the check only
+        # runs with a reachable board and a board with rows on it.
+        #
+        # The invariant is the parser's contract rather than an exact width:
+        # a row may be short (written by firmware that predates a column,
+        # which _parse pads) but never longer than this build knows about.
+        # Mixed widths in one file are EXPECTED, not a fault: appending a
+        # column leaves every older row at the older width, and this board
+        # really does hold both 11- and 12-field rows. Requiring them to
+        # agree was wrong, and chasing that is what revealed that _parse's
+        # strict length check had been dropping every pre-"amb" row on the
+        # flash since the day that column landed.
+        import os
+        sys.path.insert(0, os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))))
+        import store
+        widths = {len(r.split(",")) for r in rows}
+        check("every stored row fits the current schema",
+              max(widths) <= len(store.FIELDS),
+              "widths %s, schema has %d" % (sorted(widths), len(store.FIELDS)))
+        check("and every stored row parses back",
+              all(store._parse(r) is not None for r in rows),
+              "%d rows" % len(rows))
 
     # --- the thing a browser does that a test client does not --------------
     # Several requests at once, which is how the cap and the backlog get

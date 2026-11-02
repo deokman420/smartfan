@@ -34,8 +34,9 @@ ROOT = os.path.dirname(HERE)
 # the recovery path, and a recovery path you can break remotely is not one.
 # Push those over USB when they genuinely change.
 SHIP = ("main.py", "config.py", "settings.py", "telemetry.py", "light.py",
-        "net.py", "mqtt.py", "ringbuf.py", "calibrate.py", "provision.py",
-        "improv.py", "httpd.py", "webapi.py", "store.py", "wifi.py")
+        "sgp41.py", "voc.py", "net.py", "mqtt.py", "ringbuf.py", "calibrate.py",
+        "provision.py", "improv.py", "httpd.py", "webapi.py", "store.py",
+        "wifi.py")
 
 EXCLUDE_REASON = {
     "www/": "the app bundle -- pushed by tools/build_www.py, versioned apart",

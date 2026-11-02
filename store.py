@@ -37,7 +37,17 @@ reinterprets every row already on a device.
 import time
 
 FIELDS = ("t", "rh", "base", "exc", "temp", "dp", "light", "rpm", "fan",
-          "lit", "st", "amb")
+          "lit", "st", "amb", "voc", "voc_base", "voc_exc")
+
+# Every row width this project has written, oldest first. Rows on a device's
+# flash outlive the build that wrote them, so each append of a column leaves
+# the previous width in service for up to a week. Append here when FIELDS
+# grows; do not replace.
+#
+#   11  t..st     the original row
+#   12  t..amb    the learned light ambient (2026-10-29)
+#   15  t..voc_exc  odour: raw, baseline, excess (2026-11-01)
+_WIDTHS = (11, 12, len(FIELDS))
 
 STATE_CODE = {"LEARN": 0, "IDLE": 1, "RUN": 2, "BOOST": 3, "FAULT": 4}
 
@@ -129,7 +139,8 @@ class History:
 
     def _add(self, p):
         for k in ("rh", "base", "exc", "temp", "dp", "light_pc",
-                  "light_amb_pc", "rpm"):
+                  "light_amb_pc", "rpm", "voc", "voc_base",
+                  "voc_exc"):
             v = p.get(k)
             if v is None:
                 continue
@@ -330,6 +341,11 @@ class History:
         }
 
 
+def _int(v):
+    """Round a mean to an int, preserving None. int(None) raises."""
+    return None if v is None else int(v)
+
+
 def _row(bucket, interval_s, sums, cnts, flags, n):
     """An accumulator's sums and flags as one row, or None if it is empty.
 
@@ -358,6 +374,14 @@ def _row(bucket, interval_s, sums, cnts, flags, n):
         # written before it existed simply end early, and every reader here
         # and in the app treats a missing trailing field as absent.
         mean("light_amb_pc"),
+        # Odour: raw ticks, the learned baseline, and the deviation --
+        # the same triple the humidity path stores, and stored the same
+        # way for the same reason: the chart draws the pair, and a
+        # baseline the reader has to derive is one the reader cannot see.
+        # None rather than 0 when the sensor is absent or conditioning:
+        # a MOX signal of zero would plot as the worst air ever recorded.
+        _int(mean("voc", 0)), _int(mean("voc_base", 0)),
+        _int(mean("voc_exc", 0)),
     ]
 
 
@@ -382,8 +406,27 @@ def _parse(line):
     if not line:
         return None
     parts = line.split(",")
-    if len(parts) != len(FIELDS):
+    # Only widths this project has actually shipped are accepted, and short
+    # ones are then padded. Two different failures hide behind a length
+    # check, and the exact comparison that used to be here conflated them:
+    #
+    #   an OLDER row  ends cleanly, at a field boundary, because it was
+    #                 written before a column was appended. Dropping it
+    #                 throws away real history -- and that is what was
+    #                 happening to every pre-"amb" row on the flash, despite
+    #                 _row's docstring promising the opposite.
+    #   a TORN row    is the last line of a file that lost power mid-append.
+    #                 It ends anywhere, usually mid-field, and must be
+    #                 skipped. Padding it would invent a row.
+    #
+    # A whitelist of generations separates them where a "<= len(FIELDS)"
+    # test cannot: the torn line the tests use has three fields, which is
+    # not a width anything ever wrote. The cost is one tuple to extend on
+    # the next append, which is cheaper than the row it protects.
+    if len(parts) not in _WIDTHS:
         return None
+    if len(parts) < len(FIELDS):
+        parts = parts + [""] * (len(FIELDS) - len(parts))
     try:
         ts = int(parts[0])
     except ValueError:

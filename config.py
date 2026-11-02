@@ -102,6 +102,26 @@ RH_RISE_ON  = 8.0    # %RH above baseline that starts the fan
 RH_FALL_OFF = 3.0    # %RH above baseline at which drying is done
 BASELINE_A  = 0.002  # EMA weight; ~15 min to settle at 2 s samples
 
+# --- Odour sensing (SGP41) -------------------------------------------
+# The second sensed reason to run. Humidity covers showers; this covers the
+# rest, which produces no humidity signal at all. See voc.py for the sign of
+# the signal and logistics/sgp41-odour-sensing.md for the whole argument.
+#
+# Both thresholds ship at 0, which _voc_armed() reads as "never trigger":
+# the sensor publishes and the recorder keeps it, while the fan behaves
+# exactly as it did before. The right numbers are the ones a week of this
+# room's own data gives up, not ones picked off a datasheet.
+PIN_SDA = 0          # I2C0 SDA, physical pin 1
+PIN_SCL = 1          # I2C0 SCL, physical pin 2
+VOC_ENABLED     = True   # False disables the whole path, no rewiring
+VOC_RISE_ON     = 0      # ticks below baseline that start the fan; 0 = off
+VOC_FALL_OFF    = 0      # ticks below baseline at which the air is clear
+VOC_BASELINE_A  = 0.0005 # slower than BASELINE_A: odour events are shorter
+                         # than showers and must not be learned as normal
+VOC_RECOVER_S   = 900    # no VOC triggering this long after a steam event,
+                         # because drying a wet room moves the MOX signal too
+VOC_MAX_FAILS   = 10     # consecutive I2C failures before the path stands down
+
 # --- Timing, seconds --------------------------------------------------
 SAMPLE_S     = 2     # DHT22 cannot be read faster than every 2 s
 MIN_RUN_S    = 180   # never short-cycle the fan

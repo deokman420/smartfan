@@ -35,6 +35,9 @@ E = {
     "base":       P + "humidity_baseline",
     "exc":        P + "excess_humidity",
     "light":      P + "light_level",
+    "voc":        P + "odour_raw",
+    "voc_base":   P + "odour_baseline",
+    "voc_exc":    P + "excess_odour",
     "rpm":        P + "fan_speed",
     "runtime":    P + "runtime_today",
     "rssi":       P + "wifi_signal",
@@ -47,12 +50,15 @@ E = {
     "fan_on":     B + "fan_running",
     "light_on":   B + "light_detected",
     "fault":      B + "fault",
+    "voc_ok":     B + "odour_sensor",
     "btn_boost":  "button.bathroom_fan_controller_boost_15_min",
     "btn_cancel": "button.bathroom_fan_controller_cancel_boost",
     "btn_relearn": "button.bathroom_fan_controller_relearn_baseline",
     "mode":       "select.bathroom_fan_controller_mode",
     "rh_on":      N + "humidity_rise_to_start",
     "rh_off":     N + "humidity_fall_to_stop",
+    "voc_on":     N + "odour_rise_to_start",
+    "voc_off":    N + "odour_fall_to_stop",
     "l_on":       N + "light_on_threshold",
     "l_off":      N + "light_off_threshold",
     "min_run":    N + "minimum_run",
@@ -149,6 +155,12 @@ CONFIG = {
                 heading("Thresholds", "mdi:tune-vertical"),
                 tile(E["rh_on"], "Start at"),
                 tile(E["rh_off"], "Stop below"),
+                # Both ship at 0, which means the odour path watches and
+                # publishes but never touches the fan. Raise "Odour start"
+                # off 0 to arm it -- and pick the number off a real event in
+                # the history below, not off the datasheet.
+                tile(E["voc_on"], "Odour start"),
+                tile(E["voc_off"], "Odour stop"),
                 tile(E["l_on"], "Light on"),
                 tile(E["l_off"], "Light off"),
                 tile(E["min_run"], "Min run"),
@@ -186,6 +198,37 @@ CONFIG = {
                         {"entity": E["rh"], "name": "Humidity"},
                         {"entity": E["base"], "name": "Baseline"},
                         {"entity": E["exc"], "name": "Excess"},
+                    ],
+                },
+            ]},
+
+            # Odour sits directly under humidity, because the two are read
+            # together: this card answers "was there a reason to run that the
+            # humidity could not see?", which is the question the sensor was
+            # bought to answer.
+            {"type": "grid", "cards": [
+                heading("Odour", "mdi:scent"),
+                {
+                    "type": "gauge",
+                    "entity": E["voc_exc"],
+                    "name": "Below baseline",
+                    # Ticks, not a percentage. The quiet-room spread measured
+                    # 619 over 20 s, so the green band has to cover ordinary
+                    # noise or the gauge cries wolf all day.
+                    "min": -500, "max": 3000, "needle": True,
+                    "severity": {"green": -500, "yellow": 700, "red": 1500},
+                },
+                tile(E["voc"], "Raw"),
+                tile(E["voc_base"], "Baseline"),
+                tile(E["voc_ok"], "Sensor", icon="mdi:scent"),
+                {
+                    "type": "history-graph",
+                    "title": "Odour against its baseline",
+                    "hours_to_show": 24,
+                    "entities": [
+                        {"entity": E["voc"], "name": "Raw ticks"},
+                        {"entity": E["voc_base"], "name": "Baseline"},
+                        {"entity": E["voc_exc"], "name": "Excess"},
                     ],
                 },
             ]},

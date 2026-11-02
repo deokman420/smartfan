@@ -4,12 +4,13 @@
     import calibrate; calibrate.fan()        # fan + tach check
     import calibrate; calibrate.sensor()     # DHT22 check
     import calibrate; calibrate.leds()       # LED and button check
+    import calibrate; calibrate.voc()        # SGP41: sign of the signal
 
 Nothing here is used by the controller at runtime.
 """
 
 import time
-from machine import Pin, ADC
+from machine import Pin, ADC, I2C
 import dht
 
 import config as cfg
@@ -119,6 +120,79 @@ def fan(seconds=10):
     print("\nExpect roughly 4000-5000 rpm on an NF-A4x10; rated 4500 at 5 V.")
     print("0 rpm but the fan is spinning -> tach wiring or pull-up.")
     print("Not spinning at all -> swap the two outer transistor legs.")
+
+
+def voc(seconds=180):
+    """Print SGP41 ticks, and settle the one thing a datasheet cannot.
+
+    THE SIGN. For SGP4x parts the raw signal is supposed to fall as
+    reducing-gas concentration rises, so "worse air" should be
+    baseline-minus-current. Getting that backwards gives a fan that
+    ventilates whenever the air is clean, which would take a long time to
+    notice. So this prints the direction in words rather than asking you to
+    work it out from a column of numbers.
+
+    Run it, let the baseline line settle, then give it something: uncap a
+    marker pen next to the sensor, or a puff of hair spray from across the
+    room. The DIRECTION line is the answer. `down` is what voc.py assumes.
+
+    It also prints the quiet-room spread, which is the noise any threshold
+    has to clear -- measured at 619 ticks over 20 s on this build's part.
+    """
+    import sgp41
+    bus = I2C(0, sda=Pin(cfg.PIN_SDA), scl=Pin(cfg.PIN_SCL), freq=100000)
+    s = sgp41.SGP41(bus, max_fails=cfg.VOC_MAX_FAILS)
+    sn = s.serial()
+    if sn is None:
+        print("no valid reply from 0x59.")
+        print("Nothing there, or TWO SGP4x on one bus ANDing each other --")
+        print("they share a fixed address. See sgp41.py's docstring.")
+        return
+    print("SGP41 %s, self test %s" % (sn, "PASS" if s.self_test() else "FAIL"))
+
+    d = dht.DHT22(Pin(cfg.PIN_DHT))
+    rh = t = None
+    s.start()
+    print("conditioning 10 s, then %d s of readings\n" % seconds)
+
+    base = None
+    quiet = []
+    end = time.ticks_add(time.ticks_ms(), (seconds + 10) * 1000)
+    while time.ticks_diff(end, time.ticks_ms()) > 0:
+        try:
+            d.measure()
+            rh, t = d.humidity(), d.temperature()
+        except Exception:
+            pass
+        got = s.read(rh, t)
+        if got is None:
+            time.sleep_ms(900)
+            continue
+        raw, nox = got
+        if base is None:
+            base = float(raw)
+            print("baseline seeded at %d ticks\n" % raw)
+        delta = int(base - raw)
+        # The first 30 s of settled readings are the noise floor.
+        if len(quiet) < 15:
+            quiet.append(raw)
+        arrow = "down" if delta > 0 else ("up" if delta < 0 else "flat")
+        print("voc=%6d  nox=%6d  base=%6d  DIRECTION %-4s  excess=%+d"
+              % (raw, nox, int(base), arrow, delta))
+        # Track the baseline slowly, the way voc.py does, so a long run does
+        # not report drift as a permanent event.
+        base = (1 - cfg.VOC_BASELINE_A) * base + cfg.VOC_BASELINE_A * raw
+        time.sleep_ms(900)
+
+    s.heater_off()
+    if len(quiet) > 1:
+        print("\nquiet-room spread over the first %d samples: %d ticks"
+              % (len(quiet), max(quiet) - min(quiet)))
+        print("VOC_RISE_ON has to clear that comfortably. Pick it from a real")
+        print("event in the recorder, not from this bench run.")
+    print("\nDIRECTION should read `down` while the air is bad.")
+    print("If it reads `up`, the sign in voc.py is backwards -- fix it there,")
+    print("not by negating a threshold.")
 
 
 def leds(seconds=20):

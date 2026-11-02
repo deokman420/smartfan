@@ -56,9 +56,9 @@ FW_VERSION = "2c.3"
 # network -- without it, the only way to know what an OTA actually put on a
 # device in a ceiling is to go and get it.
 TRACKED = ("main.py", "config.py", "settings.py", "telemetry.py",
-           "light.py", "net.py", "mqtt.py", "ringbuf.py", "calibrate.py",
-           "provision.py", "improv.py", "httpd.py", "webapi.py",
-           "store.py", "wifi.py")
+           "light.py", "sgp41.py", "voc.py", "net.py", "mqtt.py", "ringbuf.py",
+           "calibrate.py", "provision.py", "improv.py", "httpd.py",
+           "webapi.py", "store.py", "wifi.py")
 
 # The app bundle is versioned separately and NOT hashed into the fingerprint.
 # It is pushed by tools/build_www.py rather than by an OTA, changes on its own
@@ -98,6 +98,9 @@ _SENSORS = (
     ("baseline",    "Humidity baseline", "base",     "%",       "humidity",    "measurement",      None),
     ("excess",      "Excess humidity",   "exc",      "%",       None,          "measurement",      "mdi:water-percent"),
     ("light",       "Light level",       "light_pc", "%",       None,          "measurement",      "mdi:brightness-6"),
+    ("voc",         "Odour raw",         "voc",      None,      None,          "measurement",      "mdi:scent"),
+    ("voc_base",    "Odour baseline",    "voc_base", None,      None,          "measurement",      "mdi:scent"),
+    ("voc_excess",  "Excess odour",      "voc_exc",  None,      None,          "measurement",      "mdi:scent"),
     ("rpm",         "Fan speed",         "rpm",      "rpm",     None,          "measurement",      "mdi:fan"),
     ("state",       "Controller state",  "state",    None,      None,          None,               "mdi:state-machine"),
     ("runtime",     "Runtime today",     "run_min",  "min",     None,          "total_increasing", "mdi:timer-outline"),
@@ -122,6 +125,9 @@ _BINARY = (
     ("fan_on",   "Fan running",    "fan_on",   "running", "mdi:fan"),
     ("light_on", "Light detected", "light_on", "light",   None),
     ("fault",    "Fault",          "fault",    "problem", None),
+    # So a sensor that has stood down after VOC_MAX_FAILS is visible, rather
+    # than silently inert with its three sensors frozen on a last good value.
+    ("voc_ok",   "Odour sensor",   "voc_ok",   None,      "mdi:scent"),
 )
 
 
@@ -223,6 +229,14 @@ class Snapshot:
         # minutes between two pushes, while the fan itself carried on fine.
         amb = getattr(c, "light_amb", None)
         rise = c.light_rise() if hasattr(c, "light_rise") else 0
+        # Same getattr discipline for the odour path, and for the same
+        # reason: voc.py and sgp41.py cannot land in the same OTA batch as
+        # the main.py that grows these attributes, so this file will run for
+        # a while against a Controller that has none of them.
+        vdet = getattr(c, "vocdet", None)
+        voc_present = getattr(c, "voc", None) is not None
+        voc_raw = getattr(vdet, "raw", None) if vdet is not None else None
+        voc_base = getattr(vdet, "base", None) if vdet is not None else None
         return {
             "state":    c.state,
             "temp":     round(c.temp, 1) if c.temp is not None else None,
@@ -244,6 +258,16 @@ class Snapshot:
             # units. The raw pair above stays for the readings card.
             "light_amb_pc": (round(amb * 100.0 / 65535, 1)
                              if amb is not None else None),
+            # None, not 0, when the sensor is absent or still conditioning:
+            # Home Assistant shows "unavailable" for a null and a plausible
+            # reading for a zero, and a fake zero on a MOX signal would read
+            # as the worst air the room has ever had.
+            "voc":      int(voc_raw) if voc_raw is not None else None,
+            "voc_base": int(voc_base) if voc_base is not None else None,
+            "voc_exc":  (int(c.excess_voc)
+                         if hasattr(c, "excess_voc") else None),
+            "voc_ok":   (bool(getattr(c.voc, "ok", False))
+                         if voc_present else None),
             "fan_on":   bool(c.fan.value()),
             # What the fan is actually doing, not what it was told. A fan
             # turning while commanded off must read non-zero, or the one
@@ -441,8 +465,16 @@ class Telemetry:
         # on every sample and flood the recorder; omitting it entirely leaves
         # Home Assistant showing the spin-up reading -- around 2,500 -- for up
         # to 30 s after the fan has actually settled near 4,000.
+        # The odour excess is bucketed to 25 ticks for exactly the reason rpm
+        # is bucketed to 500: a raw MOX signal moves on every 2 s sample, and
+        # putting it in the signature unbucketed turns the 30 s publish
+        # interval into a 2 s one and floods the recorder. voc and voc_base
+        # are deliberately absent -- the excess is the one that carries a
+        # decision. voc_ok is included unbucketed, because a sensor standing
+        # down should be visible at once.
         return (p["state"], p["fan_on"], p["light_on"], p["fault"],
                 p["boost_left"], (p["rpm"] or 0) // 500,
+                p.get("voc_ok"), (p.get("voc_exc") or 0) // 25,
                 tuple(sorted(p["cfg"].items())))
 
     def publish(self, c, raw_light, rssi=None, force=False, payload=None):
