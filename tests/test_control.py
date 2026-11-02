@@ -743,6 +743,21 @@ check("a busy room does not teach the baseline", det.base == 29000.0,
 det.relearn()
 check("relearn drops the baseline", det.base is None)
 
+# The same class serves the NOx pixel, so the one thing that must hold is
+# that an instance's own alpha beats the config default. Two detectors
+# sharing cfg.VOC_BASELINE_A is a choice; two detectors unable to differ
+# would be a design that cannot be changed when the NOx measurement lands.
+seen = []
+fast = vocmod.Detector(settings.Settings(log=lambda *a: None),
+                       log=lambda *a: seen.append(a[0]), alpha=0.5,
+                       name="nox")
+fast.update(1000, True)
+fast.update(2000, True)
+check("an instance alpha overrides the config default", fast.base == 1500.0,
+      "%s" % fast.base)
+check("...and the seed log says which pixel seeded",
+      seen and seen[0].startswith("nox:"), repr(seen[:1]))
+
 # -- the gates ------------------------------------------------------------
 
 
@@ -783,6 +798,117 @@ cold.voc.settled = True
 cold.read_voc()
 check("and the first warm sample seeds it", cold.vocdet.base == 30094.0,
       "%s" % cold.vocdet.base)
+
+# A latched run returns to IDLE with the air still bad: state IDLE, light
+# off, room dry, sensor settled -- every term the gate used to have. So the
+# baseline walked onto the smell at VOC_BASELINE_A and the deviation decayed
+# with the air unchanged. Measured on the device on 2026-11-02: raw flat at
+# 30394 -> 30399 over twenty minutes while the baseline slid 30633 -> 30571,
+# turning a real +240 into a reported +172 by forgetting.
+latched = armed(rise=80, fall=30, base=30642.0, raw=30413)
+latched.maxed = True
+latched.rh = latched.baseline
+check("a latched room with the air still bad is not learned from",
+      latched._voc_learning() is False,
+      "exc=%s" % latched.excess_voc)
+was = latched.vocdet.base
+latched.read_voc()
+check("...so the baseline does not walk onto the event",
+      latched.vocdet.base == was, "%s -> %s" % (was, latched.vocdet.base))
+# And the other half: once the air really has cleared, learning resumes.
+# A gate that failed this would freeze the baseline for good and the odor
+# path would never track the room again.
+#
+# Twice, and the first call is the point. read_voc() decides whether to
+# learn BEFORE folding in the sample it just took, so the verdict is made
+# against the previous reading -- one sample of lag, by construction. Any
+# other order would ask the gate about a value the baseline had already
+# absorbed, which is the question it exists to get in front of.
+latched.voc.voc = 30640
+latched.read_voc()
+check("...and the clearing sample itself is still judged on the last one",
+      latched.vocdet.base == was, "%s" % latched.vocdet.base)
+latched.read_voc()
+check("...and resumes on the sample after it",
+      latched.vocdet.base != was, "%s" % latched.vocdet.base)
+
+# The gate is bounded, and unbounded it deadlocked. The latch releases on
+# the same _voc_quiet() the gate refuses to learn through, so a baseline that
+# is wrong rather than an air that is bad could neither correct itself nor let
+# the latch go -- the odor path stuck until a reboot or a Relearn. Watched on
+# the device on 2026-11-02: a baseline seeded 60 s after boot, while the
+# element was still warming, read +166 on air with nothing wrong with it.
+stale = armed(rise=80, fall=30, base=30842.0, raw=30676)
+stale.rh = stale.baseline
+stale.read_voc()
+check("a wrong baseline starts a hold rather than correcting at once",
+      stale.voc_hold_since is not None and stale._voc_learning() is False,
+      "hold=%s" % (stale.voc_hold_since,))
+held = stale.vocdet.base
+advance(cfg.VOC_HOLD_MAX_S - 60)
+check("...which still holds just under the cap",
+      stale._voc_learning() is False and stale.vocdet.base == held,
+      "%s" % stale.vocdet.base)
+advance(120)
+check("...and expires past it, so the baseline is the one that gives",
+      stale._voc_learning() is True)
+stale.read_voc()
+check("...and the baseline then moves toward the reading",
+      stale.vocdet.base != held, "%s -> %s" % (held, stale.vocdet.base))
+
+# The deadlock itself, end to end: latched, dry, dark, and the only thing
+# keeping the latch closed is an odor reading that is never going to fall.
+# Before the bound this stayed latched for ever.
+stuck = armed(rise=80, fall=30, base=30842.0, raw=30676)
+stuck.rh = stuck.baseline
+stuck.maxed = True
+step(stuck, 3)
+check("a latched fan with a stale baseline stays latched inside the cap",
+      stuck.maxed is True)
+advance(cfg.VOC_HOLD_MAX_S + 60)
+# Enough samples for the EWMA to drag the baseline the 166 ticks home. The
+# cap decides WHEN learning resumes, not how fast -- VOC_BASELINE_A still
+# sets the pace, so this is deliberately not one sample, and a test that
+# asserted it was would be asserting the wrong thing about the fix.
+for _ in range(20000):
+    stuck.read_voc()
+    if stuck._voc_quiet():
+        break
+step(stuck)
+check("...and the baseline recovering is what releases it",
+      stuck.maxed is False,
+      "exc=%s base=%s" % (stuck.excess_voc, stuck.vocdet.base))
+
+# The hold is about a CONTINUOUS deviation, so air that clears must reset
+# the clock. Otherwise two unrelated events an hour apart would add up to a
+# cap expiry and learn straight through the second one.
+resets = armed(rise=80, fall=30, base=29000.0, raw=28700)
+resets.rh = resets.baseline
+resets.read_voc()
+check("a hold is started by bad air", resets.voc_hold_since is not None)
+resets.voc.voc = 29000
+# Twice, for the same reason the learning gate needs two: the hold clock is
+# read from the same pre-update snapshot the learning verdict is, so the
+# sample that brings the good news is still judged on the bad. Keeping the
+# two on one snapshot is the point -- a hold cleared a sample earlier than
+# learning resumed would be two clocks disagreeing about the same air.
+resets.read_voc()
+check("...is still held on the clearing sample itself",
+      resets.voc_hold_since is not None)
+resets.read_voc()
+check("...and cleared by the sample after it",
+      resets.voc_hold_since is None)
+
+# Both pixels come off one read, and the NOx baseline is learned on the same
+# verdict as the VOC one. Nothing acts on it: the sign has not been measured
+# on this part, so this asserts only that it is being recorded.
+both = armed(raw=29000, base=29000.0)
+both.read_voc()
+check("the NOx pixel is read and learned alongside the VOC one",
+      both.noxdet.raw == 18000 and both.noxdet.base == 18000.0,
+      "raw=%s base=%s" % (both.noxdet.raw, both.noxdet.base))
+check("...and reports its own deviation", both.excess_nox == 0,
+      "%s" % both.excess_nox)
 
 c = armed()
 step(c)
@@ -897,6 +1023,8 @@ check("a stood-down sensor cannot hold the fan on",
       "%s exc=%s" % (c.state, c.excess_voc))
 check("...and reports absence, not its last reading",
       c.vocdet.raw is None, "raw=%s" % c.vocdet.raw)
+check("...for both pixels, not just the one the fan acts on",
+      c.noxdet.raw is None, "raw=%s" % c.noxdet.raw)
 
 # The gate itself, with the stale reading deliberately still in place. There
 # is exactly one pass between the sensor standing down inside read() and

@@ -5,13 +5,19 @@ Modelled on the numbers actually measured in this bathroom -- baseline
 about forty minutes. Used for screenshots and for the chart regression, so
 the charts are exercised against the shape they exist to show.
 
-Rows are the device's full stored schema, all fifteen columns. They were
+Rows are the device's full stored schema, all eighteen columns. They were
 eleven, which predated both the ambient light column and the odor triple,
 so every chart added since drew nothing in the fixture and the suites that
 count charts had to ask the hardware whether a sensor was plugged in -- a
 question whose answer changed between two runs of the same test this
 afternoon. A fixture that carries every column makes the count a property
 of the app instead.
+
+The NOx triple was appended on 2026-11-02 and immediately proved the point
+again: the comparison chart is gated on NOx data being present, so with the
+fixture three columns short the chart appeared or vanished according to
+whether a real sensor happened to be answering, and the chart count went
+non-deterministic for exactly the reason the paragraph above describes.
 
 The odor event is the one measured on the bench on 2026-11-01 with
 isopropyl: a baseline near 30200 ticks, raw driven down about 4200, and a
@@ -66,10 +72,22 @@ def build(hours=6):
         else:
             dip = 4200.0 * math.exp(-(aerosol - 0.5) / 1.8)
         voc = voc_base - dip
+
+        # NOx, and the fixture's one job here is to show the discriminator
+        # working. Isopropyl is a reducing gas: it moves the VOC pixel and
+        # leaves the NOx pixel alone. So this stays flat THROUGH the event
+        # the VOC line dips on, which is the shape that separates an aerosol
+        # or a bathroom from a gas flame. A fixture where both pixels moved
+        # together would draw a chart that cannot tell them apart and would
+        # pass a comparison that distinguishes nothing.
+        nox_base = 18400.0 + 8.0 * math.sin(i / 150.0)
+        nox = nox_base + 6.0 * math.sin(i / 23.0)
+
         rows.append([t, round(rh, 1), round(base, 1), round(rh - base, 1),
                      round(temp, 1), round(dp, 1), round(light, 1),
                      rpm, fan, lit, 2 if fan else 1, round(amb, 1),
-                     int(voc), int(voc_base), int(voc_base - voc)])
+                     int(voc), int(voc_base), int(voc_base - voc),
+                     int(nox), int(nox_base), int(nox_base - nox)])
     return rows
 
 if __name__ == "__main__":

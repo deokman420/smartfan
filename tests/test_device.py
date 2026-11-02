@@ -250,8 +250,76 @@ out = mp(CLEAR_AND_CHECK)
 check("safe mode flag removed", "CLEAR" in out, out.strip().splitlines()[-1:] or "")
 
 reset()                       # last word to the device: run normally
-time.sleep(6)
-check("controller restarted", True)
+
+# Wait for it to actually BE back, and assert that it is.
+#
+# This was `time.sleep(6)` and `check("controller restarted", True)` -- a
+# fixed pause followed by an assertion that asserts nothing. Six seconds is
+# enough for the REPL to answer and nowhere near enough for WiFi to
+# associate, the HTTP server to bind, the broker to reconnect, or the SGP41
+# to clear its 60 s settle gate. Nothing noticed while this suite ran alone.
+#
+# Back to back it broke the two suites that run after it, and the failures
+# looked like bugs in them rather than unfinished business here: on
+# 2026-11-02 test_device_http could not reach the device at all, and test_ha
+# reported odour_baseline, excess_odour and nox_baseline "unavailable" --
+# which was true and correct, because a freshly reset board publishes None
+# for a learned baseline it has not learned yet. A suite that power-cycles
+# the hardware owes the next suite a device that is actually up, and owes
+# itself a check that says so.
+#
+# Both deadlines are waited out rather than just reachability, because the
+# odor baselines are the slower of the two and they are what the HA suite
+# reads.
+import json                                                   # noqa: E402
+import urllib.request                                         # noqa: E402
+
+HTTP_HOST = "fan.local"
+UP_DEADLINE = 150
+BASELINE_DEADLINE = 120
+
+
+def device_state(timeout=5):
+    """The device's own state over HTTP, or None if it is not answering."""
+    try:
+        with urllib.request.urlopen(
+                "http://%s/api/state" % HTTP_HOST, timeout=timeout) as r:
+            return json.loads(r.read().decode())
+    except Exception:
+        return None
+
+
+began = time.time()
+state = None
+while time.time() - began < UP_DEADLINE:
+    state = device_state()
+    if state is not None:
+        break
+    time.sleep(3)
+check("controller restarted and answers over the network", state is not None,
+      "after %ds" % int(time.time() - began))
+
+# The baseline is a learned value, so "present" is the only thing worth
+# waiting for -- not a particular number. A board with no SGP41 fitted never
+# reports one and must not hang this for two minutes, so an absent sensor
+# skips the wait entirely.
+#
+# Gated on voc_ok, not on voc. A reading of None means "no opinion yet",
+# which is what a FITTED sensor reports for the first ten seconds of its
+# conditioning window -- so testing voc here skipped the wait in precisely
+# the case it exists for, immediately after the reset above. voc_ok is None
+# only when no sensor answered the bus at boot.
+if state is not None and state.get("voc_ok") is not None:
+    began = time.time()
+    while (state.get("voc_base") is None
+           and time.time() - began < BASELINE_DEADLINE):
+        time.sleep(5)
+        state = device_state() or state
+    check("...and has learned its odor baseline again",
+          state.get("voc_base") is not None,
+          "voc=%s base=%s after %ds"
+          % (state.get("voc"), state.get("voc_base"),
+             int(time.time() - began)))
 
 # --- summary --------------------------------------------------------------
 passed = sum(1 for _, ok, _ in results if ok)

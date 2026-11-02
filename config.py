@@ -120,6 +120,26 @@ VOC_BASELINE_A  = 0.0005 # slower than BASELINE_A: odor events are shorter
                          # than showers and must not be learned as normal
 VOC_RECOVER_S   = 900    # no VOC triggering this long after a steam event,
                          # because drying a wet room moves the MOX signal too
+# How long the odor path may hold the baseline still before the baseline,
+# not the air, becomes the likelier explanation.
+#
+# _voc_learning() refuses to learn while the deviation is above
+# VOC_FALL_OFF, so an event cannot teach the baseline to ignore it. Left
+# unbounded that is a trap: the maxed latch ALSO releases only when the
+# deviation falls under VOC_FALL_OFF, so a baseline that is simply wrong --
+# seeded during warm-up, or after the unit is moved to a different room --
+# can neither correct itself nor let the latch go. Observed on 2026-11-02:
+# a baseline seeded 60 s after boot, while the element was still coming to
+# temperature, read +166 on air that had nothing wrong with it.
+#
+# Two hours because a real event in this room does not outlast it and a
+# wrong baseline does. The gas-hob event measured here was above
+# VOC_FALL_OFF for a bit over 90 minutes and decaying; a stale baseline
+# does not decay at all. Past the cap the deviation is treated as the
+# baseline's fault and learning resumes -- by which time MAX_RUN_S has
+# long since latched, so this changes what the controller BELIEVES, not
+# what the fan is doing. 0 disables the bound and restores the deadlock.
+VOC_HOLD_MAX_S  = 7200
 VOC_MAX_FAILS   = 10     # consecutive I2C failures before the path stands down
 
 # --- Timing, seconds --------------------------------------------------

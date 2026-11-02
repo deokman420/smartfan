@@ -101,6 +101,14 @@ _SENSORS = (
     ("voc",         "Odor raw",          "voc",      None,      None,          "measurement",      "mdi:scent"),
     ("voc_base",    "Odor baseline",     "voc_base", None,      None,          "measurement",      "mdi:scent"),
     ("voc_excess",  "Excess odor",       "voc_exc",  None,      None,          "measurement",      "mdi:scent"),
+    # The NOx pixel. Announced beside the VOC three because the pair is the
+    # point -- a chart of excess odor next to excess NOx is what separates a
+    # gas flame in the kitchen from a bathroom that needs clearing, and that
+    # comparison cannot be made from a channel nobody kept. Nothing acts on
+    # these; see voc.py on why the sign is not yet confirmed.
+    ("nox",         "NOx raw",           "nox",      None,      None,          "measurement",      "mdi:gas-burner"),
+    ("nox_base",    "NOx baseline",      "nox_base", None,      None,          "measurement",      "mdi:gas-burner"),
+    ("nox_excess",  "Excess NOx",        "nox_exc",  None,      None,          "measurement",      "mdi:gas-burner"),
     ("rpm",         "Fan speed",         "rpm",      "rpm",     None,          "measurement",      "mdi:fan"),
     ("state",       "Controller state",  "state",    None,      None,          None,               "mdi:state-machine"),
     ("runtime",     "Runtime today",     "run_min",  "min",     None,          "total_increasing", "mdi:timer-outline"),
@@ -238,6 +246,10 @@ class Snapshot:
         voc_raw = getattr(vdet, "raw", None) if vdet is not None else None
         voc_base = getattr(vdet, "base", None) if vdet is not None else None
         voc_exc = getattr(c, "excess_voc", None)
+        ndet = getattr(c, "noxdet", None)
+        nox_raw = getattr(ndet, "raw", None) if ndet is not None else None
+        nox_base = getattr(ndet, "base", None) if ndet is not None else None
+        nox_exc = getattr(c, "excess_nox", None)
         return {
             "state":    c.state,
             "temp":     round(c.temp, 1) if c.temp is not None else None,
@@ -271,6 +283,12 @@ class Snapshot:
             "voc_exc":  (None if voc_exc is None else int(voc_exc)),
             "voc_ok":   (bool(getattr(c.voc, "ok", False))
                          if voc_present else None),
+            # The NOx triple, None-preserving for the same reasons as the
+            # VOC one above. There is no nox_ok: both pixels come off one
+            # part, so voc_ok already says whether either reading is live.
+            "nox":      int(nox_raw) if nox_raw is not None else None,
+            "nox_base": int(nox_base) if nox_base is not None else None,
+            "nox_exc":  (None if nox_exc is None else int(nox_exc)),
             "fan_on":   bool(c.fan.value()),
             # What the fan is actually doing, not what it was told. A fan
             # turning while commanded off must read non-zero, or the one
@@ -480,6 +498,11 @@ class Telemetry:
         # are deliberately absent -- the excess is the one that carries a
         # decision. voc_ok is included unbucketed, because a sensor standing
         # down should be visible at once.
+        # The whole NOx triple is absent for the stronger version of that
+        # reason: nothing acts on it at all. It still reaches Home Assistant
+        # and the recorder on the 30 s interval, which is all a channel being
+        # kept for later analysis needs, and putting a raw MOX signal in the
+        # change test would publish on every 2 s sample to no end.
         return (p["state"], p.get("why"),
                 p["fan_on"], p["light_on"], p["fault"],
                 p["boost_left"], (p["rpm"] or 0) // 500,

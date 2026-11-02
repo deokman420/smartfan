@@ -37,7 +37,8 @@ reinterprets every row already on a device.
 import time
 
 FIELDS = ("t", "rh", "base", "exc", "temp", "dp", "light", "rpm", "fan",
-          "lit", "st", "amb", "voc", "voc_base", "voc_exc")
+          "lit", "st", "amb", "voc", "voc_base", "voc_exc",
+          "nox", "nox_base", "nox_exc")
 
 # Every row width this project has written, oldest first. Rows on a device's
 # flash outlive the build that wrote them, so each append of a column leaves
@@ -47,7 +48,8 @@ FIELDS = ("t", "rh", "base", "exc", "temp", "dp", "light", "rpm", "fan",
 #   11  t..st     the original row
 #   12  t..amb    the learned light ambient (2026-10-29)
 #   15  t..voc_exc  odor: raw, baseline, excess (2026-11-01)
-_WIDTHS = (11, 12, len(FIELDS))
+#   18  t..nox_exc  the NOx pixel, same triple (2026-11-02)
+_WIDTHS = (11, 12, 15, len(FIELDS))
 
 STATE_CODE = {"LEARN": 0, "IDLE": 1, "RUN": 2, "BOOST": 3, "FAULT": 4}
 
@@ -140,7 +142,7 @@ class History:
     def _add(self, p):
         for k in ("rh", "base", "exc", "temp", "dp", "light_pc",
                   "light_amb_pc", "rpm", "voc", "voc_base",
-                  "voc_exc"):
+                  "voc_exc", "nox", "nox_base", "nox_exc"):
             v = p.get(k)
             if v is None:
                 continue
@@ -382,6 +384,14 @@ def _row(bucket, interval_s, sums, cnts, flags, n):
         # a MOX signal of zero would plot as the worst air ever recorded.
         _int(mean("voc", 0)), _int(mean("voc_base", 0)),
         _int(mean("voc_exc", 0)),
+        # The NOx pixel, stored for one reason: the VOC channel alone cannot
+        # say whether an event is human-origin or a gas flame two rooms away,
+        # and nothing can choose a threshold for a signal with no recorded
+        # history. So this is written a week before anything reads it, the
+        # same way the VOC columns were. None when the sensor is absent, and
+        # for the same reason as above.
+        _int(mean("nox", 0)), _int(mean("nox_base", 0)),
+        _int(mean("nox_exc", 0)),
     ]
 
 

@@ -70,7 +70,15 @@ export const F = {
   amb: 11, // learned light ambient, appended for the same reason
   voc: 12, // odor raw ticks, appended for the same reason again
   vocBase: 13, // ...its learned baseline
-  vocExc: 14 // ...and the deviation the control loop acts on
+  vocExc: 14, // ...and the deviation the control loop acts on
+  // The sensor's second pixel, appended for the same reason once more. The
+  // VOC pixel sees reducing gases and the NOx pixel sees oxidizing ones, so
+  // the two together separate bathroom odor from a gas flame in the next
+  // room -- a distinction a single channel cannot draw, and the reason this
+  // is recorded well before anything acts on it.
+  nox: 15,
+  noxBase: 16,
+  noxExc: 17
 };
 
 /** Stored in F.st. Older samples simply omit it. */
@@ -131,7 +139,10 @@ export function record(p) {
     // and the chart has to show a gap where there was no sensor.
     num(p.voc),
     num(p.voc_base),
-    num(p.voc_exc)
+    num(p.voc_exc),
+    num(p.nox),
+    num(p.nox_base),
+    num(p.nox_exc)
   ];
 
   const next = rows.length >= MAX ? rows.slice(rows.length - MAX + 1) : rows.slice();

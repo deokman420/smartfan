@@ -34,6 +34,34 @@ samples, against 15. An odor event is shorter than a shower, and a baseline
 quick enough to follow one would learn the smell as normal and then report
 clean air as the deviation.
 
+TWO PIXELS, ONE ARITHMETIC. An SGP41 carries a VOC pixel and a NOx pixel,
+and this class serves both: handed a raw tick count it learns the quiet-air
+level and reports the deviation, which is the same job either way. The
+second instance exists because the two pixels answer different questions.
+The VOC pixel responds to reducing gases, which is what human-origin
+bathroom odor is made of -- H2S, mercaptans, ammonia, skatole. The NOx
+pixel responds to oxidizing gases, principally NO2, which is what a gas
+flame produces and what bathroom use does not. VOC moving with NOx flat and
+VOC moving with NOx is the discriminator this controller had no way to make
+with one channel: it ran for an hour on 2026-11-02 against odor carried in
+from a gas hob next door, correctly, but with no way to say so.
+
+THE NOx SIGN IS NOT CONFIRMED. For the VOC pixel the direction was measured
+on this part (see SIGN above) and `base - raw` is known to mean worse air.
+The NOx pixel has had no equivalent bench check, so nothing here or above
+this may act on its deviation yet. It is computed, recorded and published
+with the same `base - raw` convention purely so the sign can be read off a
+week of this room's own data -- a gas hob next door is a better NO2 source
+than anything on the bench -- exactly as the VOC thresholds were. Until
+then there is deliberately no NOX_RISE_ON to set: the fan cannot be armed
+on a signal whose direction is a guess.
+
+NOx WARMS UP MORE SLOWLY. sgp41.py records the VOC pixel flat after ~60 s
+from cold while sraw_nox was still falling ~80/s at 30 s. The `settled`
+gate it provides is the VOC figure, so an early NOx baseline is the weaker
+of the two. That costs nothing while nothing acts on it, and it is the
+first thing to re-measure before anything does.
+
 NO POLICY HERE. `update()` is told whether the room is quiet enough to learn
 from; it does not work that out. The humidity gate and VOC_RECOVER_S live in
 main.py, where something can see every sensor at once. A detector that
@@ -54,9 +82,20 @@ class Detector:
     the room is quiet, it returns a number. The tests drive it directly.
     """
 
-    def __init__(self, st, log=print):
+    def __init__(self, st, log=print, alpha=None, name="voc"):
         self.st = st
         self._log = log
+        # Which pixel this instance is reading, for the seed log only. Two
+        # detectors seeding one line apart with no way to tell which is
+        # which is the sort of log that gets read wrong at 2 a.m.
+        self.name = name
+        # The EWMA weight, or None for cfg.VOC_BASELINE_A. Both pixels use
+        # that figure today and the argument for it -- an odor event is
+        # shorter than a shower, so a baseline quick enough to follow one
+        # learns the smell as normal -- holds for either. It is a parameter
+        # rather than a second config key because a knob nobody has a
+        # measurement for is a knob that gets turned on a hunch.
+        self.alpha = alpha
         self.base = None     # learned baseline in raw ticks; None until seeded
         self.raw = None      # last raw reading, for the log and telemetry
 
@@ -101,9 +140,9 @@ class Detector:
         if learning:
             if self.base is None:
                 self.base = float(raw)
-                self._log("voc: baseline seeded at %d ticks" % raw)
+                self._log("%s: baseline seeded at %d ticks" % (self.name, raw))
             else:
-                a = cfg.VOC_BASELINE_A
+                a = cfg.VOC_BASELINE_A if self.alpha is None else self.alpha
                 self.base = (1 - a) * self.base + a * raw
         return self.excess(raw)
 

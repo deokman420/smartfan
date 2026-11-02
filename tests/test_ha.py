@@ -388,11 +388,29 @@ if boosted:
     # "stop". With the room light on, automatic correctly keeps running.
     # Asserting the fan stops here fails whenever the lights happen to be
     # on, which is exactly when someone would be using the bathroom.
-    lit = api("/api/states/" + eid("binary_sensor", "light_detected"))["state"]
+    #
+    # That fix named ONE of automatic's reasons, and there are three. It
+    # went red on 2026-11-02 with `light=off fan=on`, on a controller that
+    # was behaving perfectly: state RUN, reason "odor +84", because the odor
+    # path had just been armed at 80 ticks and the room was at 92. Humidity
+    # would have done the same thing on any run that happened during a
+    # shower. Every sensed reason added to the controller would have to be
+    # added here too, and a test that re-implements a subset of the rules it
+    # is checking goes stale the moment the rules grow -- which is the same
+    # mistake as the one the paragraph above describes, one sensor later.
+    #
+    # So ask the controller instead of guessing. It publishes the state it
+    # reached and the reason it reached it, and "the fan follows automatic"
+    # IS the claim that the output agrees with that state. This still has
+    # teeth: a fan left energised after a cancel while the controller says
+    # IDLE -- the actual regression worth catching here -- fails it.
+    state_now = api("/api/states/" + S)["state"]
+    why = api("/api/states/" + S)["attributes"].get("why")
     fan_now = api("/api/states/" + B)["state"]
-    expect = "on" if lit == "on" else "off"
+    expect = "off" if state_now == "IDLE" else "on"
     check("fan follows automatic after cancel", fan_now == expect,
-          "light=%s fan=%s expected=%s" % (lit, fan_now, expect))
+          "state=%s fan=%s expected=%s why=%s"
+          % (state_now, fan_now, expect, why))
 
 # --- summary --------------------------------------------------------------
 passed = sum(1 for _, ok, _ in results if ok)

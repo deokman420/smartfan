@@ -199,7 +199,7 @@ threading.Thread(target=httpd.serve_forever, daemon=True).start()
 # is unconditional: tests/seed_history.py seeds odor rows, so the app has
 # odor data whether or not a sensor is currently fitted.
 BASE_CHARTS = 5          # humidity, excess, temperature, light, fan speed
-ODOR_CHARTS = 2          # odor against baseline, excess odor
+ODOR_CHARTS = 3          # odor against baseline, excess odor, odor vs NOx
 
 
 cfg = {"mode": "broker",

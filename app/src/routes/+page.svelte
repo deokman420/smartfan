@@ -182,6 +182,12 @@
   // 0 disables odor triggering, so this is a falsy number on purpose: every
   // reader of it wants "is it armed" and "what is the level" in one value.
   let vocRiseOn = $derived(Number(cfg?.VOC_RISE_ON) || 0);
+  // Separate from hasVoc rather than folded into it. Both pixels come off
+  // one part, so in a working fleet the two flags agree -- but a board
+  // running firmware older than the NOx columns reports voc and not nox,
+  // and that board must still get its odor charts rather than two empty
+  // ones alongside them.
+  let hasNox = $derived(t?.nox != null || $history.some((r) => r[F.nox] != null));
 
   let ODOUR_CHARTS = $derived([
     {
@@ -225,6 +231,34 @@
           : [],
       series: [{ field: F.vocExc, label: 'Excess', color: 'var(--green)', fill: true }]
     },
+    // The discriminator, and the only chart here that answers a question
+    // rather than reporting a number. The two pixels respond to opposite
+    // chemistry: the VOC one to reducing gases, which is what human-origin
+    // bathroom odor is, and the NOx one to oxidizing gases, principally the
+    // NO2 a gas flame makes. So the shape of the pair names the source --
+    // odor alone is this room, the two together came from the kitchen.
+    // Both plotted as deviations because the raw levels are thousands of
+    // ticks apart and would need two axes to share a chart.
+    ...(hasNox
+      ? [
+          {
+            id: 'noxCompare',
+            title: 'Odor against NOx',
+            blurb:
+              'Two pixels, opposite chemistry. Bathroom odor is reducing gases and moves the odor line alone; a gas flame makes NO₂ and moves both. Nothing acts on the NOx line yet — it is being recorded so the thresholds come from this room rather than a datasheet.',
+            unit: 'ticks',
+            bands: F.fan,
+            bandOn: 'Fan on',
+            bandOff: 'Fan off',
+            bandStory: 'The fan ran',
+            bandIdle: 'The fan stayed off',
+            series: [
+              { field: F.vocExc, label: 'Excess odor', color: 'var(--green)', fill: true },
+              { field: F.noxExc, label: 'Excess NOx', color: 'var(--orange)' }
+            ]
+          }
+        ]
+      : [])
   ]);
 
   const RANGES = [
@@ -962,6 +996,19 @@
                       {t.voc_base == null
                         ? 'learning baseline'
                         : `baseline ${int(t.voc_base)} — lower is worse air`}
+                    </span>
+                  </div>
+                  <div>
+                    <span class="k">NOx</span>
+                    <span class="v mono-v">
+                      {t.nox_exc == null ? '—' : int(t.nox_exc)}
+                    </span>
+                    <span class="sub">
+                      {t.nox == null
+                        ? 'not reported by this firmware'
+                        : t.nox_base == null
+                          ? 'learning baseline'
+                          : `raw ${int(t.nox)} — moves with combustion, not with the fan`}
                     </span>
                   </div>
                   <div>

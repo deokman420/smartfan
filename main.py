@@ -233,9 +233,21 @@ class Controller:
         # here can raise FAULT, and self.voc of None means "no opinion, ever".
         # Stopping the humidity path over a secondary sensor would be a far
         # worse outcome than losing odor sensing.
-        self.vocdet = voc.Detector(self.st, log=print)
+        self.vocdet = voc.Detector(self.st, log=print, name="voc")
+        # The NOx pixel, learned the same way and acted on by nothing. It is
+        # here to answer a question one channel cannot: whether an odor event
+        # is human-origin (reducing gases, VOC only) or combustion carried in
+        # from the kitchen (NO2, which is what this pixel sees). Recorded and
+        # published so the answer comes off a week of this room's own data,
+        # which is how the VOC thresholds were set. voc.py carries why the
+        # sign cannot be assumed and why there is no threshold to go with it.
+        self.noxdet = voc.Detector(self.st, log=print, name="nox")
         self.voc = None            # sgp41.SGP41, or None if absent/disabled
         self.voc_recover_until = None   # VOC_RECOVER_S after a steam event
+        # When the odor path first went non-quiet, so a hold that has gone
+        # on too long can be told from one that is still plausible. None
+        # means the path is quiet and nothing is being held.
+        self.voc_hold_since = None
         if cfg.VOC_ENABLED:
             try:
                 import sgp41
@@ -423,14 +435,32 @@ class Controller:
             if not self.voc.ok:
                 # Stood down for good. Drop the last reading so every
                 # surface reports absence rather than a number frozen at
-                # whatever the sensor saw on its way out.
+                # whatever the sensor saw on its way out. Both pixels, or
+                # the NOx reading outlives the sensor it came from.
                 self.vocdet.raw = None
+                self.noxdet.raw = None
                 return
 
             got = self.voc.read(self.rh, self.temp)
             if got is None:
                 return          # still conditioning -- not an error
-            self.vocdet.update(got[0], self._voc_learning())
+            # How long the odor path has been holding the baseline still.
+            # Tracked here rather than inside _voc_learning() because this
+            # runs exactly once per sample: a predicate that started its own
+            # clock would restart it on every caller that asked, and the
+            # tests ask.
+            if self._voc_quiet():
+                self.voc_hold_since = None
+            elif self.voc_hold_since is None:
+                self.voc_hold_since = time.ticks_ms()
+
+            # One learning verdict for both pixels. They share a sensor, a
+            # sample and a room, so a moment quiet enough to learn one is
+            # quiet enough to learn the other -- and two gates that could
+            # disagree would be two baselines describing different rooms.
+            learning = self._voc_learning()
+            self.vocdet.update(got[0], learning)
+            self.noxdet.update(got[1], learning)
         except Exception as e:
             # A sensor fault here is logged and dropped. It must never reach
             # set_state(FAULT): see __init__.
@@ -452,11 +482,63 @@ class Controller:
         back, which takes over an hour. Waiting a minute for the hardware
         costs a minute; not waiting costs the rest of the hour. sgp41.py
         carries the measurement behind `settled`.
+
+        AND NOT WHILE THE ODOR SIGNAL IS STILL UP. The other four terms stop
+        this learning during a *run*, which is not the same as during an
+        event. A run that ends on MAX_RUN_S latches and returns to IDLE with
+        the air still bad, and every term above is then satisfied -- the
+        state is IDLE, the light is off, the room is dry -- so the baseline
+        walks onto the smell at cfg.VOC_BASELINE_A and the deviation decays
+        without the air changing at all. Measured here on 2026-11-02: after
+        an hour-long odor run hit the cap, the raw reading went 30394 to
+        30399 over the following twenty minutes -- flat, no recovery -- while
+        the baseline slid 30633 to 30571, so a reported excess of +240 became
+        +172 purely by forgetting. The event teaches the baseline to ignore
+        it, which is what voc.py's class docstring warns about and what the
+        other four terms were meant to prevent.
+
+        _voc_quiet() is the right test rather than a fresh comparison
+        because it is already the condition every other caller uses for
+        "the odor path has nothing to say", and it is inert when the path
+        is: it returns True with no sensor, no baseline, a stood-down
+        sensor, or VOC_RISE_ON at 0. So the first seed still happens, and
+        an observe-only rollout learns exactly as it did before.
+
+        BOUNDED, because unbounded it deadlocks. The first version of this
+        said a stuck-high reading merely freezes the baseline, and that
+        MAX_RUN_S and the latch bound the damage. They do not: the latch
+        releases on `not light_on and excess_rh low and _voc_quiet()`, and
+        _voc_quiet() is the same test being refused here. So a baseline
+        that is wrong rather than an air that is bad -- seeded during
+        warm-up, or after the unit is carried to another room -- can
+        neither correct itself nor release the latch, and the odor path is
+        stuck until someone reboots it or presses Relearn. Watched happening
+        on 2026-11-02 on a baseline seeded 60 s after boot, reading +166 on
+        air with nothing wrong with it.
+
+        So the refusal expires. Past cfg.VOC_HOLD_MAX_S the deviation is
+        taken to be the baseline's fault rather than the room's, and
+        learning resumes. That is the honest reading of a deviation that
+        has not decayed in two hours: real events decay and stale baselines
+        do not. config.py carries the figure and why it is two hours.
         """
         return (self.state == IDLE
                 and not self.light_on
                 and self.excess_rh <= self.st.RH_FALL_OFF
+                and (self._voc_quiet() or self._voc_hold_expired())
                 and self.voc is not None and self.voc.settled)
+
+    def _voc_hold_expired(self):
+        """Has the odor path held the baseline still for longer than it may?
+
+        False whenever nothing is being held, which includes every case
+        where the path is inert -- voc_hold_since is only ever set by
+        read_voc() on a sample the path was not quiet for.
+        """
+        cap = self.st.VOC_HOLD_MAX_S
+        if not cap or self.voc_hold_since is None:
+            return False
+        return ms_since(self.voc_hold_since) / 1000.0 >= cap
 
     def _voc_active(self):
         """Is the odor path allowed to influence the fan at all?
@@ -538,6 +620,18 @@ class Controller:
         carries that reasoning and the bench check for it.
         """
         return self.vocdet.excess()
+
+    @property
+    def excess_nox(self):
+        """The NOx pixel's deviation from its learned baseline, or None.
+
+        Same `base - raw` convention as excess_voc, and deliberately not the
+        same standing: the VOC sign was measured on this part and this one
+        has not been, so no caller may turn this into a decision yet. It is
+        reported so the sign and the scale can be read off recorded data.
+        voc.py carries the argument, under "THE NOx SIGN IS NOT CONFIRMED".
+        """
+        return self.noxdet.excess()
 
     def set_state(self, new, reason=""):
         if new == self.state:
@@ -964,8 +1058,9 @@ class Controller:
         elif cmd == "relearn":
             self.maxed = False
             self.baseline = self.rh
-            # Both learned baselines, or Relearn half-answers the request.
+            # Every learned baseline, or Relearn half-answers the request.
             self.vocdet.relearn()
+            self.noxdet.relearn()
             self.set_state(LEARN, "relearn via mqtt")
             self.entered_at = time.ticks_ms() - 59000
         elif cmd == "clear":
@@ -998,6 +1093,7 @@ class Controller:
         elif press == "long":
             self.baseline = self.rh
             self.vocdet.relearn()
+            self.noxdet.relearn()
             print("baseline relearned: %s" % self.baseline)
             self.set_state(LEARN, "manual relearn")
             self.entered_at = time.ticks_ms() - 59000   # short LEARN pass
@@ -1029,8 +1125,10 @@ class Controller:
         dp = self.dew_point()
         raw_voc = self.vocdet.raw
         exc_voc = self.excess_voc
+        raw_nox = self.noxdet.raw
+        exc_nox = self.excess_nox
         print("%-5s rh=%s%% t=%sC dp=%s base=%s exc=%+.1f "
-              "light=%d amb=%s rise=%+d(%s) voc=%s odr=%s "
+              "light=%d amb=%s rise=%+d(%s) voc=%s odr=%s nox=%s nxd=%s "
               "fan=%d rpm=%d %s" % (
                   self.state,
                   self.rh, self.temp,
@@ -1042,6 +1140,8 @@ class Controller:
                   self.light_rise(), "ON" if self.light_on else "off",
                   "%d" % raw_voc if raw_voc is not None else "--",
                   "%+d" % exc_voc if exc_voc is not None else "--",
+                  "%d" % raw_nox if raw_nox is not None else "--",
+                  "%+d" % exc_nox if exc_nox is not None else "--",
                   self.fan.value(), self.rpm,
                   self.fault_reason if self.state == FAULT else ""))
 
