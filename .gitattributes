@@ -1,0 +1,37 @@
+# Line endings, pinned, because the firmware's fingerprint hashes bytes.
+#
+# telemetry.py publishes a hash of each tracked file so the dashboard can say
+# whether the board is running the code in this repo. That hash is over the
+# raw bytes, so a file checked out with CRLF reports a mismatch against a
+# device holding the identical code -- a false alarm that looks exactly like
+# a failed deploy, and one that cost real time to chase down.
+#
+# This machine has core.autocrlf=true, which converts on checkout. Without
+# the rules below, cloning or switching branches silently rewrites every
+# source file and every fingerprint stops matching. The device itself has no
+# opinion: MicroPython reads either, and the .py files are copied to flash
+# byte for byte by mpremote.
+#
+# So: everything that reaches the board, or gets hashed, or is compared
+# against either, stays LF on every platform.
+
+*.py        text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.svelte    text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.json      text eol=lf
+*.webmanifest text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+*.svg       text eol=lf
+.gitignore  text eol=lf
+.gitattributes text eol=lf
+
+# Fonts are binary. Git's heuristics usually get this right; saying so
+# removes the chance of a diff or a conversion touching them at all.
+*.woff2     binary
+*.png       binary
+*.jpg       binary
+*.ico       binary
