@@ -126,7 +126,7 @@ print("app regression against %s\n" % secrets.MQTT_HOST)
 # --- a witness on the broker, independent of the app ------------------------
 # The app's own screen cannot prove the fan got a command: the app would be
 # marking its own homework. This subscriber is the second opinion.
-latest = {"state": None, "payload": None}
+latest = {"state": None, "payload": None, "any_voc": False}
 
 
 def on_connect(c, u, f, rc):
@@ -138,6 +138,15 @@ def on_message(c, u, m):
         d = json.loads(m.payload.decode())
         latest["payload"] = d
         latest["state"] = d.get("state")
+        # voc_ok, not voc: voc is None through the sensor's 10 s conditioning
+        # window and whenever a read is dropped, while voc_ok is non-null
+        # for as long as an SGP41 is fitted at all. The app's charts follow
+        # whether odour data exists anywhere it can see -- the live payload
+        # OR the week of rows backfilled off the device's flash -- so the
+        # question the test has to ask is "is a sensor fitted", and only
+        # voc_ok answers that without racing the conditioning window.
+        if d.get("voc") is not None or d.get("voc_ok") is not None:
+            latest["any_voc"] = True
     except Exception:
         pass
 
@@ -184,6 +193,46 @@ threading.Thread(target=httpd.serve_forever, daemon=True).start()
 # these tests exist to prove the broker path still works end to end, against
 # the live broker and the live fan. The device path has its own suite in
 # tests/test_httpd.py.
+# One always-present state card, plus the charts the app builds from CHARTS
+# in +page.svelte. Counted here rather than written as a total, because a
+# total is the thing that goes stale when a chart is added.
+BASE_CHARTS = 5          # humidity, excess, temperature, light, fan speed
+ODOUR_CHARTS = 2         # odour against baseline, excess odour
+
+
+def odour_available():
+    """Whether the app can see odour data from ANY source it loads.
+
+    The charts follow the data, not the hardware, and the app has two
+    sources: the live payload and the week of rows it backfills off the
+    device's flash. So an SGP41 that has been unplugged since this morning
+    still has charts, correctly -- the readings it took are real history
+    and hiding them would be the bug. Asking the device both questions is
+    the only way to predict the count without racing the sensor or
+    outliving a rewiring session.
+    """
+    if latest["any_voc"]:
+        return True
+    try:
+        import urllib.request
+        body = urllib.request.urlopen(
+            "http://fan.local/api/history?since=0", timeout=20).read().decode()
+    except Exception:
+        return False
+    for line in body.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        cols = line.split(",")
+        if len(cols) > F_VOC and cols[F_VOC] not in ("", "None"):
+            return True
+    return False
+
+
+# Column index of the raw odour reading in a stored row, taken from the
+# device's own schema so it cannot drift from store.FIELDS.
+import store                                                # noqa: E402
+F_VOC = store.FIELDS.index("voc")
+
 cfg = {"mode": "broker",
        "host": secrets.MQTT_HOST, "port": 1884, "room": "bathroom",
        "username": secrets.MQTT_USER, "password": secrets.MQTT_PASS}
@@ -239,6 +288,22 @@ with sync_playwright() as pw:
     shown_state = page.locator(".state").inner_text().strip()
     check("controller state matches telemetry",
           shown_state == p["state"], "%s vs %s" % (shown_state, p["state"]))
+
+    # The at-a-glance strip carries every input that can start the fan. An
+    # odour sensor that only appears further down the page is a sensor
+    # nobody looks at, so it is checked here beside fan and light rather
+    # than only in its own panel.
+    #
+    # Lowercased before matching: inner_text() returns text AS RENDERED and
+    # these keys are uppercased in CSS, the same trap as the boost label
+    # below.
+    strip = page.locator(".facts").first.inner_text().lower()
+    for label in ("Fan", "Light", "Odour", "Fault"):
+        check("status strip carries %s" % label, label.lower() in strip)
+    if latest["any_voc"]:
+        check("the odour tile says something",
+              not any(w in strip for w in ("not fitted", "stood down")),
+              " | ".join(strip.splitlines()))
 
     go("Readings")
     # Bracketed, because `latest` keeps moving: the subscriber thread folds
@@ -299,10 +364,17 @@ with sync_playwright() as pw:
     # not carry charts that can never draw anything, so the expected count
     # follows the payload rather than being pinned to whatever this room's
     # fan happened to have fitted the day the test was written.
-    expect = 8 if p.get("voc") is not None else 6
+    #
+    # It follows EVERY payload seen, not the one snapshot `p` holds. The
+    # SGP41 publishes None through its 10 s conditioning window, so a run
+    # that starts in that window reads "no sensor" from `p` while the app,
+    # which keeps a chart once a reading has reached history, is already
+    # drawing eight. That is the app behaving correctly and the test
+    # measuring the wrong instant.
+    expect = 1 + BASE_CHARTS + (ODOUR_CHARTS if odour_available() else 0)
     check("every chart renders", cards.count() == expect,
-          "%d cards, expected %d (voc=%r)"
-          % (cards.count(), expect, p.get("voc")))
+          "%d cards, expected %d (odour data=%s)"
+          % (cards.count(), expect, odour_available()))
     # A chart that silently falls back to the empty state still "renders".
     check("charts actually draw data",
           page.locator(".chart-card svg path.line").count() >= 5,

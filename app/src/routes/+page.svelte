@@ -179,6 +179,9 @@
   // SGP41 fitted would otherwise carry two charts that can never draw
   // anything, and an empty chart tells the reader less than no chart does.
   let hasVoc = $derived(t?.voc != null || $history.some((r) => r[F.voc] != null));
+  // 0 disables odour triggering, so this is a falsy number on purpose: every
+  // reader of it wants "is it armed" and "what is the level" in one value.
+  let vocRiseOn = $derived(Number(cfg?.VOC_RISE_ON) || 0);
 
   let ODOUR_CHARTS = $derived([
     {
@@ -709,6 +712,29 @@
                     {t.light_on ? 'On' : 'Off'}
                   </span>
                 </div>
+                <!-- The odour tile reads the raw tick count to decide whether
+                     there is a sensor, not the excess: excess is 0 both for
+                     clean air and for no sensor at all, and a strip that
+                     cannot tell those apart is worse than one that omits the
+                     row. `Clean` is only claimed once a baseline exists. -->
+                <div class="fact">
+                  <span class="k">Odour</span>
+                  {#if t.voc == null}
+                    <span class="fact-v">
+                      {t.voc_ok === false ? 'Stood down' : 'Not fitted'}
+                    </span>
+                  {:else if t.voc_base == null}
+                    <span class="fact-v">Learning</span>
+                  {:else}
+                    <span
+                      class="fact-v {vocRiseOn && t.voc_exc >= vocRiseOn
+                        ? 'tone-warn'
+                        : ''}"
+                    >
+                      {t.voc_exc > 0 ? `+${int(t.voc_exc)}` : 'Clean'}
+                    </span>
+                  {/if}
+                </div>
                 <div class="fact" class:alert={t.fault}>
                   <span class="k">Fault</span>
                   {#if t.fault}
@@ -876,8 +902,8 @@
                     <span class="k">Excess</span>
                     <span class="v display">{int(t.voc_exc)}</span>
                     <span class="sub">
-                      {Number(cfg.VOC_RISE_ON)
-                        ? `fan starts at ${int(cfg.VOC_RISE_ON)}`
+                      {vocRiseOn
+                        ? `fan starts at ${int(vocRiseOn)}`
                         : 'watching only — never starts the fan'}
                     </span>
                   </div>

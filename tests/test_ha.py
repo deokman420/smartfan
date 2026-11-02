@@ -42,9 +42,35 @@ def check(name, ok, detail=""):
     return ok
 
 
+def _scheme():
+    """http or https, whichever this HA answers WITHOUT redirecting.
+
+    This host moved behind TLS. urllib follows an http->https redirect for
+    a GET, so every read kept working and the move went unnoticed -- but on
+    a 302 it also turns a POST into a GET, so every service call arrived as
+    405 Method Not Allowed. The suite looked broken when the host had
+    simply moved, which is why the scheme is settled once, up front, rather
+    than left to a redirect to paper over.
+    """
+    for scheme in ("https", "http"):
+        try:
+            r = urllib.request.Request(
+                "%s://%s/api/" % (scheme, HA_HOST),
+                headers={"Authorization": "Bearer " + TOKEN})
+            with urllib.request.urlopen(r, timeout=12) as f:
+                if f.status == 200 and f.url.startswith(scheme + "://"):
+                    return scheme
+        except Exception:
+            pass
+    return "http"
+
+
+SCHEME = _scheme()
+
+
 def api(path, data=None):
     r = urllib.request.Request(
-        "http://%s%s" % (HA_HOST, path),
+        "%s://%s%s" % (SCHEME, HA_HOST, path),
         headers={"Authorization": "Bearer " + TOKEN,
                  "Content-Type": "application/json"},
         data=json.dumps(data).encode() if data is not None else None)
@@ -85,23 +111,81 @@ for attempt in range(20):
 states = {e["entity_id"]: e for e in api("/api/states")}
 
 # --- discovery produced what we expect ------------------------------------
-PREFIX = "bathroom_fan_controller"
-mine = {k: v for k, v in states.items() if PREFIX in k}
+# TWO prefixes, on purpose. Home Assistant builds an entity_id from the
+# device name the first time it sees an entity and never rewrites it, so
+# renaming this device to "Bathroom SmartFan" left everything announced
+# before the rename under bathroom_fan_controller_* and everything after it
+# under bathroom_smartfan_*. One device, two prefixes, and a suite that
+# knows only the older one silently stops checking every entity added since
+# -- which is exactly what happened: this read `>= 31` against 31 old-prefix
+# entities while ten newer ones went unexamined.
+PREFIXES = ("bathroom_fan_controller", "bathroom_smartfan")
+mine = {k: v for k, v in states.items() if any(p in k for p in PREFIXES)}
 check("device discovered in HA", len(mine) > 0, "%d entities" % len(mine))
-check("expected entity count", len(mine) >= 31, "%d found" % len(mine))
 
-for kind, n in (("sensor.", 16), ("binary_sensor.", 3), ("button.", 3),
-                ("number.", 8), ("select.", 1)):
+
+def eid(domain, suffix):
+    """An entity_id for this device, under whichever prefix HA gave it.
+
+    See PREFIXES: entities announced before and after the device was renamed
+    carry different prefixes, so nothing here may assume one of them.
+    """
+    for prefix in PREFIXES:
+        key = "%s.%s_%s" % (domain, prefix, suffix)
+        if key in states:
+            return key
+    return "%s.%s_%s" % (domain, PREFIXES[0], suffix)
+
+# Counted from the device's own tables rather than written down. Every count
+# in this project that was written down has gone stale, so none of them are
+# written down any more.
+sys.path.insert(0, ROOT)
+import settings                                              # noqa: E402
+import telemetry                                             # noqa: E402
+
+ANNOUNCED = ([("sensor.", lab) for _, lab, *_ in telemetry._SENSORS]
+             + [("binary_sensor.", lab) for _, lab, *_ in telemetry._BINARY]
+             + [("button.", lab) for _, lab, *_ in telemetry._BUTTONS]
+             + [(("select." if spec[0] == "select" else "number."), spec[5])
+                for spec in settings.SPECS.values()])
+
+
+def slug(text):
+    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+
+
+check("expected entity count", len(mine) >= len(ANNOUNCED),
+      "%d found, %d announced" % (len(mine), len(ANNOUNCED)))
+
+# Named, not counted: a count says eight are missing, a name says which.
+absent = [(kind, lab) for kind, lab in ANNOUNCED
+          if not any(k.startswith(kind) and slug(lab) in k for k in mine)]
+check("every announced entity reached HA", not absent,
+      ", ".join("%s%s" % (k, lab) for k, lab in absent[:4]))
+
+for kind in ("sensor.", "binary_sensor.", "button.", "number.", "select."):
+    want = sum(1 for k, _ in ANNOUNCED if k == kind)
     got = sum(1 for k in mine if k.startswith(kind))
-    check("%s entities" % kind.rstrip("."), got >= n, "%d/%d" % (got, n))
+    check("%s entities" % kind.rstrip("."), got >= want, "%d/%d" % (got, want))
 
-unavail = [k for k, v in mine.items() if v["state"] in ("unavailable", "unknown")
-           and not k.startswith("button.")]
-check("no unavailable entities", not unavail, ", ".join(unavail[:3]))
+# An odour sensor that is not fitted, or has stood down, publishes None and
+# so reads `unknown` in HA. That is the sensor reporting absence correctly,
+# not a broken entity, and a suite that fails on it fails on every board
+# without an SGP41. The binary sensor is the authority on whether one is
+# there, so the odour readings are only required to have values when it
+# says yes.
+odour_fitted = states.get(eid("binary_sensor", "odour_sensor"), {})     .get("state") == "on"
+exempt = () if odour_fitted else ("odour", "excess_odour")
+unavail = [k for k, v in mine.items()
+           if v["state"] in ("unavailable", "unknown")
+           and not k.startswith("button.")
+           and not any(w in k for w in exempt)]
+check("no unavailable entities", not unavail,
+      ", ".join(unavail[:3]) or ("odour exempt" if not odour_fitted else ""))
 
 # --- values are sane, not just present ------------------------------------
 def val(key, lo, hi):
-    e = states.get("sensor.%s_%s" % (PREFIX, key))
+    e = states.get(eid("sensor", key))
     if not e:
         return check("%s present" % key, False)
     try:
@@ -119,12 +203,32 @@ val("uptime", 0, 100000)
 
 # 2c diagnostics: an outage must be reported, not silently papered over.
 for key in ("link_reconnects", "last_outage", "last_boot_reason", "build"):
-    e = states.get("sensor.%s_%s" % (PREFIX, key))
+    e = states.get(eid("sensor", key))
     check("diagnostic present: %s" % key, e is not None,
           e["state"] if e else "missing")
 
 # --- dashboard integrity --------------------------------------------------
-ws = websocket.create_connection("ws://%s/api/websocket" % HA_HOST, timeout=15)
+def ha_websocket():
+    """Open HA's websocket, over TLS if that is how this host answers.
+
+    This asked for ws:// unconditionally. The HA in front of us now
+    redirects the handshake to https, and websocket-client follows that
+    redirect and then refuses its own target with "scheme https is
+    invalid" -- a failure that reads like a library bug and is really
+    "this host is TLS now". Trying wss first and falling back keeps the
+    suite working against a plain HA and a fronted one alike.
+    """
+    errs = []
+    for url in ("wss://%s/api/websocket" % HA_HOST,
+                "ws://%s/api/websocket" % HA_HOST):
+        try:
+            return websocket.create_connection(url, timeout=15)
+        except Exception as e:
+            errs.append("%s: %s" % (url.split(":")[0], e))
+    raise RuntimeError("; ".join(errs))
+
+
+ws = ha_websocket()
 _nid = [0]
 
 
@@ -181,7 +285,7 @@ if check("gauge present", len(gauges) == 1):
 ws.close()
 
 # --- writable settings: round-trip, clamping, and mode --------------------
-N = "number.%s_humidity_rise_to_start" % PREFIX
+N = eid("number", "humidity_rise_to_start")
 before = api("/api/states/" + N)["state"]
 
 
@@ -209,9 +313,9 @@ check("accepts the documented maximum", ok_hi,
 api("/api/services/number/set_value", {"entity_id": N, "value": float(before)})
 check("restored to %s" % before, wait_for(N, before))
 
-M = "select.%s_mode" % PREFIX
-S_ = "sensor.%s_controller_state" % PREFIX
-B_ = "binary_sensor.%s_fan_running" % PREFIX
+M = eid("select", "mode")
+S_ = eid("sensor", "controller_state")
+B_ = eid("binary_sensor", "fan_running")
 api("/api/services/select/select_option", {"entity_id": M, "option": "Force on"})
 forced = wait_for(S_, "RUN")
 check("Force on overrides automatic", forced, api("/api/states/" + S_)["state"])
@@ -227,12 +331,12 @@ api("/api/services/select/select_option", {"entity_id": M, "option": "Auto"})
 check("returns to Auto", wait_for(M, "Auto"))
 
 # --- the command path actually reaches the fan ----------------------------
-S = "sensor.%s_controller_state" % PREFIX
-B = "binary_sensor.%s_fan_running" % PREFIX
+S = eid("sensor", "controller_state")
+B = eid("binary_sensor", "fan_running")
 start = api("/api/states/" + S)["state"]
 
 api("/api/services/button/press",
-    {"entity_id": "button.%s_boost_15_min" % PREFIX})
+    {"entity_id": eid("button", "boost_15_min")})
 boosted = False
 for _ in range(8):
     time.sleep(2)
@@ -244,11 +348,11 @@ check("boost command reaches the device", boosted)
 if boosted:
     check("fan runs during boost",
           api("/api/states/" + B)["state"] == "on")
-    left = api("/api/states/sensor.%s_boost_remaining" % PREFIX)["state"]
+    left = api("/api/states/" + eid("sensor", "boost_remaining"))["state"]
     check("boost countdown populated", left not in ("0", "unknown"), "%s min" % left)
 
     api("/api/services/button/press",
-        {"entity_id": "button.%s_cancel_boost" % PREFIX})
+        {"entity_id": eid("button", "cancel_boost")})
     cancelled = False
     for _ in range(8):
         time.sleep(2)
@@ -260,7 +364,7 @@ if boosted:
     # "stop". With the room light on, automatic correctly keeps running.
     # Asserting the fan stops here fails whenever the lights happen to be
     # on, which is exactly when someone would be using the bathroom.
-    lit = api("/api/states/binary_sensor.%s_light_detected" % PREFIX)["state"]
+    lit = api("/api/states/" + eid("binary_sensor", "light_detected"))["state"]
     fan_now = api("/api/states/" + B)["state"]
     expect = "on" if lit == "on" else "off"
     check("fan follows automatic after cancel", fan_now == expect,
