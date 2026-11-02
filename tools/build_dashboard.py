@@ -102,8 +102,16 @@ E = {
     "rh_off":     N + "humidity_fall_to_stop",
     "voc_on":     N + "odour_rise_to_start",
     "voc_off":    N + "odour_fall_to_stop",
-    "l_on":       N + "light_on_threshold",
-    "l_off":      N + "light_off_threshold",
+    # The four that actually drive the light path. light_on_threshold and
+    # light_off_threshold were here until now, and both were DEAD: the
+    # ambient-tracking rework replaced absolute levels with a rate test, so
+    # the firmware stopped announcing them and stopped reading them. They
+    # survived only as retained discovery messages on the broker, which is
+    # why the dashboard could still show two dials that moved nothing.
+    "l_step":     N + "light_switch_step",
+    "l_rise_on":  N + "light_rise_to_start",
+    "l_rise_off": N + "light_rise_to_stop",
+    "l_only":     N + "light_only_run",
     "min_run":    N + "minimum_run",
     "max_run":    N + "maximum_run",
     "post_light": N + "run_after_lights_out",
@@ -211,8 +219,16 @@ CONFIG = {
                 # the history below, not off the datasheet.
                 tile(E["voc_on"], "Odor start"),
                 tile(E["voc_off"], "Odor stop"),
-                tile(E["l_on"], "Light on"),
-                tile(E["l_off"], "Light off"),
+                # The fixture is found by how FAST the reading jumps away
+                # from the learned ambient, never by a level -- daylight in
+                # this room reads higher than the bulb. These four are that
+                # test: the jump that counts as a switch, how far above
+                # ambient it must land, how close to ambient it must return,
+                # and how long light alone may run the fan.
+                tile(E["l_step"], "Switch step"),
+                tile(E["l_rise_on"], "Light start"),
+                tile(E["l_rise_off"], "Light stop"),
+                tile(E["l_only"], "Light-only run"),
                 tile(E["min_run"], "Min run"),
                 tile(E["max_run"], "Max run"),
                 tile(E["post_light"], "After lights"),

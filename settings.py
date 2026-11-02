@@ -27,8 +27,15 @@ FILE = "settings.json"
 SPECS = {
     "RH_RISE_ON":   ("number", 3.0, 20.0, 0.5, "%",   "Humidity rise to start", "mdi:water-plus"),
     "RH_FALL_OFF":  ("number", 1.0, 10.0, 0.5, "%",   "Humidity fall to stop",  "mdi:water-minus"),
-    "VOC_RISE_ON":  ("number", 0, 300, 5, None,       "Odor rise to start",    "mdi:scent"),
-    "VOC_FALL_OFF": ("number", 0, 300, 5, None,       "Odor fall to stop",     "mdi:scent-off"),
+    # Ceiling 1000, not 300. 300 was a guess made before any event had been
+    # measured, and the first real one peaked at +3972 ticks against a noise
+    # floor of about 30 and room wander of about 100 -- so the useful range
+    # is far wider than the guess allowed. Worse, the threshold was armed AT
+    # 300, which left Home Assistant able to make the fan more sensitive and
+    # not less: the only answer to a 3 a.m. false start would have been to
+    # disable the path. A cap you are sitting on is not a cap.
+    "VOC_RISE_ON":  ("number", 0, 1000, 5, None,      "Odor rise to start",    "mdi:scent"),
+    "VOC_FALL_OFF": ("number", 0, 1000, 5, None,      "Odor fall to stop",     "mdi:scent-off"),
     "LIGHT_STEP_ON":    ("number", 2000, 40000, 500, None, "Light switch step",  "mdi:brightness-6"),
     "LIGHT_RISE_ON":    ("number", 1000, 40000, 500, None, "Light rise to start", "mdi:brightness-5"),
     "LIGHT_RISE_OFF":   ("number", 500, 39000, 500, None, "Light rise to stop",  "mdi:brightness-4"),
