@@ -1,0 +1,192 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Smartfan bathroom controller",
+        "description": "Enter the controller's address. Prefer the mDNS name over an IP address: the DHCP lease moves, the name does not.",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "Host name or IP address, with no http:// and no port. The default suits a single controller on the network."
+        }
+      },
+      "reconfigure": {
+        "title": "Change the controller's address",
+        "description": "Point this device at a different address. It must be the same board: a different one is rejected rather than quietly taking over these entities and their history.",
+        "data": {
+          "host": "Host"
+        },
+        "data_description": {
+          "host": "Host name or IP address, with no http:// and no port."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nothing answered at that address. Check the controller has power and is on the network; its status LEDs and the page it serves at http://<host>/ are the quickest things to look at.",
+      "unsupported_api": "The controller is running firmware newer than this integration understands. Update the integration."
+    },
+    "abort": {
+      "already_configured": "This controller is already set up.",
+      "wrong_device": "That address is a different controller. To add it, set it up as a new device instead.",
+      "cannot_connect": "Nothing answered at that address.",
+      "reconfigure_successful": "The address was updated."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "fan_running": {
+        "name": "Fan running"
+      },
+      "light_detected": {
+        "name": "Light detected"
+      },
+      "fault": {
+        "name": "Fault"
+      },
+      "odor_sensor": {
+        "name": "Odor sensor fault"
+      }
+    },
+    "button": {
+      "boost": {
+        "name": "Boost"
+      },
+      "cancel_boost": {
+        "name": "Cancel boost"
+      },
+      "relearn": {
+        "name": "Relearn baselines"
+      }
+    },
+    "number": {
+      "humidity_rise_to_start": {
+        "name": "Humidity rise to start"
+      },
+      "humidity_fall_to_stop": {
+        "name": "Humidity fall to stop"
+      },
+      "odor_rise_to_start": {
+        "name": "Odor rise to start"
+      },
+      "odor_fall_to_stop": {
+        "name": "Odor fall to stop"
+      },
+      "light_switch_step": {
+        "name": "Light switch step"
+      },
+      "light_rise_to_start": {
+        "name": "Light rise to start"
+      },
+      "light_rise_to_stop": {
+        "name": "Light rise to stop"
+      },
+      "light_only_run": {
+        "name": "Light-only run"
+      },
+      "minimum_run": {
+        "name": "Minimum run"
+      },
+      "maximum_run": {
+        "name": "Maximum run"
+      },
+      "run_after_lights_out": {
+        "name": "Run after lights out"
+      },
+      "boost_duration": {
+        "name": "Boost duration"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "Auto": "Auto",
+          "Force off": "Force off",
+          "Force on": "Force on"
+        }
+      }
+    },
+    "sensor": {
+      "temperature": {
+        "name": "Temperature"
+      },
+      "humidity": {
+        "name": "Humidity"
+      },
+      "dew_point": {
+        "name": "Dew point"
+      },
+      "humidity_baseline": {
+        "name": "Humidity baseline"
+      },
+      "excess_humidity": {
+        "name": "Excess humidity"
+      },
+      "light_level": {
+        "name": "Light level"
+      },
+      "odor_raw": {
+        "name": "Odor raw"
+      },
+      "odor_baseline": {
+        "name": "Odor baseline"
+      },
+      "excess_odor": {
+        "name": "Excess odor"
+      },
+      "nox_raw": {
+        "name": "NOx raw"
+      },
+      "nox_baseline": {
+        "name": "NOx baseline"
+      },
+      "excess_nox": {
+        "name": "Excess NOx"
+      },
+      "fan_speed": {
+        "name": "Fan speed"
+      },
+      "controller_state": {
+        "name": "Controller state",
+        "state": {
+          "LEARN": "Learning",
+          "IDLE": "Idle",
+          "RUN": "Running",
+          "BOOST": "Boosting",
+          "FAULT": "Fault"
+        }
+      },
+      "runtime_today": {
+        "name": "Runtime today"
+      },
+      "boost_remaining": {
+        "name": "Boost remaining"
+      },
+      "wifi_signal": {
+        "name": "Wi-Fi signal"
+      },
+      "uptime": {
+        "name": "Uptime"
+      },
+      "link_reconnects": {
+        "name": "Link reconnects"
+      },
+      "last_outage": {
+        "name": "Last outage"
+      },
+      "last_boot_reason": {
+        "name": "Last boot reason"
+      },
+      "build": {
+        "name": "Firmware build"
+      },
+      "app_build": {
+        "name": "App build"
+      },
+      "state_reason": {
+        "name": "Reason"
+      }
+    }
+  }
+}
