@@ -98,9 +98,9 @@ _SENSORS = (
     ("baseline",    "Humidity baseline", "base",     "%",       "humidity",    "measurement",      None),
     ("excess",      "Excess humidity",   "exc",      "%",       None,          "measurement",      "mdi:water-percent"),
     ("light",       "Light level",       "light_pc", "%",       None,          "measurement",      "mdi:brightness-6"),
-    ("voc",         "Odour raw",         "voc",      None,      None,          "measurement",      "mdi:scent"),
-    ("voc_base",    "Odour baseline",    "voc_base", None,      None,          "measurement",      "mdi:scent"),
-    ("voc_excess",  "Excess odour",      "voc_exc",  None,      None,          "measurement",      "mdi:scent"),
+    ("voc",         "Odor raw",          "voc",      None,      None,          "measurement",      "mdi:scent"),
+    ("voc_base",    "Odor baseline",     "voc_base", None,      None,          "measurement",      "mdi:scent"),
+    ("voc_excess",  "Excess odor",       "voc_exc",  None,      None,          "measurement",      "mdi:scent"),
     ("rpm",         "Fan speed",         "rpm",      "rpm",     None,          "measurement",      "mdi:fan"),
     ("state",       "Controller state",  "state",    None,      None,          None,               "mdi:state-machine"),
     ("runtime",     "Runtime today",     "run_min",  "min",     None,          "total_increasing", "mdi:timer-outline"),
@@ -127,7 +127,7 @@ _BINARY = (
     ("fault",    "Fault",          "fault",    "problem", None),
     # So a sensor that has stood down after VOC_MAX_FAILS is visible, rather
     # than silently inert with its three sensors frozen on a last good value.
-    ("voc_ok",   "Odour sensor",   "voc_ok",   None,      "mdi:scent"),
+    ("voc_ok",   "Odor sensor",    "voc_ok",   None,      "mdi:scent"),
 )
 
 
@@ -229,7 +229,7 @@ class Snapshot:
         # minutes between two pushes, while the fan itself carried on fine.
         amb = getattr(c, "light_amb", None)
         rise = c.light_rise() if hasattr(c, "light_rise") else 0
-        # Same getattr discipline for the odour path, and for the same
+        # Same getattr discipline for the odor path, and for the same
         # reason: voc.py and sgp41.py cannot land in the same OTA batch as
         # the main.py that grows these attributes, so this file will run for
         # a while against a Controller that has none of them.
@@ -468,7 +468,7 @@ class Telemetry:
         # on every sample and flood the recorder; omitting it entirely leaves
         # Home Assistant showing the spin-up reading -- around 2,500 -- for up
         # to 30 s after the fan has actually settled near 4,000.
-        # The odour excess is bucketed to 25 ticks for exactly the reason rpm
+        # The odor excess is bucketed to 25 ticks for exactly the reason rpm
         # is bucketed to 500: a raw MOX signal moves on every 2 s sample, and
         # putting it in the signature unbucketed turns the 30 s publish
         # interval into a 2 s one and floods the recorder. voc and voc_base

@@ -46,7 +46,7 @@ FIELDS = ("t", "rh", "base", "exc", "temp", "dp", "light", "rpm", "fan",
 #
 #   11  t..st     the original row
 #   12  t..amb    the learned light ambient (2026-10-29)
-#   15  t..voc_exc  odour: raw, baseline, excess (2026-11-01)
+#   15  t..voc_exc  odor: raw, baseline, excess (2026-11-01)
 _WIDTHS = (11, 12, len(FIELDS))
 
 STATE_CODE = {"LEARN": 0, "IDLE": 1, "RUN": 2, "BOOST": 3, "FAULT": 4}
@@ -374,7 +374,7 @@ def _row(bucket, interval_s, sums, cnts, flags, n):
         # written before it existed simply end early, and every reader here
         # and in the app treats a missing trailing field as absent.
         mean("light_amb_pc"),
-        # Odour: raw ticks, the learned baseline, and the deviation --
+        # Odor: raw ticks, the learned baseline, and the deviation --
         # the same triple the humidity path stores, and stored the same
         # way for the same reason: the chart draws the pair, and a
         # baseline the reader has to derive is one the reader cannot see.

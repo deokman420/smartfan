@@ -151,7 +151,18 @@ ANNOUNCED = ([("sensor.", lab) for _, lab, *_ in telemetry._SENSORS]
 
 
 def slug(text):
-    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    """A label as HA would have slugged it into an entity_id.
+
+    British spellings are folded to American ones. HA freezes an entity_id
+    at the name it first saw and never rewrites it, so the odor entities
+    are registered as ..._odour_* while their labels now read "Odor". The
+    id is the historical record and the label is the current display name;
+    matching one against the other has to allow for the spelling having
+    moved on. Entity ids are not renamed to match, because renaming one
+    orphans every dashboard and automation that references it.
+    """
+    text = text.lower().replace("odour", "odor")
+    return re.sub(r"[^a-z0-9]+", "_", text).strip("_")
 
 
 check("expected entity count", len(mine) >= len(ANNOUNCED),
@@ -159,7 +170,8 @@ check("expected entity count", len(mine) >= len(ANNOUNCED),
 
 # Named, not counted: a count says eight are missing, a name says which.
 absent = [(kind, lab) for kind, lab in ANNOUNCED
-          if not any(k.startswith(kind) and slug(lab) in k for k in mine)]
+          if not any(k.startswith(kind) and slug(lab) in slug(k)
+                     for k in mine)]
 check("every announced entity reached HA", not absent,
       ", ".join("%s%s" % (k, lab) for k, lab in absent[:4]))
 
@@ -168,20 +180,20 @@ for kind in ("sensor.", "binary_sensor.", "button.", "number.", "select."):
     got = sum(1 for k in mine if k.startswith(kind))
     check("%s entities" % kind.rstrip("."), got >= want, "%d/%d" % (got, want))
 
-# An odour sensor that is not fitted, or has stood down, publishes None and
+# An odor sensor that is absent, or has failed, publishes None and
 # so reads `unknown` in HA. That is the sensor reporting absence correctly,
 # not a broken entity, and a suite that fails on it fails on every board
 # without an SGP41. The binary sensor is the authority on whether one is
 # there, so the odour readings are only required to have values when it
 # says yes.
-odour_fitted = states.get(eid("binary_sensor", "odour_sensor"), {})     .get("state") == "on"
-exempt = () if odour_fitted else ("odour", "excess_odour")
+odor_fitted = states.get(eid("binary_sensor", "odour_sensor"), {})     .get("state") == "on"
+exempt = () if odor_fitted else ("odour", "excess_odour")
 unavail = [k for k, v in mine.items()
            if v["state"] in ("unavailable", "unknown")
            and not k.startswith("button.")
            and not any(w in k for w in exempt)]
 check("no unavailable entities", not unavail,
-      ", ".join(unavail[:3]) or ("odour exempt" if not odour_fitted else ""))
+      ", ".join(unavail[:3]) or ("odour exempt" if not odor_fitted else ""))
 
 # --- values are sane, not just present ------------------------------------
 def val(key, lo, hi):
@@ -272,9 +284,21 @@ check("dashboard references entities", len(refs) >= 15, "%d refs" % len(refs))
 
 # The gauge bands encode the control thresholds. If someone retunes config.py
 # and forgets the dashboard, the gauge quietly lies about when the fan runs.
-gauges = [c for s in view["sections"] for c in s["cards"] if c["type"] == "gauge"]
-if check("gauge present", len(gauges) == 1):
-    sev = gauges[0].get("severity", {})
+#
+# Found by the entity it shows, not by being the only gauge on the page.
+# This asserted `len(gauges) == 1`, which was true until the odor card
+# brought a second one, and then the whole threshold check stopped running
+# -- the band assertions are nested under it, so a passing suite went from
+# 38 checks to 36 and the two that mattered were the ones that vanished.
+gauges = [c for s in view["sections"] for c in s["cards"]
+          if c.get("type") == "gauge"]
+rh_gauge = [g for g in gauges
+            if g.get("entity") == eid("sensor", "excess_humidity")]
+check("odor gauge present", any(
+    g.get("entity") == eid("sensor", "excess_odour") for g in gauges))
+if check("humidity gauge present", len(rh_gauge) == 1,
+         "%d of %d gauges" % (len(rh_gauge), len(gauges))):
+    sev = rh_gauge[0].get("severity", {})
     check("gauge red band == RH_RISE_ON",
           sev.get("red") == cfg_value("RH_RISE_ON"),
           "gauge %s vs config %s" % (sev.get("red"), cfg_value("RH_RISE_ON")))

@@ -87,7 +87,7 @@ class FakeWDT:
 class FakeI2C:
     """An empty bus: nothing answers, every transfer raises.
 
-    Deliberately empty rather than a working SGP41 stub. The odour path is
+    Deliberately empty rather than a working SGP41 stub. The odor path is
     an enhancement, and the behaviour that matters most is that a missing
     sensor leaves this controller identical to the one that predates it --
     so every test in this file runs with the path absent, and any state
@@ -220,8 +220,8 @@ def step(c, passes=1):
         c.rpm_idle = 0
         c.read_light()
         # In the loop's order: after the climate read, which supplies the
-        # odour sensor's compensation. A no-op while c.voc is None, which is
-        # every test above the odour section.
+        # odor sensor's compensation. A no-op while c.voc is None, which is
+        # every test above the odor section.
         c.read_voc()
         if not c.step_selftest():
             c.check_fan_health()
@@ -583,7 +583,7 @@ check("then ends on the humidity, the way it always did",
       c.state == main.IDLE and c.fan.value() == 0,
       "%s exc=%+.1f" % (c.state, c.excess_rh))
 
-print("\n\nodour sensing: the driver, the detector, and the gates\n")
+print("\n\nodor sensing: the driver, the detector, and the gates\n")
 
 import sgp41                                         # noqa: E402
 import voc as vocmod                                 # noqa: E402
@@ -748,7 +748,7 @@ def armed(rise=200, fall=50, base=29000.0, raw=28700):
 
 c = armed()
 step(c)
-check("odour starts the fan in a dark, dry room",
+check("odor starts the fan in a dark, dry room",
       c.state == main.RUN and c.fan.value() == 1,
       "%s exc=%s" % (c.state, c.excess_voc))
 
@@ -759,13 +759,13 @@ check("VOC_RISE_ON of 0 never triggers, however bad the air",
       c.state == main.IDLE and c.fan.value() == 0,
       "%s exc=%s" % (c.state, c.excess_voc))
 
-# A damp room suppresses odour triggering for VOC_RECOVER_S, because drying
+# A damp room suppresses odor triggering for VOC_RECOVER_S, because drying
 # moves the MOX signal on its own and would hand the fan a second reason to
 # run just as the first expired.
 c = armed()
 c.rh = c.baseline + 5.0          # above RH_FALL_OFF, below RH_RISE_ON
 step(c)
-check("a damp room gates the odour trigger off",
+check("a damp room gates the odor trigger off",
       c.state == main.IDLE, "%s" % c.state)
 c.rh = c.baseline
 step(c)
@@ -777,12 +777,12 @@ check("then arms again once the recovery window passes",
       c.state == main.RUN, "%s" % c.state)
 
 # The latch. Every independent reason to run must be quiet before it lets
-# go, or a stuck-high odour reading releases it on humidity alone.
+# go, or a stuck-high odor reading releases it on humidity alone.
 c = armed()
 c.maxed = True
 c.rh = c.baseline                # humidity half satisfied
 step(c)
-check("the maxed latch holds while the odour signal is still high",
+check("the maxed latch holds while the odor signal is still high",
       c.maxed is True)
 c.voc.voc = 29000                # air clears
 step(c, 2)
@@ -793,7 +793,7 @@ c = armed()
 step(c)
 advance(cfg.MIN_RUN_S + cfg.SAMPLE_S)
 step(c)
-check("a run is held open by odour alone", c.state == main.RUN,
+check("a run is held open by odor alone", c.state == main.RUN,
       "%s ran=%ds" % (c.state, c.fan_seconds()))
 c.voc.voc = 29000
 step(c, 2)
@@ -806,7 +806,7 @@ check("and ends when the air clears", c.state == main.IDLE,
 # vote on whether the humidity path works.
 
 c = build()
-check("an empty bus leaves the odour path disabled", c.voc is None)
+check("an empty bus leaves the odor path disabled", c.voc is None)
 check("and reports no excess at all, rather than zero excess",
       c.excess_voc is None)
 step(c)
@@ -827,7 +827,7 @@ check("a sensor with no reading yet cannot trigger",
 # A stood-down sensor must not hold a run open on its last good reading.
 c = armed()
 step(c)
-check("odour run started", c.state == main.RUN)
+check("odor run started", c.state == main.RUN)
 # Stand it down with the air still reading BAD, and leave the baseline in
 # place. This is the shape that mattered: read() returns None for ever
 # after, so the detector keeps its last reading, and an _voc_active() that

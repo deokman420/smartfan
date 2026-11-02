@@ -23,9 +23,52 @@ TOKEN = re.search(r'HASS_LLAT\s*=\s*"?([^"\s]+)', env).group(1)
 
 NL = chr(10)          # written via heredocs; avoids escaping backslash-n
 
-P = "sensor.bathroom_fan_controller_"
-B = "binary_sensor.bathroom_fan_controller_"
-N = "number.bathroom_fan_controller_"
+# Domains only. The prefix is resolved per entity, because this device
+# answers to two of them: Home Assistant builds an entity_id from the
+# device name the first time it sees an entity and never rewrites it, so
+# renaming this device to "Bathroom SmartFan" left everything announced
+# before the rename under bathroom_fan_controller_* and everything after
+# it -- the whole odor path, and the four light settings from the
+# ambient-tracking rework -- under bathroom_smartfan_*. One prefix written
+# here pointed the Odor card at six entities that do not exist.
+P = "sensor."
+B = "binary_sensor."
+N = "number."
+
+PREFIXES = ("bathroom_fan_controller", "bathroom_smartfan")
+
+
+def _live_entities():
+    """Entity ids HA currently holds, or an empty set if it cannot be asked.
+
+    Read over HTTP before the config is built, because the config needs the
+    answers and the WebSocket session does not open until main(). An empty
+    set is not fatal: resolution falls back to the first prefix and the
+    missing-entity report at the end of main() still catches it.
+    """
+    import urllib.request
+    host = HA_WS.split("://", 1)[1].split("/", 1)[0]
+    for scheme in ("https", "http"):
+        try:
+            r = urllib.request.Request(
+                "%s://%s/api/states" % (scheme, host),
+                headers={"Authorization": "Bearer " + TOKEN})
+            with urllib.request.urlopen(r, timeout=15) as f:
+                return {e["entity_id"] for e in json.load(f)}
+        except Exception:
+            continue
+    print("warning: could not read HA states; entity ids unverified")
+    return set()
+
+
+def resolve(domain_and_suffix):
+    """'sensor.humidity' -> the real entity_id, whichever prefix HA gave it."""
+    domain, suffix = domain_and_suffix.split(".", 1)
+    for prefix in PREFIXES:
+        candidate = "%s.%s_%s" % (domain, prefix, suffix)
+        if candidate in LIVE:
+            return candidate
+    return "%s.%s_%s" % (domain, PREFIXES[0], suffix)
 
 E = {
     "state":      P + "controller_state",
@@ -35,9 +78,9 @@ E = {
     "base":       P + "humidity_baseline",
     "exc":        P + "excess_humidity",
     "light":      P + "light_level",
-    "voc":        P + "odour_raw",
-    "voc_base":   P + "odour_baseline",
-    "voc_exc":    P + "excess_odour",
+    "voc":        P + "odour_raw",        # id frozen at the old spelling
+    "voc_base":   P + "odour_baseline",   # see PREFIXES: HA never renames
+    "voc_exc":    P + "excess_odour",     # an entity_id it has issued
     "rpm":        P + "fan_speed",
     "runtime":    P + "runtime_today",
     "rssi":       P + "wifi_signal",
@@ -51,10 +94,10 @@ E = {
     "light_on":   B + "light_detected",
     "fault":      B + "fault",
     "voc_ok":     B + "odour_sensor",
-    "btn_boost":  "button.bathroom_fan_controller_boost_15_min",
-    "btn_cancel": "button.bathroom_fan_controller_cancel_boost",
-    "btn_relearn": "button.bathroom_fan_controller_relearn_baseline",
-    "mode":       "select.bathroom_fan_controller_mode",
+    "btn_boost":  "button.boost_15_min",
+    "btn_cancel": "button.cancel_boost",
+    "btn_relearn": "button.relearn_baseline",
+    "mode":       "select.mode",
     "rh_on":      N + "humidity_rise_to_start",
     "rh_off":     N + "humidity_fall_to_stop",
     "voc_on":     N + "odour_rise_to_start",
@@ -66,6 +109,13 @@ E = {
     "post_light": N + "run_after_lights_out",
     "boost_dur":  N + "boost_duration",
 }
+
+LIVE = _live_entities()
+E = {k: resolve(v) for k, v in E.items()}
+_unresolved = sorted(v for v in E.values() if LIVE and v not in LIVE)
+if _unresolved:
+    print("warning: %d entity id(s) not in HA: %s"
+          % (len(_unresolved), ", ".join(_unresolved)))
 
 
 def heading(text, icon):
@@ -155,12 +205,12 @@ CONFIG = {
                 heading("Thresholds", "mdi:tune-vertical"),
                 tile(E["rh_on"], "Start at"),
                 tile(E["rh_off"], "Stop below"),
-                # Both ship at 0, which means the odour path watches and
-                # publishes but never touches the fan. Raise "Odour start"
+                # Both ship at 0, which means the odor path watches and
+                # publishes but never touches the fan. Raise "Odor start"
                 # off 0 to arm it -- and pick the number off a real event in
                 # the history below, not off the datasheet.
-                tile(E["voc_on"], "Odour start"),
-                tile(E["voc_off"], "Odour stop"),
+                tile(E["voc_on"], "Odor start"),
+                tile(E["voc_off"], "Odor stop"),
                 tile(E["l_on"], "Light on"),
                 tile(E["l_off"], "Light off"),
                 tile(E["min_run"], "Min run"),
@@ -202,12 +252,12 @@ CONFIG = {
                 },
             ]},
 
-            # Odour sits directly under humidity, because the two are read
+            # Odor sits directly under humidity, because the two are read
             # together: this card answers "was there a reason to run that the
             # humidity could not see?", which is the question the sensor was
             # bought to answer.
             {"type": "grid", "cards": [
-                heading("Odour", "mdi:scent"),
+                heading("Odor", "mdi:scent"),
                 {
                     "type": "gauge",
                     "entity": E["voc_exc"],
@@ -223,7 +273,7 @@ CONFIG = {
                 tile(E["voc_ok"], "Sensor", icon="mdi:scent"),
                 {
                     "type": "history-graph",
-                    "title": "Odour against its baseline",
+                    "title": "Odor against its baseline",
                     "hours_to_show": 24,
                     "entities": [
                         {"entity": E["voc"], "name": "Raw ticks"},
@@ -347,11 +397,16 @@ def main():
     missing = sorted(e for e in refs if e not in live)
     print("missing entities: %s" % (", ".join(missing) if missing else "none"))
     unused = sorted(e for e in live
-                    if "bathroom_fan_controller" in e and e not in refs)
+                    if any(p in e for p in PREFIXES) and e not in refs)
     print("entities not shown: %s" % (", ".join(unused) if unused else "none"))
     print("URL: https://ha.local.phbeks.com/%s/main" % URL_PATH)
     ws.close()
     return 0
 
 
-sys.exit(main())
+# Guarded. This was a bare `sys.exit(main())`, so merely importing this
+# module to inspect the entity map SAVED the dashboard to Home Assistant --
+# an import that reads like a read and writes to a live system. Anything
+# wanting the resolved ids can now import this safely.
+if __name__ == "__main__":
+    sys.exit(main())

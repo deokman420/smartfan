@@ -6,17 +6,17 @@ about forty minutes. Used for screenshots and for the chart regression, so
 the charts are exercised against the shape they exist to show.
 
 Rows are the device's full stored schema, all fifteen columns. They were
-eleven, which predated both the ambient light column and the odour triple,
+eleven, which predated both the ambient light column and the odor triple,
 so every chart added since drew nothing in the fixture and the suites that
 count charts had to ask the hardware whether a sensor was plugged in -- a
 question whose answer changed between two runs of the same test this
 afternoon. A fixture that carries every column makes the count a property
 of the app instead.
 
-The odour event is the one measured on the bench on 2026-11-01 with
+The odor event is the one measured on the bench on 2026-11-01 with
 isopropyl: a baseline near 30200 ticks, raw driven down about 4200, and a
 recovery taking a few minutes. It sits in the quiet before the shower, so
-the odour charts show an event the humidity charts do not -- which is the
+the odor charts show an event the humidity charts do not -- which is the
 whole reason that sensor is fitted.
 """
 import json, math, time
@@ -54,7 +54,7 @@ def build(hours=6):
         # light_rise() zero and the Light chart a flat pair of lines.
         amb = 1.6
 
-        # Odour: an aerosol 20 minutes before the shower, clearing over
+        # Odor: an aerosol 20 minutes before the shower, clearing over
         # about six. Raw ticks fall as the air gets worse, so the excess is
         # base - raw. Both are stored, because the chart draws the pair.
         voc_base = 30200.0 + 12.0 * math.sin(i / 180.0)

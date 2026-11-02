@@ -227,12 +227,12 @@ class Controller:
         self.lightdet = light.Detector(self.st, log=print)
         self.light_prev = False    # light_on as decide() last saw it, for edges
 
-        # The odour path is strictly an enhancement. A missing, dead or
+        # The odor path is strictly an enhancement. A missing, dead or
         # disabled sensor must leave this controller behaving exactly as it
         # did without it -- so everything here is allowed to fail, nothing
         # here can raise FAULT, and self.voc of None means "no opinion, ever".
         # Stopping the humidity path over a secondary sensor would be a far
-        # worse outcome than losing odour sensing.
+        # worse outcome than losing odor sensing.
         self.vocdet = voc.Detector(self.st, log=print)
         self.voc = None            # sgp41.SGP41, or None if absent/disabled
         self.voc_recover_until = None   # VOC_RECOVER_S after a steam event
@@ -400,7 +400,7 @@ class Controller:
             return False
 
     def read_voc(self):
-        """One odour sample, fed through the detector. Never raises.
+        """One odor sample, fed through the detector. Never raises.
 
         The humidity reading is passed in as compensation: the SGP41 derives
         its own raw signal from element resistance, which moves with RH and
@@ -411,7 +411,7 @@ class Controller:
         if self.voc is None:
             return
         try:
-            # Any humid spell suppresses odour triggering for a while after
+            # Any humid spell suppresses odor triggering for a while after
             # it. Drying a wet room moves the MOX signal on its own, so a
             # shower would otherwise hand the fan a second reason to run
             # just as the first one expired.
@@ -447,7 +447,7 @@ class Controller:
                 and self.excess_rh <= self.st.RH_FALL_OFF)
 
     def _voc_active(self):
-        """Is the odour path allowed to influence the fan at all?
+        """Is the odor path allowed to influence the fan at all?
 
         False while the sensor is absent, while it has stood down, while
         VOC_RISE_ON is 0 (the observe-only rollout setting), or before a
@@ -478,7 +478,7 @@ class Controller:
         return True
 
     def _voc_quiet(self):
-        """True when the odour path has no objection to the fan stopping.
+        """True when the odor path has no objection to the fan stopping.
 
         Returns True when the path is inert, so an absent or disabled sensor
         can never hold a run open or keep the maxed latch closed.
@@ -516,7 +516,7 @@ class Controller:
     def excess_voc(self):
         """Ticks below the learned clean-air baseline, or None.
 
-        Positive means worse air. None means the odour path has no opinion:
+        Positive means worse air. None means the odor path has no opinion:
         no sensor, no reading, or no baseline yet. It is never 0 for those,
         because 0 is a real reading -- air exactly as clean as normal. See
         voc.Detector.excess().
@@ -706,7 +706,7 @@ class Controller:
                 #
                 # Every independent reason to run must be quiet before the
                 # latch lets go. Each new sensor adds a term here: a
-                # stuck-high odour reading would otherwise release the latch
+                # stuck-high odor reading would otherwise release the latch
                 # on humidity alone and the fan would cycle for ever.
                 if (not self.light_on
                         and self.excess_rh <= self.st.RH_FALL_OFF
@@ -720,7 +720,7 @@ class Controller:
                 # exactly the gap this sensor was bought to close: air that
                 # needs clearing with nobody there to press Boost and no
                 # humidity to notice.
-                self.set_state(RUN, "odour +%d" % self.excess_voc)
+                self.set_state(RUN, "odor +%d" % self.excess_voc)
             return
 
         # state == RUN
@@ -749,7 +749,7 @@ class Controller:
         # window, and this is what bounds a bad reading to ten minutes rather
         # than an afternoon. It latches for the same reason MAX_RUN_S does.
         # ...and only when nothing else still justifies the run. Latching a
-        # dry room while the odour signal is still high would stop the very
+        # dry room while the odor signal is still high would stop the very
         # event the second sensor exists to catch.
         if (self.light_on and ran >= self.st.LIGHT_ONLY_MAX_S
                 and self.excess_rh <= self.st.RH_FALL_OFF
@@ -1002,7 +1002,7 @@ class Controller:
 
         Every sensed quantity appears here beside the state it produced, so
         a bench session can see why the fan did what it did without the
-        dashboard. Each odour field is gated on its own value being present,
+        dashboard. Each odor field is gated on its own value being present,
         so `--` means "nothing to say" and a number always means a real
         reading -- including `+0`, which is air exactly as clean as normal
         and no longer indistinguishable from an absent sensor.

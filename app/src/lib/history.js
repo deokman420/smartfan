@@ -68,7 +68,7 @@ export const F = {
   lit: 9,
   st: 10, // controller state, appended so older samples stay valid
   amb: 11, // learned light ambient, appended for the same reason
-  voc: 12, // odour raw ticks, appended for the same reason again
+  voc: 12, // odor raw ticks, appended for the same reason again
   vocBase: 13, // ...its learned baseline
   vocExc: 14 // ...and the deviation the control loop acts on
 };
@@ -275,7 +275,7 @@ function between(sorted, lo, hi) {
 function num(v) {
   // null and '' must survive as null. Number(null) is 0 and 0 is finite,
   // so this used to turn "the device has no reading" into a reading of
-  // zero -- which for an odour tick count plots as the worst air ever
+  // zero -- which for an odor tick count plots as the worst air ever
   // recorded, and for an excess is indistinguishable from air exactly as
   // clean as normal. Only undefined was being caught, via NaN.
   if (v == null || v === '') return null;

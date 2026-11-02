@@ -141,7 +141,7 @@ def on_message(c, u, m):
         # voc_ok, not voc: voc is None through the sensor's 10 s conditioning
         # window and whenever a read is dropped, while voc_ok is non-null
         # for as long as an SGP41 is fitted at all. The app's charts follow
-        # whether odour data exists anywhere it can see -- the live payload
+        # whether odor data exists anywhere it can see -- the live payload
         # OR the week of rows backfilled off the device's flash -- so the
         # question the test has to ask is "is a sensor fitted", and only
         # voc_ok answers that without racing the conditioning window.
@@ -195,11 +195,11 @@ threading.Thread(target=httpd.serve_forever, daemon=True).start()
 # tests/test_httpd.py.
 # One always-present state card, plus the charts the app builds from CHARTS
 # in +page.svelte. Counted here rather than written as a total, because a
-# total is the thing that goes stale when a chart is added. The odour pair
-# is unconditional: tests/seed_history.py seeds odour rows, so the app has
-# odour data whether or not a sensor is currently fitted.
+# total is the thing that goes stale when a chart is added. The odor pair
+# is unconditional: tests/seed_history.py seeds odor rows, so the app has
+# odor data whether or not a sensor is currently fitted.
 BASE_CHARTS = 5          # humidity, excess, temperature, light, fan speed
-ODOUR_CHARTS = 2         # odour against baseline, excess odour
+ODOR_CHARTS = 2          # odor against baseline, excess odor
 
 
 cfg = {"mode": "broker",
@@ -259,7 +259,7 @@ with sync_playwright() as pw:
           shown_state == p["state"], "%s vs %s" % (shown_state, p["state"]))
 
     # The at-a-glance strip carries every input that can start the fan. An
-    # odour sensor that only appears further down the page is a sensor
+    # odor sensor that only appears further down the page is a sensor
     # nobody looks at, so it is checked here beside fan and light rather
     # than only in its own panel.
     #
@@ -267,11 +267,11 @@ with sync_playwright() as pw:
     # these keys are uppercased in CSS, the same trap as the boost label
     # below.
     strip = page.locator(".facts").first.inner_text().lower()
-    for label in ("Fan", "Light", "Odour", "Fault"):
+    for label in ("Fan", "Light", "Odor", "Fault"):
         check("status strip carries %s" % label, label.lower() in strip)
     if latest["any_voc"]:
-        check("the odour tile says something",
-              not any(w in strip for w in ("not fitted", "stood down")),
+        check("the odor tile says something",
+              not any(w in strip for w in ("no sensor", "sensor failed")),
               " | ".join(strip.splitlines()))
 
     go("Readings")
@@ -328,25 +328,13 @@ with sync_playwright() as pw:
     # --- charts -----------------------------------------------------------
     go("Charts")
     cards = page.locator(".chart-card")
-    # Six charts, plus the two odour ones -- but only when the device
-    # actually reports an odour reading. A board with no SGP41 fitted does
-    # not carry charts that can never draw anything, so the expected count
-    # follows the payload rather than being pinned to whatever this room's
-    # fan happened to have fitted the day the test was written.
-    #
-    # It follows EVERY payload seen, not the one snapshot `p` holds. The
-    # SGP41 publishes None through its 10 s conditioning window, so a run
-    # that starts in that window reads "no sensor" from `p` while the app,
-    # which keeps a chart once a reading has reached history, is already
-    # drawing eight. That is the app behaving correctly and the test
-    # measuring the wrong instant.
     # Deterministic, because the fixture carries all fifteen columns
-    # including the odour triple. This used to be predicted from the live
+    # including the odor triple. This used to be predicted from the live
     # sensor, and it was wrong in both directions within one afternoon:
-    # the sensor publishes None through its conditioning window, and then
-    # the part was unplugged mid-session. The charts follow the DATA, so
-    # giving the fixture the data is what makes the count knowable.
-    expect = 1 + BASE_CHARTS + ODOUR_CHARTS
+    # the sensor publishes None through its 10 s conditioning window, and
+    # then the part was unplugged mid-session. The charts follow the DATA,
+    # so giving the fixture the data is what makes the count knowable.
+    expect = 1 + BASE_CHARTS + ODOR_CHARTS
     check("every chart renders", cards.count() == expect,
           "%d cards, expected %d" % (cards.count(), expect))
     # A chart that silently falls back to the empty state still "renders".

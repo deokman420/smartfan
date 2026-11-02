@@ -1,6 +1,6 @@
 """Is the air worse than this room's normal?
 
-The odour signal, and the second sensed reason this controller has to run.
+The odor signal, and the second sensed reason this controller has to run.
 Before it, the only non-button reason was humidity above baseline, which
 covers showers and nothing else -- so the other thing a bathroom fan is for
 produced no signal at all and read as an empty room.
@@ -25,12 +25,12 @@ choosing any threshold -- `calibrate.py voc` prints the direction.
 
 WHY NOT light.py's ARITHMETIC. That detector is edge-triggered on a
 one-sample jump, because its problem was that sunlight and the bulb overlap
-in level but differ a thousandfold in rate. Odour has the opposite
+in level but differ a thousandfold in rate. Odor has the opposite
 character: slow, diffuse, no edge. An edge detector would never fire on it.
 
 WHY THE BASELINE IS SLOWER THAN THE HUMIDITY ONE. cfg.VOC_BASELINE_A is
 0.0005 against BASELINE_A's 0.002 -- about 67 minutes to settle at 2 s
-samples, against 15. An odour event is shorter than a shower, and a baseline
+samples, against 15. An odor event is shorter than a shower, and a baseline
 quick enough to follow one would learn the smell as normal and then report
 clean air as the deviation.
 

@@ -175,11 +175,11 @@
     }
   ]);
 
-  // Only offered when the room has actually recorded odour. A board with no
+  // Only offered when the room has actually recorded odor. A board with no
   // SGP41 fitted would otherwise carry two charts that can never draw
   // anything, and an empty chart tells the reader less than no chart does.
   let hasVoc = $derived(t?.voc != null || $history.some((r) => r[F.voc] != null));
-  // 0 disables odour triggering, so this is a falsy number on purpose: every
+  // 0 disables odor triggering, so this is a falsy number on purpose: every
   // reader of it wants "is it armed" and "what is the level" in one value.
   let vocRiseOn = $derived(Number(cfg?.VOC_RISE_ON) || 0);
 
@@ -190,8 +190,8 @@
       // The signal FALLS as the air gets worse, so the raw line dipping
       // below its baseline is the event -- which is why this chart is worth
       // having next to the excess one rather than instead of it.
-      id: 'odour',
-      title: 'Odour against its baseline',
+      id: 'odor',
+      title: 'Odor against its baseline',
       blurb:
         'The sensor reads gas resistance, which falls as the air gets worse — so a dip below the baseline is the event, not a rise above it.',
       unit: 'ticks',
@@ -201,13 +201,13 @@
       bandStory: 'The fan ran',
       bandIdle: 'The fan stayed off',
       series: [
-        { field: F.voc, label: 'Odour', color: 'var(--green)', fill: true },
+        { field: F.voc, label: 'Odor', color: 'var(--green)', fill: true },
         { field: F.vocBase, label: 'Baseline', color: 'var(--purple)', dash: true }
       ]
     },
     {
-      id: 'odourExcess',
-      title: 'Excess odour',
+      id: 'odorExcess',
+      title: 'Excess odor',
       blurb:
         'The number the control loop acts on. While the start threshold reads 0 the sensor only watches — nothing here touches the fan.',
       unit: 'ticks',
@@ -713,13 +713,13 @@
                   </span>
                 </div>
                 <!-- Four distinct things, four distinct words. voc_exc is
-                     null when the odour path has no opinion and a number
+                     null when the odor path has no opinion and a number
                      when it does, so `Clean` is a measurement and not a
                      guess: +0 means air exactly as clean as this room's
                      normal, which is a different fact from having no
                      sensor, and both used to arrive here as 0. -->
                 <div class="fact">
-                  <span class="k">Odour</span>
+                  <span class="k">Odor</span>
                   {#if t.voc_exc != null}
                     <span
                       class="fact-v {vocRiseOn && t.voc_exc >= vocRiseOn
@@ -729,9 +729,9 @@
                       {t.voc_exc > 0 ? `+${int(t.voc_exc)}` : 'Clean'}
                     </span>
                   {:else if t.voc_ok === false}
-                    <span class="fact-v">Stood down</span>
+                    <span class="fact-v tone-bad">Sensor failed</span>
                   {:else if t.voc == null}
-                    <span class="fact-v">Not fitted</span>
+                    <span class="fact-v">No sensor</span>
                   {:else}
                     <span class="fact-v">Learning</span>
                   {/if}
@@ -884,16 +884,18 @@
             </section>
 
             <section class="panel card">
-              <h2>Odour</h2>
+              <h2>Odor</h2>
               {#if t.voc == null}
                 <div class="read-row">
                   <div>
                     <span class="k">Sensor</span>
-                    <span class="v">{t.voc_ok === false ? 'Stood down' : 'Not fitted'}</span>
+                    <span class="v">
+                      {t.voc_ok === false ? 'Sensor failed' : 'No sensor'}
+                    </span>
                     <span class="sub">
                       {t.voc_ok === false
-                        ? 'stopped answering, so the fan ignores it'
-                        : 'the fan runs on humidity and light alone'}
+                        ? 'it stopped answering, so the fan ignores it'
+                        : 'nothing is answering on the sensor bus — the fan runs on humidity and light alone'}
                     </span>
                   </div>
                 </div>
@@ -923,7 +925,7 @@
                   </div>
                   <div>
                     <span class="k">Sensor</span>
-                    <span class="v">{t.voc_ok ? 'OK' : 'Stood down'}</span>
+                    <span class="v">{t.voc_ok ? 'Working' : 'Sensor failed'}</span>
                     <span class="sub">gas resistance, two pixels</span>
                   </div>
                 </div>

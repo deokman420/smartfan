@@ -388,7 +388,7 @@ def test_server(tmp):
         # writes the field -- empty -- rather than a short row.
         #
         # Addressed by index, not by being last. This read FIELDS[-1] and
-        # split(",")[-1] until the odour columns were appended behind it,
+        # split(",")[-1] until the odor columns were appended behind it,
         # at which point it was asserting something about voc_exc while
         # claiming to be about the ambient.
         AMB = store.FIELDS.index("amb")
@@ -676,7 +676,7 @@ def test_store(tmp):
     # the append that added it. On a device being updated that is the whole
     # stored week, and the exact length test this replaced was silently
     # discarding every pre-"amb" row on real flash.
-    for width, label in ((11, "pre-ambient"), (12, "pre-odour")):
+    for width, label in ((11, "pre-ambient"), (12, "pre-odor")):
         legacy = ",".join(["1800002000"] + ["1"] * (width - 1))
         got = store._parse(legacy)
         check("a %s row still parses, padded to the current width" % label,

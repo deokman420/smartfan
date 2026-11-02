@@ -1,4 +1,4 @@
-"""The odour sensor's bus, and nothing else.
+"""The odor sensor's bus, and nothing else.
 
 An SGP41 measures gas resistance across two heated metal-oxide pixels and
 reports them as raw tick counts. It does not report a smell, a concentration,
