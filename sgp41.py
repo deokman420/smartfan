@@ -48,6 +48,25 @@ guaranteed reset loop. So start() only records a deadline; read() issues the
 conditioning command and returns None until the deadline passes. The 50 ms
 measurement delay does block, which is well inside the budget -- the loop
 already blocks longer than that on the DHT22.
+
+READABLE IS NOT SETTLED. Conditioning ends at 10 s and the readings after it
+are real, but the element is still coming to temperature: measured here from
+cold, sraw_voc climbed about 530 ticks over the first 60 s and was flat
+after. That matters to exactly one caller. A baseline seeded inside that
+ramp lands roughly 500 ticks below where the room actually sits, so the
+deviation reads about -500 -- clean air reported as cleaner than normal --
+and at cfg.VOC_BASELINE_A (0.0005, ~67 min) the odor path stays deaf for
+over an hour after every reboot. That was observed, not predicted: it is
+what produced `base 29593 / raw 30094 / odr -500` on 2026-11-02.
+
+So there are two deadlines, not one. `conditioning` gates whether there is a
+reading at all; `settled` gates whether a reading is stable enough to learn
+a baseline from. Ten seconds is Sensirion's figure and also their maximum
+for the conditioning command, so the longer wait cannot simply be folded
+into it -- running 0x2612 for a minute would overheat the pixel. Readings
+between the two deadlines are published and displayed as normal, because
+they are the sensor's honest output; they are only withheld from the
+baseline. main.py decides what to do with that, in _voc_learning().
 """
 
 import time
@@ -67,6 +86,12 @@ _RH_DEFAULT = 0x8000
 _T_DEFAULT  = 0x6666
 
 _CONDITION_MS = 10000
+
+# How long from power-on before a reading may seed a baseline. 60 s is the
+# measured settling time of this build's part from cold, with the ramp flat
+# after it; see the module docstring. It is deliberately not cfg-tunable --
+# it is a property of the element, not a preference.
+_SETTLE_MS = 60000
 
 _SELF_TEST_PASS = 0xD400
 
@@ -111,6 +136,7 @@ class SGP41:
         self.ok = True          # False once the path has stood down for good
         self.fails = 0          # consecutive failures, reset by any good read
         self._until = None      # conditioning deadline; None until start()
+        self._settled_at = None # settling deadline; see the settled property
 
     # --- bus ---------------------------------------------------------
     def _xfer(self, cmd, params=(), delay_ms=10, nwords=0):
@@ -176,14 +202,31 @@ class SGP41:
 
     # --- the loop ----------------------------------------------------
     def start(self):
-        """Arm the conditioning window. Returns at once -- see the docstring."""
-        self._until = time.ticks_add(time.ticks_ms(), _CONDITION_MS)
+        """Arm both deadlines. Returns at once -- see the docstring."""
+        now = time.ticks_ms()
+        self._until = time.ticks_add(now, _CONDITION_MS)
+        self._settled_at = time.ticks_add(now, _SETTLE_MS)
 
     @property
     def conditioning(self):
         if self._until is None:
             return True
         return time.ticks_diff(self._until, time.ticks_ms()) > 0
+
+    @property
+    def settled(self):
+        """Has the element been powered long enough for a stable reading?
+
+        True once _SETTLE_MS has passed since start(). False before that,
+        and False before start(), which is the safe answer in both cases:
+        nothing may be learned from a sensor whose heater has not run.
+
+        Readings are valid as soon as `conditioning` goes False. This is the
+        stricter question only the baseline needs to ask.
+        """
+        if self._until is None:
+            return False
+        return time.ticks_diff(self._settled_at, time.ticks_ms()) <= 0
 
     def read(self, rh=None, t=None):
         """(sraw_voc, sraw_nox), or None while conditioning or stood down.

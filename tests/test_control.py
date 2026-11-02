@@ -637,6 +637,9 @@ class FakeSGP41:
         self.fails = 0
         self.reads = 0
         self.raises = False
+        # Warm, by default: every test here but the warm-up one is about a
+        # device that has been running a while, which is the normal case.
+        self.settled = True
 
     def read(self, rh=None, t=None):
         self.reads += 1
@@ -681,6 +684,19 @@ advance(3)
 check("the window closes on its own deadline", s.conditioning is False)
 got = s.read(45.0, 22.0)
 check("and a real reading follows", got == (29000, 18000), "%s" % (got,))
+
+# Readable is not settled. The element keeps climbing for a minute after
+# conditioning ends, so there are two deadlines: one for whether a reading
+# exists, one for whether it may seed a baseline. The second must still be
+# closed here, 13 s in, or a reboot seeds the baseline ~500 ticks low.
+check("a readable sensor is not yet a settled one",
+      s.conditioning is False and s.settled is False)
+fresh = sgp41.SGP41(EchoBus())
+check("unstarted reports unsettled, not settled", fresh.settled is False)
+advance(47)
+check("still unsettled at 60 s minus a sample", s.settled is False)
+advance(2)
+check("settled once the measured 60 s has passed", s.settled is True)
 
 # Compensation ticks, and the clamp that stops a nonsense reading biasing
 # every sample after it.
@@ -745,6 +761,28 @@ def armed(rise=200, fall=50, base=29000.0, raw=28700):
     c.st.set("VOC_FALL_OFF", fall)
     return c
 
+
+# The baseline lives in RAM, so it is reseeded after every power cut -- and
+# the sample it would be seeded from comes from an element still warming.
+# Observed on the device as `base 29593 / raw 30094 / odr -500`, which left
+# the odor path deaf for the hour the EWMA took to recover.
+cold = build()
+cold.voc = FakeSGP41(30094)
+cold.voc.settled = False
+check("a cold sensor is not learned from",
+      cold._voc_learning() is False)
+cold.read_voc()
+check("...so a reboot leaves the baseline unseeded, not seeded low",
+      cold.vocdet.base is None, "%s" % cold.vocdet.base)
+# The reading itself is still taken and still published: it is the sensor's
+# honest output, and only the baseline is withheld from it.
+check("...while the raw reading is still reported",
+      cold.vocdet.raw == 30094 and cold.excess_voc is None,
+      "raw=%s exc=%s" % (cold.vocdet.raw, cold.excess_voc))
+cold.voc.settled = True
+cold.read_voc()
+check("and the first warm sample seeds it", cold.vocdet.base == 30094.0,
+      "%s" % cold.vocdet.base)
 
 c = armed()
 step(c)

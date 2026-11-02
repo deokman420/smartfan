@@ -437,15 +437,26 @@ class Controller:
             print("voc: read failed (%s)" % e)
 
     def _voc_learning(self):
-        """Is the room quiet enough to learn a clean-air baseline from?
+        """Is the room quiet enough, and the sensor warm enough, to learn?
 
         The policy lives here rather than in voc.py because it reads three
         other signals. Learning during an event would teach the baseline to
         treat the smell as normal, and then report clean air as a deviation.
+
+        The sensor's own warm-up is the fourth condition, and it only
+        matters after a reboot. The baseline is held in RAM, so every power
+        cut drops it and the first quiet sample afterwards reseeds it -- and
+        without this gate that sample comes from an element still climbing
+        ~530 ticks towards temperature. The baseline then sits about 500
+        ticks low and the odor path cannot trigger until the EWMA drags it
+        back, which takes over an hour. Waiting a minute for the hardware
+        costs a minute; not waiting costs the rest of the hour. sgp41.py
+        carries the measurement behind `settled`.
         """
         return (self.state == IDLE
                 and not self.light_on
-                and self.excess_rh <= self.st.RH_FALL_OFF)
+                and self.excess_rh <= self.st.RH_FALL_OFF
+                and self.voc is not None and self.voc.settled)
 
     def _voc_active(self):
         """Is the odor path allowed to influence the fan at all?
