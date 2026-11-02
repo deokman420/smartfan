@@ -278,6 +278,11 @@ class Snapshot:
             "rpm":      c.rpm or getattr(c, "rpm_idle", 0),
             "fault":    c.state == "FAULT",
             "reason":   c.fault_reason or None,
+            # Why the controller is in the state it is in -- "odor +404",
+            # "humidity +8.3%", "light on". The app showed a fixed
+            # "Clearing humidity" for every run, which was a lie the moment
+            # a second reason to run existed.
+            "why":      getattr(c, "state_reason", "") or None,
             "run_min":  self.runtime_min(),
             "boost_left": _boost_left_min(c),
             "rssi":     rssi,
@@ -475,7 +480,8 @@ class Telemetry:
         # are deliberately absent -- the excess is the one that carries a
         # decision. voc_ok is included unbucketed, because a sensor standing
         # down should be visible at once.
-        return (p["state"], p["fan_on"], p["light_on"], p["fault"],
+        return (p["state"], p.get("why"),
+                p["fan_on"], p["light_on"], p["fault"],
                 p["boost_left"], (p["rpm"] or 0) // 500,
                 # Bucketed, but None keeps a bucket of its own. Folding it
                 # in with 0 would have meant a sensor appearing or going

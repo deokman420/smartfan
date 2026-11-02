@@ -751,6 +751,21 @@ step(c)
 check("odor starts the fan in a dark, dry room",
       c.state == main.RUN and c.fan.value() == 1,
       "%s exc=%s" % (c.state, c.excess_voc))
+# The controller has to record WHICH test it passed, not just that it
+# passed one. Without this the app has to guess, and it guessed
+# "Clearing humidity" over a room 0.9 % above baseline while the fan ran
+# on odor -- the status page describing a cause that was not the cause.
+check("...and says odor was the reason",
+      c.state_reason.startswith("odor"), repr(c.state_reason))
+
+# The humidity path must still name itself, or the fix above just moves
+# the lie to the other branch.
+c2 = armed()
+c2.rh = c2.baseline + c2.st.RH_RISE_ON + 1
+step(c2, 2)
+check("a humidity run says humidity was the reason",
+      c2.state == main.RUN and c2.state_reason.startswith("humidity"),
+      "%s %r" % (c2.state, c2.state_reason))
 
 # Observe-only is the shipping default, and it has to be genuinely inert.
 c = armed(rise=0, fall=0, raw=20000)

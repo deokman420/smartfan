@@ -262,6 +262,7 @@ class Controller:
         self.rpm = 0
         self.dht_fails = 0
         self.fault_reason = ""
+        self.state_reason = ""
         self.fault_kind = None     # 'sensor' or 'fan'
         self.fault_until = None    # earliest retry for a fan fault
         self.fan_faults = 0        # consecutive stalls
@@ -535,6 +536,13 @@ class Controller:
         # the controller has recovered makes a cleared fault look current.
         if self.state == FAULT and new != FAULT:
             self.fault_reason = ""
+        # Published, because the app was guessing and guessing wrong. There
+        # are three reasons to run now -- humidity, the light, and odor --
+        # and the status page said "Clearing humidity" for all of them,
+        # including a run started by odor in a room 0.9 % above baseline.
+        # The controller is the only thing that knows which test it
+        # actually passed, so it is the thing that says.
+        self.state_reason = reason
         self.state = new
         self.entered_at = time.ticks_ms()
 

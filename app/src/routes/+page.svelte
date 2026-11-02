@@ -28,7 +28,7 @@
   import {
     MODES,
     STATE_TONE,
-    STATE_BLURB,
+    stateBlurb,
     excessTone,
     dur,
     durMin,
@@ -270,8 +270,19 @@
      crossing a threshold exactly as it did before. */
   let learned = $derived(learnTau($history, { minPeak: Number(cfg.RH_RISE_ON) || undefined }));
   let runCtx = $derived(runContext($history));
+  // Why the controller says it is running, and whether that reason is one
+  // the dry-rate estimator can speak to. It models HUMIDITY decay, so on an
+  // odor run -- where the room is already dry by definition, the odor path
+  // only fires below RH_RISE_ON -- every line it produces is about the
+  // wrong quantity. It read "waiting on the light, not the humidity" under
+  // a fan running on odor with the light off.
+  let runWhy = $derived(String(t?.why ?? '').toLowerCase());
+  let odorRun = $derived(
+    state === 'RUN' && (runWhy.startsWith('odor') || runWhy.startsWith('odour'))
+  );
+
   let offIn = $derived(
-    state === 'RUN' && t && learned
+    state === 'RUN' && !odorRun && t && learned
       ? timeToOff({
           exc: t.exc,
           ran: runCtx.ran,
@@ -654,12 +665,34 @@
               <div class="hero-state">
                 <p class="eyebrow">Controller</p>
                 <p class="state tone-{tone}">{state}</p>
-                <p class="blurb">{STATE_BLURB[state] ?? ''}</p>
+                <p class="blurb">{stateBlurb(state, t.why)}</p>
                 {#if state === 'BOOST' && t.boost_left > 0}
                   <p class="blurb tone-active">{dur(t.boost_left * 60)} remaining</p>
                   <div class="boost-bar" aria-hidden="true"><i style="width: {boostPct}%"></i></div>
                 {/if}
-                {#if offIn}
+                {#if odorRun}
+                  <!-- An odor run ends when the air comes back under
+                       VOC_FALL_OFF and the minimum run has elapsed, so
+                       that is what gets reported. No estimate: one event
+                       is not a decay curve, and inventing a countdown
+                       here is what the humidity estimator was doing. -->
+                  {#if t.voc_exc != null && t.voc_exc > Number(cfg.VOC_FALL_OFF)}
+                    <p class="blurb tone-active">
+                      Running until the odor clears
+                    </p>
+                    <p class="learned">
+                      {int(t.voc_exc)} against a stop point of
+                      {int(cfg.VOC_FALL_OFF)}
+                    </p>
+                  {:else}
+                    <p class="blurb tone-active">
+                      Odor has cleared — stopping shortly
+                    </p>
+                    <p class="learned">
+                      holding for the {durMin(cfg.MIN_RUN_S / 60)} minimum run
+                    </p>
+                  {/if}
+                {:else if offIn}
                   {#if offIn.neverDries}
                     <p class="blurb tone-warn">
                       Settles above the stop point — this run ends on the
