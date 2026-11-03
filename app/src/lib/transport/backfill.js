@@ -20,18 +20,31 @@
  */
 import { backfill, F } from '$lib/history.js';
 
-// Rows are append-only, so a device can legitimately be a firmware behind
-// this app and send a row narrower than FIELD_COUNT. That is not a corrupt
-// row, it is an older one, and dropping it would throw away the whole
-// stored week every time a column is added -- which is exactly what the
-// strict equality here used to do. Anything from MIN_FIELDS up is accepted
-// and padded with nulls, which the charts already draw as absent.
+// Rows are append-only, so a device can legitimately disagree with this
+// bundle about how many columns a row has -- IN EITHER DIRECTION -- and
+// neither case is a corrupt row.
+//
+// Narrower is an older firmware. Those are padded with nulls, which the
+// charts already draw as absent.
+//
+// Wider is a NEWER firmware, and that is this project's ordinary state
+// rather than an edge case: www/ only travels by USB while firmware goes
+// over the air, so the device routinely runs ahead of the browser bundle.
+// Those used to be dropped. Every one of them, silently, which is the
+// whole stored week gone the moment a column is added -- the same failure
+// the narrow case was fixed for, left standing in the mirror. They are now
+// truncated, exactly as a narrow row is padded.
+//
+// Both halves rest on one invariant: store.py only ever APPENDS to FIELDS,
+// so a column's position never changes meaning. If a column is ever
+// inserted or reordered instead, positional parsing goes quietly wrong
+// rather than loudly, and the fix is to map the header's `fields=` names
+// instead of counting them.
 //
 // Derived from F, never written as a literal. This was `12` while F had
 // grown to fifteen, so the device sent perfectly good rows and the app
 // dropped every one of them -- a whole week of history discarded by a
-// number that only looked like a constant. It is the same mistake as the
-// strict equality the comment above is about, two lines below the warning.
+// number that only looked like a constant.
 const FIELD_COUNT = Object.keys(F).length;
 // The narrowest row anything ever wrote. Unlike FIELD_COUNT this really is
 // historical and does not move.
@@ -55,6 +68,14 @@ export const OVERLAP_S = 600;
 export function parseRows(text) {
   let interval = 300;
   const rows = [];
+  // Counted rather than ignored. A row this function refuses is a row the
+  // user paid for in flash and will never see, and the only thing worse
+  // than losing it is losing it quietly -- which is how the last two
+  // versions of this check survived.
+  let short = 0;
+  let unparseable = 0;
+  let ahead = 0;
+  let widest = 0;
   for (const line of text.split('\n')) {
     if (!line) continue;
     if (line[0] === '#') {
@@ -63,10 +84,20 @@ export function parseRows(text) {
       continue;
     }
     const parts = line.split(',');
-    if (parts.length < MIN_FIELDS || parts.length > FIELD_COUNT) continue;
+    if (parts.length < MIN_FIELDS) {
+      short += 1;
+      continue;
+    }
+    if (parts.length > FIELD_COUNT) {
+      ahead += 1;
+      widest = Math.max(widest, parts.length);
+    }
+    // Only the columns this build understands. The rest are newer fields,
+    // not different ones; see the FIELD_COUNT comment.
+    const width = Math.min(parts.length, FIELD_COUNT);
     const row = new Array(FIELD_COUNT).fill(null);
     let ok = true;
-    for (let i = 0; i < parts.length; i++) {
+    for (let i = 0; i < width; i++) {
       if (parts[i] === '') {
         row[i] = null;
         continue;
@@ -79,8 +110,9 @@ export function parseRows(text) {
       row[i] = n;
     }
     if (ok) rows.push(row);
+    else unparseable += 1;
   }
-  return { rows, interval };
+  return { rows, interval, short, unparseable, ahead, widest };
 }
 
 /**
@@ -104,7 +136,24 @@ export async function loadHistory(base, knewUpTo = 0) {
       cache: 'no-store'
     });
     if (!res.ok) return 0;
-    const { rows, interval } = parseRows(await res.text());
+    const parsed = parseRows(await res.text());
+    const { rows, interval, short, unparseable, ahead, widest } = parsed;
+    if (short || unparseable) {
+      console.warn(
+        `history backfill: dropped ${short + unparseable} of ` +
+          `${rows.length + short + unparseable} rows ` +
+          `(${short} too short, ${unparseable} unparseable)`
+      );
+    }
+    if (ahead) {
+      // Not a failure, and said at info rather than warn for that reason.
+      // It does get said: it is the one visible sign that the bundle in
+      // this browser is older than the firmware on the fan.
+      console.info(
+        `history backfill: ${ahead} rows carry ${widest} columns, this ` +
+          `build reads ${FIELD_COUNT} - extra fields ignored, update the app`
+      );
+    }
     return rows.length ? backfill(rows, interval) : 0;
   } catch (err) {
     console.warn('history backfill failed:', err);
