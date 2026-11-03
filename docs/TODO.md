@@ -267,14 +267,26 @@ so a push needs roughly twice its own size free.
 
 Two things to do, and the first matters more:
 
-* **Say something when it fails.** The install failure is invisible from the
-  network. `ota_state` is set on the Controller and then never published, so
-  the one surface that could report it does not. Publishing it — and a free-
-  space figure in `/api/info` — would have turned an afternoon of bisecting
-  into one glance.
-* **Stop needing the space.** Stream each download to its `.new` file instead
-  of buffering the body, and stage/swap one file at a time so peak usage is one
-  file rather than the batch.
+* ~~**Say something when it fails.**~~ **Done 2026-11-03.** `ota_state` is
+  published as `ota`, beside `flash_free`, in the snapshot — so it reaches
+  `/api/state`, MQTT discovery and a Home Assistant diagnostic entity — and
+  both appear on `/api/info`. The updater also now does the arithmetic
+  *before* spending the radio: it sums the batch from the manifest's `size`
+  fields, compares against `os.statvfs`, and refuses a batch that would
+  leave less than `MIN_FREE` with a message naming both numbers. A manifest
+  from an older publisher with no sizes is planned anyway rather than
+  refused. `tests/test_ota.py` covers the planning step; the module had no
+  test before, which was uncomfortable for the one file deliberately
+  excluded from its own update mechanism.
+* **Stop needing the space.** Still owed, and still the real fix. Stream each
+  download to its `.new` file instead of buffering the body in `r.content`,
+  and stage/swap one file at a time so peak usage is one file rather than the
+  batch. Note the tension to resolve: the install loop swaps everything in
+  one pass *on purpose*, so a reset mid-update cannot leave a half-new set of
+  files. Per-file swapping trades that atomicity for headroom and should only
+  be taken if `boot_check`'s rollback can be shown to cover a partial swap.
+  The refusal above turns the silent failure into a reported one; it does not
+  raise the ceiling.
 
 What unblocks it: `ota.py` is excluded from OTA on purpose, because it is the
 recovery path and a recovery path you can break remotely is not one. So this is

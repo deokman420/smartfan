@@ -184,6 +184,12 @@
       "self_test": {
         "name": "Fan self-test"
       },
+      "update_status": {
+        "name": "Update status"
+      },
+      "flash_free": {
+        "name": "Flash free"
+      },
       "app_build": {
         "name": "App build"
       },

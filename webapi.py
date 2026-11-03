@@ -278,6 +278,11 @@ class Api:
             "sample_s": self.cfg.SAMPLE_S,
             "publish_s": self.cfg.PUBLISH_INTERVAL_S,
             "history": self.history.stats() if self.history else None,
+            # Free flash, because an OTA stages the whole batch before it
+            # installs any of it, and "the push did nothing" is usually
+            # this number being too small. See docs/TODO.md.
+            "flash_free": self.snap.flash_free(),
+            "ota": getattr(self.c, "ota_state", None),
             "api": 1,
         })
 

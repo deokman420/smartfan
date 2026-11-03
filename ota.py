@@ -32,6 +32,33 @@ MANIFEST = "manifest.json"
 PENDING = "ota_pending"
 MAX_TRIES = 2          # attempts before rolling back
 COMMIT_S = 60          # healthy running time before an update is kept
+
+# Spare flash a batch must leave behind after staging, over and above the
+# bytes it is about to write.
+#
+# Staging writes every file as `name.new` while the original is still there,
+# so a batch needs its own size free before the install step can begin.
+# Measured on this device: ~47 kB installed, ~48 kB installed, ~62 kB
+# installed, ~98 kB did not, ~106 kB did not. The failures staged every file
+# and then died, and said so only to a serial console nobody was holding --
+# from the network the symptom was a device that re-downloaded the same
+# files on every push and kept running the old code.
+#
+# So the arithmetic is done BEFORE anything is downloaded, and a batch that
+# cannot fit is refused in a sentence that names both numbers. That is not
+# the whole fix -- streaming each body to its file instead of buffering it,
+# and staging one file at a time, is what would remove the ceiling -- but a
+# failure you can read beats one you have to bisect.
+MIN_FREE = 24576       # 24 kB, room for history and a log to keep working
+
+
+def free_bytes():
+    """Free flash in bytes, or None where the question has no answer."""
+    try:
+        s = os.statvfs("/")
+        return s[0] * s[3]
+    except Exception:
+        return None
 CHUNK = 512
 
 # Never replaced over the air: boot.py is what rescues a bad update, and
@@ -170,6 +197,8 @@ class Updater:
         self.status = "starting"
         self._queue = None
         self._staged = []
+        self.need = 0          # bytes this batch will stage
+        self.free = None       # bytes free when it was planned
 
     def _fail(self, why):
         self.status = why
@@ -205,13 +234,29 @@ class Updater:
                     want.append((name, meta))
             self._queue = want
             gc.collect()
+
+            # Refuse a batch that cannot fit, before spending the radio on
+            # it. The old code found this out by dying between staging and
+            # installing, which looked from outside like nothing happening
+            # at all.
+            self.need = sum(m.get("size", 0) for _, m in want)
+            self.free = free_bytes()
+            if want and self.free is not None and self.need:
+                if self.free < self.need + MIN_FREE:
+                    return self._fail(
+                        "batch needs %d B staged with %d B free, short by "
+                        "%d B - push fewer files at once"
+                        % (self.need, self.free,
+                           self.need + MIN_FREE - self.free))
             if not want:
                 self.status = "already up to date"
                 self.done, self.ok = True, True
                 self._log("ota: %s" % self.status)
                 return True
-            self._log("ota: %d file(s) to update: %s"
-                      % (len(want), ", ".join(n for n, _ in want)))
+            self._log("ota: %d file(s), %d B to stage, %s B free: %s"
+                      % (len(want), self.need,
+                         "?" if self.free is None else self.free,
+                         ", ".join(n for n, _ in want)))
             return True
 
         if self._queue:

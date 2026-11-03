@@ -27,6 +27,7 @@ from homeassistant.const import (
     PERCENTAGE,
     REVOLUTIONS_PER_MINUTE,
     EntityCategory,
+    UnitOfInformation,
     UnitOfTemperature,
     UnitOfTime,
 )
@@ -200,6 +201,27 @@ SENSORS: tuple[SmartfanSensorDescription, ...] = (
         key="self_test",
         field="selftest",
         entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SmartfanSensorDescription(
+        # An OTA that fails is otherwise invisible from the network: the
+        # device re-downloads the same files on every push, never resets,
+        # and keeps running the old code. This is the surface that says so.
+        key="update_status",
+        field="ota",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SmartfanSensorDescription(
+        # Beside it, because the two answer one question together: a batch
+        # stages every file before it installs any of them, so "the push
+        # did nothing" is usually this number being too small.
+        key="flash_free",
+        field="flash_free",
+        device_class=SensorDeviceClass.DATA_SIZE,
+        native_unit_of_measurement=UnitOfInformation.BYTES,
+        suggested_unit_of_measurement=UnitOfInformation.KILOBYTES,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
     ),
     SmartfanSensorDescription(
         key="build",

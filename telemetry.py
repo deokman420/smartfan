@@ -67,6 +67,21 @@ TRACKED = ("main.py", "config.py", "settings.py", "telemetry.py",
 APP_MANIFEST = "www/build.json"
 
 
+def _flash_free():
+    """Free flash in bytes, or None off-device.
+
+    Published beside the update status because the two answer one question
+    together: an OTA batch stages every file before it installs any, so
+    "why did that push do nothing" is usually "there was nowhere to put it".
+    """
+    try:
+        import os
+        s = os.statvfs("/")
+        return s[0] * s[3]
+    except Exception:
+        return None
+
+
 def fingerprint():
     """Short hash of the tracked files. Computed once, at construction."""
     try:
@@ -121,6 +136,12 @@ _SENSORS = (
     # Published because it was invisible, and invisible is the whole fault:
     # `deferred` means this fan has never been proven to turn.
     ("selftest",    "Fan self-test",     "selftest", None,      None,          None,               "mdi:fan-alert"),
+    # Published because an OTA that fails is otherwise invisible from the
+    # network: the device re-downloads the same files on every push, never
+    # resets, and keeps running the old code. docs/TODO.md carries the
+    # measurements and says this is the half that matters most.
+    ("ota",         "Update status",     "ota",      None,      None,          None,               "mdi:cloud-download"),
+    ("flash_free",  "Flash free",        "flash_free", "B",     "data_size",   "measurement",      "mdi:harddisk"),
     ("build",       "Build",             "fw",       None,      None,          None,               "mdi:package-variant"),
 )
 
@@ -186,6 +207,15 @@ class Snapshot:
         self._run_day = None
 
     # -- runtime accounting --------------------------------------------------
+
+    def flash_free(self):
+        """Free flash in bytes, for whoever holds a Snapshot and not a module.
+
+        webapi.py reports this on /api/info and does not import telemetry;
+        routing it through the object it already has beats a second copy of
+        three lines that have to agree about what a block is.
+        """
+        return _flash_free()
 
     def note_fan(self, on):
         """Track fan-on time. Called whenever the commanded state changes."""
@@ -327,6 +357,8 @@ class Snapshot:
             # Assistant gains no entity for something that changes once a
             # boot.
             "selftest": getattr(c, "selftest", None),
+            "ota": getattr(c, "ota_state", None),
+            "flash_free": _flash_free(),
             "boot":     getattr(c, "boot_reason", "unknown"),
             "fw":       self.fw,
             "app":      self.app,
