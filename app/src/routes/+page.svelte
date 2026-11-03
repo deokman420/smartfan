@@ -310,9 +310,24 @@
   // only fires below RH_RISE_ON -- every line it produces is about the
   // wrong quantity. It read "waiting on the light, not the humidity" under
   // a fan running on odor with the light off.
-  let runWhy = $derived(String(t?.why ?? '').toLowerCase());
+  //
+  // `why` names EVERY reason that currently applies, comma-separated, and is
+  // recomputed on each pass rather than frozen at the transition (firmware,
+  // 2026-11-03). It used to be one reason, so startsWith was enough. It is
+  // not any more: the firmware lists light, then humidity, then odor, so a
+  // run held by all three began with "light on" and odor was never seen --
+  // and the fan got a humidity ETA for a run the odour path was holding
+  // open. That is the same class of mistake `why` was added to end.
+  let reasons = $derived(
+    String(t?.why ?? '')
+      .toLowerCase()
+      .split(',')
+      .map((r) => r.trim())
+      .filter(Boolean)
+  );
   let odorRun = $derived(
-    state === 'RUN' && (runWhy.startsWith('odor') || runWhy.startsWith('odour'))
+    state === 'RUN' &&
+      reasons.some((r) => r.startsWith('odor') || r.startsWith('odour'))
   );
 
   let offIn = $derived(
