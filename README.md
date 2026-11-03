@@ -1,8 +1,9 @@
 # Bathroom Smartfan — Pico 2 W
 
-A humidity- and occupancy-driven extractor fan controller. The room light is the
-occupancy signal; humidity decides how long the fan keeps running after the room
-empties.
+A humidity-, odour- and occupancy-driven extractor fan controller. The room
+light is the occupancy signal; humidity decides how long the fan keeps running
+after the room empties; a gas sensor catches the thing neither of those
+notices.
 
 Absolute humidity thresholds don't work for this — a muggy August day sits at
 65 %RH by itself and the fan never stops. So everything is expressed as a **rise
@@ -18,8 +19,32 @@ managed in this room is 51. So the light is found by the **step away from a
 learned ambient**, never by a level, and light alone stops holding the fan on
 after `LIGHT_ONLY_MAX_S`. Details and the measurements are in `config.py`.
 
-**Status:** phase 1 complete and commissioned on hardware. Fan switching, both
-sensors, both status LEDs, the button and the tachometer all verified.
+Absolute *odour* thresholds don't work either, and this one is the hardest of
+the three. The SGP41's two pixels report raw tick counts with no absolute
+meaning — the number depends on the element, its age, the room and how long it
+has been powered — so once again the fan acts on a **deviation from a learned
+baseline**, and note the sign: the signal **falls** as the air gets worse. Two
+measurements are worth carrying before trusting it. Both pixels track room
+humidity hard enough that **0.3 °C of overnight cooling moves the odour channel
+by its entire trigger threshold**. And the element settles far more slowly than
+a timer suggests — about **30 minutes** for the VOC pixel and about **two
+hours** for NOx, measured over a 9.2 h overnight series — so a baseline is
+seeded only once that pixel's raw count has actually stopped moving, per pixel,
+never on a stopwatch.
+
+Nothing acts on the NOx pixel. It is recorded so that odour-with-NOx (a gas
+flame in the kitchen) can one day be told from odour alone (the bathroom), but
+its quiet-room wander is larger than any threshold worth setting, so it drives
+nothing today.
+
+**Odour triggering ships off** — `VOC_RISE_ON = 0`. The sensor reads, records
+and publishes from the first boot; you set a threshold once you have watched
+your own room for a few days. Humidity and light work regardless.
+
+**Status:** running on hardware and commissioned. Three sensing paths —
+humidity, light and odour — plus fan switching, both status LEDs, the button
+and the tachometer, all verified on the board. Over-the-air updates install and
+hold as of 2026-11-03. Parked work is in [`docs/TODO.md`](docs/TODO.md).
 
 ## Hardware
 
@@ -27,6 +52,7 @@ sensors, both status LEDs, the button and the tachometer all verified.
 |---|---|
 | MCU | Raspberry Pi Pico 2 W (RP2350), MicroPython 1.29.0 |
 | Temperature / humidity | DHT22 3-pin breakout, silkscreen `VCC │ S │ GND` |
+| Air quality | Sensirion SGP41, I²C `0x59` — VOC and NOx pixels |
 | Occupancy | LDR in a divider against 10 kΩ |
 | Fan | Noctua NF-A4x10 5V, 3-wire, 50 mA |
 | Switch | S8050 NPN, low-side, 1 kΩ base resistor |
@@ -36,10 +62,13 @@ sensors, both status LEDs, the button and the tachometer all verified.
 ### Pin map
 
 Physical pins run 1–20 down the left side and 40–21 down the right, so a
-right-side pin is `41 − row`. Every signal is on the right.
+right-side pin is `41 − row`. Every signal is on the right **except the I²C
+pair**, which sits at the top of the left side on pins 1 and 2.
 
 | Signal | GPIO | Pin |
 |---|---|---|
+| SGP41 SDA | GP0 | 1 |
+| SGP41 SCL | GP1 | 2 |
 | DHT22 data | GP22 | 29 |
 | Light level | GP26 / ADC0 | 31 |
 | Button | GP16 | 21 |
@@ -66,9 +95,15 @@ Parked items, each with what unblocks it: [`docs/TODO.md`](docs/TODO.md).
 | `ota.py` | Over-the-air updates with automatic rollback. |
 | `boot.py` | Runs before `main.py`. The recovery path — never updated over the air. |
 | `light.py` | Is the room light on? The ambient tracker that tells the fixture from daylight. |
+| `sgp41.py` | The gas sensor driver. Owns conditioning, and the per-pixel settle gate. |
+| `voc.py` | The learned odour baseline and the deviation arithmetic, one per pixel. |
+| `settings.py` | Runtime overrides on flash, so a threshold survives a reboot. |
+| `wifi.py` | Changing the network from the app, with the old credentials as the rollback. |
+| `provision.py` | First-run setup: the captive portal and the join flow. |
+| `improv.py` | Improv Serial, so a cable can provision it from a browser. |
 | `net.py` | WiFi + MQTT supervision, polled from the loop. Never blocks it. |
 | `telemetry.py` | The device's own snapshot, plus Home Assistant discovery and publishing. |
-| `mqtt.py` | MQTT 3.1.1 client. Publish-only until phase 2b. |
+| `mqtt.py` | MQTT 3.1.1 client. Publishes telemetry and subscribes for commands. |
 | `ringbuf.py` | Bounded FIFO for samples taken while the broker is unreachable. |
 | `httpd.py` | Non-blocking HTTP server, stepped by the control loop. |
 | `webapi.py` | The device's JSON API. A second transport onto the same commands. |
@@ -86,9 +121,9 @@ Both HTML files are standalone — open them directly in a browser.
 
 | State | LEDs | |
 |---|---|---|
-| LEARN | green blinking | First 60 s, building the baseline |
+| LEARN | green blinking | First 60 s, building the *humidity* baseline. The odour baselines seed later, when their pixels settle |
 | IDLE | green solid | Fan off, tracking the baseline |
-| RUN | red solid | Fan on — light and/or humidity |
+| RUN | red solid | Fan on — light, humidity and/or odour |
 | BOOST | red blinking | 15-minute manual override |
 | FAULT | alternating | Sensor silent, or fan commanded on but not turning |
 | *button held 2 s* | both solid | Let go now and it relearns |
@@ -110,11 +145,20 @@ nothing.
 
 ## Control logic
 
-- Baseline updates **only** while IDLE and dark, so a shower can never teach the
-  controller that humid is normal.
-- Fan starts on light-on, or at `RH_RISE_ON` (+8 %) above baseline.
+- Baselines update **only** while IDLE, dark, dry and with the odour path
+  quiet, so neither a shower nor a smell can teach the controller that it is
+  normal. The odour baseline additionally waits for its own pixel to settle,
+  and a refusal to learn expires after `VOC_HOLD_MAX_S` — otherwise a baseline
+  that is simply *wrong* could never correct itself.
+- Fan starts on light-on, at `RH_RISE_ON` (+8 %) above baseline, or at
+  `VOC_RISE_ON` ticks of odour deviation — the last of which is `0`, meaning
+  off, until you set it.
 - After the light goes out it keeps running until humidity falls within
-  `RH_FALL_OFF` (+3 %) of baseline.
+  `RH_FALL_OFF` (+3 %) of baseline and the odour has cleared to
+  `VOC_FALL_OFF`.
+- A humid spell suppresses odour triggering for `VOC_RECOVER_S` afterwards:
+  drying a wet room moves the gas signal on its own, and that is not a second
+  reason to run.
 - Bounded by a 3-minute minimum, a 2-minute post-light minimum and a 45-minute
   hard stop.
 - A stall fault latches, counts to 3, and backs off 5 minutes between retries —
@@ -122,7 +166,11 @@ nothing.
 - Hitting `MAX_RUN_S` **latches**. Without that the cap protects nothing: idle
   re-reads the same humidity, finds it still above the trigger, and starts
   another full run seconds later. The latch clears when the room actually
-  dries, when the light comes back on, or on a boost or relearn.
+  dries, when the light comes back on, or on a boost or relearn — and, if
+  odour alone is holding it, after `VOC_REST_S`, because an odour source can
+  stop at any moment and sitting out the event helps nobody.
+- `why` on the dashboard names every reason that currently applies and is
+  recomputed each pass, not frozen at whatever started the run.
 
 ## Getting it running
 
