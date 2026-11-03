@@ -1018,11 +1018,35 @@ class Controller:
             self.led_ok.value(phase)
             self.led_run.value(phase)
             return
+        if held >= cfg.LONG_PRESS_S:
+            # Past the relearn threshold, not yet past the WiFi one: both
+            # LEDs STEADY, which no controller state uses either. That makes
+            # the two hold gestures one progression a thumb can follow --
+            # steady means "let go now and it relearns", flashing means "keep
+            # going and the WiFi window opens" -- so the relearn is findable
+            # by leaning on the button instead of by reading this file.
+            #
+            # Without it the first feedback of any kind arrived at 8 s, which
+            # is already past relearn: holding on for want of a signal is how
+            # you open the provisioning window while trying to reseed a
+            # baseline. The confirmation afterwards is the LEARN blink the
+            # relearn drops the controller into.
+            self.led_ok.value(1)
+            self.led_run.value(1)
+            return
         if self.prov is not None and self.prov.is_open:
-            # Window open: a fast double-blink on the OK led, so a fan that is
-            # waiting for a password does not look like a fan that is idle.
-            fast = (time.ticks_ms() // 150) % 2
-            self.led_ok.value(fast)
+            # Window open: a double-blink on the OK led -- on, off, on, then
+            # a pause five slots long.
+            #
+            # This was an even blink told apart from LEARN's only by rate,
+            # 150 ms against 400 ms. That is not a distinction: it does not
+            # survive a glance from the doorway, and it does not survive an
+            # edit to either period, which could silently merge "building a
+            # baseline" with "waiting for a password" and leave both tests
+            # passing. A rhythm survives both. Nothing else here stutters
+            # the green LED, so green-in-twos means one thing only.
+            slot = (time.ticks_ms() // 150) % 8
+            self.led_ok.value(1 if slot in (0, 2) else 0)
             self.led_run.value(0)
             return
         if self.state == FAULT:

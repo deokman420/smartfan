@@ -91,9 +91,22 @@ Both HTML files are standalone — open them directly in a browser.
 | RUN | red solid | Fan on — light and/or humidity |
 | BOOST | red blinking | 15-minute manual override |
 | FAULT | alternating | Sensor silent, or fan commanded on but not turning |
+| *button held 2 s* | both solid | Let go now and it relearns |
+| *button held 8 s* | both blinking together | Let go now and the WiFi window opens |
+| *WiFi window open* | green double-blink | Waiting for a password — see “Setting up a unit” |
 
-Short button press boosts for 15 minutes, or clears a fault. Hold two seconds to
-relearn the baseline.
+Short button press boosts for 15 minutes, or clears a fault.
+
+**Hold two seconds to relearn every baseline** — humidity, odor and NOx — then
+let go. Both LEDs come on solid the moment the gesture is long enough, so you
+can feel for it rather than count; keep holding and they start flashing
+together instead, which is the WiFi window and not what you wanted. The green
+blink that follows is LEARN, reseeding from the air the room has now.
+
+This is the one control that needs no app and no network, and it is the right
+one to reach for after moving the unit, after a power cut that reseeded a
+baseline mid-event, or whenever the fan is running on air that smells of
+nothing.
 
 ## Control logic
 

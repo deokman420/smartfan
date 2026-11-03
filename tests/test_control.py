@@ -1115,6 +1115,191 @@ step(c, 2)
 check("a stood-down sensor cannot hold the maxed latch closed",
       c.maxed is False)
 
+# -- the LEDs ------------------------------------------------------------
+#
+# Two LEDs carry every bit of feedback this device gives without a network,
+# so what they mean has to be unambiguous -- and the README's table is the
+# contract. These tests read the pins drive_outputs actually leaves behind,
+# because the bug worth catching is a new pattern that collides with an old
+# one, and no amount of reading the function tells you that. step() above
+# deliberately skips the LED half of drive_outputs; this is where it is paid
+# for.
+#
+# A pattern is sampled over two phases 400 ms apart -- the blink period --
+# and reduced to the SET of pin states seen. One state means solid, two
+# means blinking, and the set says which LEDs took part.
+
+
+class FakeProv:
+    def __init__(self, is_open):
+        self.is_open = is_open
+
+
+def pattern(c, held=0.0, step_ms=400, n=2):
+    """What the LEDs do, as a frozenset of (ok, run) states over n samples."""
+    c.button.held_s = lambda: held
+    seen = []
+    for _ in range(n):
+        c.drive_outputs()
+        seen.append((c.led_ok.value(), c.led_run.value()))
+        CLOCK[0] += step_ms
+    return frozenset(seen)
+
+
+SOLID_GREEN = frozenset({(1, 0)})
+SOLID_RED = frozenset({(0, 1)})
+SOLID_BOTH = frozenset({(1, 1)})
+BLINK_GREEN = frozenset({(0, 0), (1, 0)})
+BLINK_RED = frozenset({(0, 0), (0, 1)})
+BLINK_BOTH = frozenset({(0, 0), (1, 1)})
+ALTERNATING = frozenset({(1, 0), (0, 1)})
+
+NAMES = {SOLID_GREEN: "green solid", SOLID_RED: "red solid",
+         SOLID_BOTH: "both solid", BLINK_GREEN: "green blinking",
+         BLINK_RED: "red blinking", BLINK_BOTH: "both blinking together",
+         ALTERNATING: "alternating"}
+
+
+def says(seq):
+    return NAMES.get(seq, "unknown %s" % sorted(seq))
+
+
+# The README's table, state by state. Every row is checked, not just the one
+# the new code touches: the point of the exercise was to confirm the others
+# are what they are claimed to be.
+table = []
+for state, want, label in (
+        (main.IDLE, SOLID_GREEN, "IDLE"),
+        (main.RUN, SOLID_RED, "RUN"),
+        (main.LEARN, BLINK_GREEN, "LEARN"),
+        (main.BOOST, BLINK_RED, "BOOST"),
+        (main.FAULT, ALTERNATING, "FAULT"),
+):
+    c = build()
+    c.state = state
+    got = pattern(c)
+    table.append((label, got))
+    check("%s shows %s" % (label, says(want)), got == want, says(got))
+
+# The two hold gestures, which the state machine must not be able to override:
+# the cue is the thumb's business, not the room's. Checked from RUN, where the
+# state machine wants the red LED solid and would mask a cue that deferred to
+# it.
+c = build()
+c.state = main.RUN
+got = pattern(c, held=cfg.LONG_PRESS_S)
+table.append(("held 2 s", got))
+check("holding past LONG_PRESS_S shows both solid", got == SOLID_BOTH,
+      says(got))
+
+c = build()
+c.state = main.RUN
+got = pattern(c, held=cfg.HOLD_PRESS_S)
+table.append(("held 8 s", got))
+check("holding past HOLD_PRESS_S shows both blinking together",
+      got == BLINK_BOTH, says(got))
+
+# Below the threshold the gesture has not happened yet, so the room keeps the
+# LEDs. A cue that appeared on contact would make every boost press look like
+# a relearn.
+c = build()
+got = pattern(c, held=cfg.LONG_PRESS_S - 0.1)
+check("a hold short of the threshold leaves the state's own pattern alone",
+      got == SOLID_GREEN, says(got))
+
+# The progression has to be monotonic in the hold: nothing, then relearn,
+# then WiFi, with no gap in between where the cue drops back to the state.
+c = build()
+steps = [(h, pattern(c, held=h)) for h in (0.0, 1.9, 2.0, 5.0, 7.9, 8.0, 12.0)]
+check("the cue only ever advances as the button is held",
+      [s[1] for s in steps] == [SOLID_GREEN, SOLID_GREEN, SOLID_BOTH,
+                                SOLID_BOTH, SOLID_BOTH, BLINK_BOTH,
+                                BLINK_BOTH],
+      " ".join("%.1fs=%s" % (h, says(p)) for h, p in steps))
+
+# No two meanings may look alike. This is the check that would have caught
+# "both solid" had it already been in use, and the one to re-run when the
+# next pattern is added.
+seen = {}
+collision = None
+for label, got in table:
+    if got in seen:
+        collision = "%s and %s both show %s" % (seen[got], label, says(got))
+    seen[got] = label
+check("no two states or gestures show the same pattern", collision is None,
+      collision or "%d distinct patterns" % len(seen))
+
+# The relearn's own confirmation: the long press lands in LEARN, whose blink
+# is the acknowledgement that the gesture took. Without this the only
+# feedback a relearn gives is on the USB serial nobody has attached.
+c = build()
+c.rh = 61.0
+c.handle_button("long")
+check("a long press relearns and lands in LEARN",
+      c.state == main.LEARN and c.baseline == 61.0,
+      "%s baseline=%s" % (c.state, c.baseline))
+check("...and reseeds both gas pixels, not just the one the fan acts on",
+      c.vocdet.base is None and c.noxdet.base is None,
+      "voc=%s nox=%s" % (c.vocdet.base, c.noxdet.base))
+
+# The provisioning window's indicator. It was an even green blink told apart
+# from LEARN's by rate alone -- 150 ms against 400 ms -- which is why these
+# tests are about SHAPE. Rate is what a set of pin states cannot see, what a
+# glance across a room does not reliably read, and what an edit to either
+# period would quietly destroy while leaving a set-based test green.
+
+
+def rhythm(c, slots=16, slot_ms=150):
+    """The OK led's on/off sequence over a full cycle, as a string.
+
+    Aligned to the 1200 ms cycle first, because a sequence sampled from
+    wherever the clock happens to sit is a rotation of the pattern and
+    compares equal to nothing.
+    """
+    c.button.held_s = lambda: 0.0
+    CLOCK[0] += (1200 - CLOCK[0] % 1200) % 1200
+    out = []
+    for _ in range(slots):
+        c.drive_outputs()
+        out.append("1" if c.led_ok.value() else "0")
+        CLOCK[0] += slot_ms
+    return "".join(out)
+
+
+c = build()
+c.prov = FakeProv(True)
+window = rhythm(c)
+check("an open WiFi window double-blinks green, then pauses",
+      window == "1010000010100000", window)
+
+c = build()
+c.state = main.LEARN
+learn = rhythm(c)
+check("...a rhythm LEARN's even blink cannot be mistaken for",
+      learn != window and set(learn) == set("01"), learn)
+check("...telling them apart no longer rests on the sampling rate",
+      learn.count("1") != window.count("1"),
+      "learn %d/16 on, window %d/16 on"
+      % (learn.count("1"), window.count("1")))
+
+# The red led stays dark throughout: the hold cues own every pattern that
+# lights both, so a window that touched red would collide with one of them.
+c = build()
+c.prov = FakeProv(True)
+c.button.held_s = lambda: 0.0
+reds = set()
+for _ in range(16):
+    c.drive_outputs()
+    reds.add(c.led_run.value())
+    CLOCK[0] += 150
+check("...and leaves the red led dark throughout, so neither hold cue is "
+      "shadowed", reds == {0}, "red saw %s" % sorted(reds))
+
+c = build()
+c.prov = FakeProv(False)
+check("a closed window leaves the state's pattern alone",
+      pattern(c) == SOLID_GREEN)
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)
