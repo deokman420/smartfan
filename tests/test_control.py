@@ -1300,6 +1300,127 @@ c.prov = FakeProv(False)
 check("a closed window leaves the state's pattern alone",
       pattern(c) == SOLID_GREEN)
 
+# -- why the fan is running, while it is running ---------------------------
+#
+# The reported case, 03 Nov: a shower started the fan on the light, the light
+# went out, humidity held the run open for another half hour, and `why` still
+# read "light on" over a room 14.7 % above baseline. set_state() writes the
+# reason on a transition and a run outlives its own cause, so the label went
+# stale exactly where somebody wanted it.
+#
+# These drive the state machine rather than calling the helper, because the
+# bug was never in the string -- it was in nothing ever asking for a new one.
+
+
+def running(rh=None, light=True):
+    """A controller in RUN, past MIN_RUN_S, by whichever route is asked."""
+    c = build()
+    if light:
+        switch(c, True)                     # a run the light started
+    else:
+        c.rh = c.baseline + cfg.RH_RISE_ON + 1.0
+        step(c)
+    advance(cfg.MIN_RUN_S + cfg.SAMPLE_S)
+    if rh is not None:
+        c.rh = c.baseline + rh
+    step(c)
+    return c
+
+
+c = running()
+check("a run started by the light says so", c.state_reason == "light on",
+      c.state_reason)
+
+# The exact failure. The light goes out, the room is wet, the fan keeps
+# running -- and the label has to follow the reason, not the trigger.
+c = running()
+c.rh = c.baseline + 14.7
+switch(c, False)
+step(c)
+check("...and once the light is out, humidity takes the credit",
+      c.state == main.RUN and c.state_reason == "humidity +14.7%",
+      "%s %r light_on=%s" % (c.state, c.state_reason, c.light_on))
+
+# Both at once. Picking one would invent a precedence the exit chain does
+# not have: each holds the run on its own.
+c = running(rh=14.7)
+check("both reasons are named when both apply",
+      c.state_reason == "light on, humidity +14.7%", c.state_reason)
+
+# A timer is a real answer, but only when it is the only answer. A wet room
+# inside MIN_RUN_S is held by the room; saying "minimum run time" there would
+# hide the thing worth reporting behind the thing that is merely also true.
+c = build()
+c.rh = c.baseline + 9.0
+step(c)
+check("a wet room outranks the timer inside MIN_RUN_S",
+      c.state == main.RUN and c.fan_seconds() < cfg.MIN_RUN_S
+      and c.state_reason == "humidity +9.0%",
+      "%s ran=%ds %r" % (c.state, c.fan_seconds(), c.state_reason))
+
+# And the timer alone, which needs a dry dark room past POST_LIGHT_S but
+# still short of MIN_RUN_S -- a 60 s window on the shipped values, and the
+# only way "the fan is on because it has not been on long enough" is true.
+c = build()
+switch(c, True)
+c.rh = c.baseline
+switch(c, False)
+advance(cfg.POST_LIGHT_S + cfg.SAMPLE_S)
+step(c)
+check("a run held only by MIN_RUN_S says exactly that",
+      c.state == main.RUN and c.state_reason == "minimum run time",
+      "%s ran=%ds %r" % (c.state, c.fan_seconds(), c.state_reason))
+
+# The run-on after the light, which is a reason of its own and used to be
+# invisible: the fan keeps going in a dry dark room and nothing said why.
+c = running()
+c.rh = c.baseline                      # dry, so only POST_LIGHT_S holds it
+switch(c, False)
+step(c)
+check("the post-light run-on is named rather than left as the old trigger",
+      c.state == main.RUN and c.state_reason == "running on after the light",
+      "%s %r" % (c.state, c.state_reason))
+
+# Odor, the third reason, and the one the whole second sensor exists for.
+c = armed(rise=200, fall=50, base=29000.0, raw=28700)
+c.rh = c.baseline + cfg.RH_RISE_ON + 1.0
+step(c)
+advance(cfg.MIN_RUN_S + cfg.SAMPLE_S)
+c.rh = c.baseline                      # dry; only the odor path objects now
+step(c)
+check("odor holds the run under its own name",
+      c.state == main.RUN and c.state_reason == "odor +300",
+      "%s %r exc=%s" % (c.state, c.state_reason, c.excess_voc))
+
+# And the thing that must not happen: the live reason overwriting the exit's
+# own reason on the pass that ends the run. "dry, +0.0%" is the answer to a
+# different question and it is the right one to keep.
+c = running()
+c.rh = c.baseline
+switch(c, False)
+advance(cfg.POST_LIGHT_S + cfg.SAMPLE_S)
+step(c)
+check("the reason the run ENDED survives the pass that ends it",
+      c.state == main.IDLE and c.state_reason.startswith("dry,"),
+      "%s %r" % (c.state, c.state_reason))
+
+# A changed reason has to reach the broker and the dashboard, or it is only
+# true inside the device.
+c = running()
+c._push = False
+c.rh = c.baseline + 14.7
+switch(c, False)
+step(c)
+check("a changed reason is pushed, not just stored", c._push is True,
+      "%r push=%s" % (c.state_reason, c._push))
+
+c = running(rh=14.7)
+step(c)
+c._push = False
+step(c)
+check("...and an unchanged one is not pushed every pass", c._push is False,
+      "%r push=%s" % (c.state_reason, c._push))
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)

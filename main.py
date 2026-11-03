@@ -877,6 +877,7 @@ class Controller:
         ran = self.fan_seconds()
         if self.rpm >= cfg.MIN_RPM:
             self.fan_faults = 0          # a healthy run resets the tally
+        self._refresh_run_reason(ran)
         if ran >= self.st.MAX_RUN_S:
             # Latch. Without this the cap protects nothing: IDLE immediately
             # re-reads the same humidity, finds it still above RH_RISE_ON,
@@ -922,6 +923,60 @@ class Controller:
         if not self._voc_quiet():
             return
         self.set_state(IDLE, "dry, +%.1f%%" % self.excess_rh)
+
+    def _refresh_run_reason(self, ran):
+        """Say why the fan is running NOW, not why it started.
+
+        set_state() writes the reason on a transition, and a run routinely
+        outlives its own cause. A shower starts on the light, the light goes
+        out, and humidity holds the fan open for another half hour under a
+        label still reading "light on". Measured doing exactly that: 77.1
+        %RH, 14.7 above baseline, light_on False, `why: "light on"`.
+
+        This is the second half of a fix whose first half is recorded in
+        set_state()'s own comment -- the status page used to guess which of
+        three reasons was running the fan and guessed wrong, so the
+        controller publishes the answer instead. Publishing it once, at the
+        transition, left it to go stale exactly on the long runs where
+        somebody actually wants to know what is holding the fan on.
+
+        Every reason that currently applies is named, not just the first.
+        During a shower more than one usually does, and picking a winner
+        would invent a precedence the exit chain does not have: the light
+        and the humidity each hold the run independently, and which one
+        outlasts the other is not knowable from here.
+
+        The timer-only terms appear alone or not at all. A run still inside
+        MIN_RUN_S but already justified by a wet room is held by the room,
+        and reporting the timer would hide the thing worth reporting.
+        """
+        why = []
+        if self.light_on:
+            why.append("light on")
+        if self.excess_rh > self.st.RH_FALL_OFF:
+            why.append("humidity +%.1f%%" % self.excess_rh)
+        if not self._voc_quiet():
+            exc = self.excess_voc
+            why.append("odor" if exc is None else "odor +%d" % exc)
+        if not why:
+            # Nothing about the room justifies the run; a timer does. Said
+            # plainly, because "the fan is on because it has not been on
+            # long enough yet" is a real and perfectly good answer.
+            if (self.dark_since is not None
+                    and ms_since(self.dark_since) / 1000.0
+                    < self.st.POST_LIGHT_S):
+                why.append("running on after the light")
+            elif ran < self.st.MIN_RUN_S:
+                why.append("minimum run time")
+        if not why:
+            # The exit chain is about to end the run and will set its own
+            # reason. Overwriting it here with "nothing" would replace a
+            # real answer with a worse one.
+            return
+        reason = ", ".join(why)
+        if reason != self.state_reason:
+            self.state_reason = reason
+            self._push = True
 
     def step_selftest(self):
         """Prove the fan turns, at boot. True while the test still owns it.
