@@ -253,7 +253,9 @@ class Controller:
                 import sgp41
                 bus = I2C(0, sda=Pin(cfg.PIN_SDA), scl=Pin(cfg.PIN_SCL),
                           freq=100000)
-                s = sgp41.SGP41(bus, max_fails=cfg.VOC_MAX_FAILS, log=print)
+                s = sgp41.SGP41(bus, max_fails=cfg.VOC_MAX_FAILS, log=print,
+                                settle_ceiling_s=getattr(
+                                    cfg, "VOC_SETTLE_MAX_S", None))
                 sn = s.serial()
                 if sn is None:
                     # Either nothing is there, or two SGP4x are sharing the
@@ -455,13 +457,16 @@ class Controller:
             elif self.voc_hold_since is None:
                 self.voc_hold_since = time.ticks_ms()
 
-            # One learning verdict for both pixels. They share a sensor, a
-            # sample and a room, so a moment quiet enough to learn one is
-            # quiet enough to learn the other -- and two gates that could
-            # disagree would be two baselines describing different rooms.
+            # One ROOM verdict for both pixels, two ELEMENT verdicts. The
+            # room half is genuinely shared -- they see one sample of one
+            # room, and two gates that could disagree about it would be two
+            # baselines describing different places. Warm-up is not shared:
+            # the NOx pixel takes about two hours against the VOC pixel's
+            # minutes, and making the pixel the fan acts on wait for the
+            # pixel nothing acts on would be deaf for no benefit.
             learning = self._voc_learning()
-            self.vocdet.update(got[0], learning)
-            self.noxdet.update(got[1], learning)
+            self.vocdet.update(got[0], learning and self.voc.settled_voc)
+            self.noxdet.update(got[1], learning and self.voc.settled_nox)
         except Exception as e:
             # A sensor fault here is logged and dropped. It must never reach
             # set_state(FAULT): see __init__.
@@ -474,15 +479,22 @@ class Controller:
         other signals. Learning during an event would teach the baseline to
         treat the smell as normal, and then report clean air as a deviation.
 
-        The sensor's own warm-up is the fourth condition, and it only
-        matters after a reboot. The baseline is held in RAM, so every power
-        cut drops it and the first quiet sample afterwards reseeds it -- and
-        without this gate that sample comes from an element still climbing
-        ~530 ticks towards temperature. The baseline then sits about 500
-        ticks low and the odor path cannot trigger until the EWMA drags it
-        back, which takes over an hour. Waiting a minute for the hardware
-        costs a minute; not waiting costs the rest of the hour. sgp41.py
-        carries the measurement behind `settled`.
+        The sensor's own warm-up USED TO BE a fourth condition here, and is
+        not any more -- not because it stopped mattering but because it is
+        not one condition. It is two, one per pixel, and they differ by
+        twentyfold: minutes for the VOC pixel against about two hours for
+        the NOx pixel. Asking them as a single question meant either seeding
+        the NOx baseline mid-ramp or holding the VOC baseline -- the one the
+        fan acts on -- hostage to a pixel nothing acts on. So read_voc()
+        asks each pixel for itself, as `settled_voc` and `settled_nox`, and
+        this predicate answers only the question it can answer for both: is
+        the ROOM quiet enough to learn from.
+
+        It still matters, and for the reason it always did. The baseline is
+        held in RAM, so every power cut drops it and the first quiet sample
+        afterwards reseeds it; an element still climbing seeds a baseline
+        that the EWMA then takes an hour to drag back. sgp41.py carries the
+        measurement, and why the old 60 s timer was wrong about both pixels.
 
         AND NOT WHILE THE ODOR SIGNAL IS STILL UP. The other four terms stop
         this learning during a *run*, which is not the same as during an
@@ -527,7 +539,7 @@ class Controller:
                 and not self.light_on
                 and self.excess_rh <= self.st.RH_FALL_OFF
                 and (self._voc_quiet() or self._voc_hold_expired())
-                and self.voc is not None and self.voc.settled)
+                and self.voc is not None)
 
     def _odor_latch_rested(self):
         """May a latch held open only by odor let go and try again?

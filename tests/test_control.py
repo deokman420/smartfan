@@ -639,7 +639,15 @@ class FakeSGP41:
         self.raises = False
         # Warm, by default: every test here but the warm-up one is about a
         # device that has been running a while, which is the normal case.
-        self.settled = True
+        # Per pixel, because the driver is -- the NOx pixel takes about two
+        # hours against the VOC pixel's minutes.
+        self.settled_voc = True
+        self.settled_nox = True
+
+    def set_settled(self, on, nox=None):
+        """Both pixels, or each on its own."""
+        self.settled_voc = on
+        self.settled_nox = on if nox is None else nox
 
     def read(self, rh=None, t=None):
         self.reads += 1
@@ -685,18 +693,121 @@ check("the window closes on its own deadline", s.conditioning is False)
 got = s.read(45.0, 22.0)
 check("and a real reading follows", got == (29000, 18000), "%s" % (got,))
 
-# Readable is not settled. The element keeps climbing for a minute after
-# conditioning ends, so there are two deadlines: one for whether a reading
-# exists, one for whether it may seed a baseline. The second must still be
-# closed here, 13 s in, or a reboot seeds the baseline ~500 ticks low.
+# Readable is not settled, and settling is not a timer.
+#
+# This was a 60 s deadline, from a measurement that watched the ramp for a
+# few minutes and called it finished. Both pixels were still climbing long
+# after: the VOC pixel at ~4 ticks/min at half an hour, the NOx pixel for
+# about two hours. So the gate now asks the element whether it has stopped
+# moving, and these tests replay REAL traces through it -- the invented
+# ramps all look like ramps, which is the one shape that was never the
+# problem.
+
 check("a readable sensor is not yet a settled one",
-      s.conditioning is False and s.settled is False)
+      s.conditioning is False and s.settled_voc is False)
 fresh = sgp41.SGP41(EchoBus())
-check("unstarted reports unsettled, not settled", fresh.settled is False)
-advance(47)
-check("still unsettled at 60 s minus a sample", s.settled is False)
-advance(2)
-check("settled once the measured 60 s has passed", s.settled is True)
+check("unstarted reports unsettled, not settled",
+      fresh.settled_voc is False and fresh.settled_nox is False)
+
+# The NOx warm-up as actually recorded, 2026-11-02, every 20 s from 2.5 to
+# 19.7 minutes of uptime. This is the exact trace the OLD two-minute
+# flatness test pronounced settled at its last sample -- 15 ticks of drift
+# across 120 s -- and on the strength of that the baselines were relearned
+# 1,400 ticks away from where the pixel eventually came to rest.
+NOX_RAMP = [17442, 17363, 17295, 17226, 17167, 17126, 17078, 17048, 17021,
+            17009, 16976, 16962, 16967, 16987, 17011, 17006, 17015, 17008,
+            17001, 16991, 16984, 16977, 16957, 16956, 16953, 16941, 16927,
+            16922, 16913, 16900, 16896, 16880, 16886, 16878, 16874, 16873,
+            16865, 16866, 16851, 16858, 16852, 16843, 16831, 16821, 16839,
+            16823, 16811, 16812, 16811, 16808, 16811, 16811]
+
+f = sgp41._Flat()
+for v in NOX_RAMP:
+    advance(20)
+    f.feed(v, CLOCK[0])
+check("a real warm-up ramp is never flat, however calm its last minutes",
+      f.flat is False, "span %s ticks" % f.span)
+
+# And the specific failure, stated as itself: the tail of that ramp looks
+# quiet over two minutes and is nothing of the kind over fifteen.
+tail = NOX_RAMP[-6:]
+check("...and the quiet-looking tail is what the old test measured",
+      max(tail) - min(tail) <= 20 and f.span > sgp41._FLAT_TICKS,
+      "tail spread %d, window span %s" % (max(tail) - min(tail), f.span))
+
+# Twenty-five real quiet minutes from the overnight series, every 60 s,
+# taken four hours in when both pixels had genuinely settled.
+NOX_QUIET = [16254, 16257, 16250, 16248, 16258, 16250, 16249, 16258, 16267,
+             16260, 16269, 16254, 16262, 16260, 16260, 16262, 16262, 16272,
+             16265, 16265, 16269, 16270, 16270, 16274]
+
+f = sgp41._Flat()
+for v in NOX_QUIET:
+    advance(60)
+    f.feed(v, CLOCK[0])
+check("a real settled stretch is flat", f.flat is True,
+      "span %s ticks" % f.span)
+
+# No verdict at all until there is enough evidence for one. An empty
+# tracker reporting "flat" would settle every pixel on its first sample.
+f = sgp41._Flat()
+for _ in range(4):
+    advance(60)
+    f.feed(16260, CLOCK[0])
+check("a tracker with less than a full window has no opinion",
+      f.span is None and f.flat is False)
+
+# Per pixel, which is the point of the rewrite: one gate for both would
+# hold the VOC baseline -- the one the fan acts on -- for the two hours the
+# NOx pixel takes.
+bus = EchoBus(voc=29000, nox=18000)
+s2 = sgp41.SGP41(bus, log=lambda *a: None)
+s2.start()
+advance(11)
+for i in range(40):
+    bus.nox = 18000 + (i % 2) * 400       # a pixel still thrashing
+    advance(30)
+    s2.read(45.0, 22.0)
+check("a steady pixel settles while a moving one does not",
+      s2.settled_voc is True and s2.settled_nox is False,
+      "voc=%s nox=%s" % (s2.settled_voc, s2.settled_nox))
+
+# Latched. Flatness DETECTS the end of warm-up; it is not a standing
+# condition, and an element does not un-warm. Unlatched it would go False
+# during any real event -- exactly when _voc_learning()'s hold-cap escape
+# needs learning permitted -- and the odor path would deadlock on a stale
+# baseline, which is the bug VOC_HOLD_MAX_S exists to prevent.
+for i in range(20):
+    bus.voc = 29000 + (i % 2) * 2000      # a large, real-looking event
+    advance(30)
+    s2.read(45.0, 22.0)
+check("a settled pixel stays settled through an event",
+      s2.settled_voc is True, "voc=%s" % s2.settled_voc)
+
+# The ceiling, because a gate that never opens is a sensor that never
+# works. A pixel that refuses to settle is seeded anyway, late and loudly.
+notes = []
+bus3 = EchoBus()
+s3 = sgp41.SGP41(bus3, log=lambda *a: notes.append(a[0]),
+                 settle_ceiling_s=600)
+s3.start()
+advance(11)
+for i in range(30):
+    bus3.voc = 29000 + (i % 2) * 3000
+    bus3.nox = 18000 + (i % 2) * 3000
+    advance(30)
+    s3.read(45.0, 22.0)
+check("a pixel that never goes flat settles on the ceiling",
+      s3.settled_voc is True and s3.settled_nox is True)
+check("...and says so, rather than passing for a measured settle",
+      any("ceiling" in n for n in notes), "%s" % notes[:1])
+
+# start() re-arms. The heater has been off, so flatness established before
+# it describes a different element temperature.
+s3.start()
+check("a restart drops the latch and the evidence with it",
+      s3.settled_voc is False and s3.settled_nox is False
+      and s3._flat[0].span is None)
 
 # Compensation ticks, and the clamp that stops a nonsense reading biasing
 # every sample after it.
@@ -783,9 +894,14 @@ def armed(rise=200, fall=50, base=29000.0, raw=28700):
 # the odor path deaf for the hour the EWMA took to recover.
 cold = build()
 cold.voc = FakeSGP41(30094)
-cold.voc.settled = False
-check("a cold sensor is not learned from",
-      cold._voc_learning() is False)
+cold.voc.set_settled(False)
+# The gate moved: _voc_learning() answers for the ROOM, and the element is
+# asked per pixel at the call site, so the room predicate is now True here
+# and the refusal happens one level down. Asserting the outcome rather than
+# the predicate is the point -- the old check would still pass if the
+# per-pixel gate were dropped from read_voc() tomorrow.
+check("a cold sensor leaves the room predicate alone",
+      cold._voc_learning() is True and cold.voc.settled_voc is False)
 cold.read_voc()
 check("...so a reboot leaves the baseline unseeded, not seeded low",
       cold.vocdet.base is None, "%s" % cold.vocdet.base)
@@ -794,10 +910,31 @@ check("...so a reboot leaves the baseline unseeded, not seeded low",
 check("...while the raw reading is still reported",
       cold.vocdet.raw == 30094 and cold.excess_voc is None,
       "raw=%s exc=%s" % (cold.vocdet.raw, cold.excess_voc))
-cold.voc.settled = True
+cold.voc.set_settled(True)
 cold.read_voc()
 check("and the first warm sample seeds it", cold.vocdet.base == 30094.0,
       "%s" % cold.vocdet.base)
+
+# The two pixels seed independently, which is the whole reason the gate is
+# per pixel. The NOx element takes about two hours against the VOC
+# element's minutes; one shared gate meant either seeding NOx inside its
+# ramp or leaving the pixel the fan ACTS on deaf for those two hours.
+# Nothing acts on NOx, so its wait is free -- but only if it can wait
+# alone.
+split = build()
+split.voc = FakeSGP41(30094)
+split.voc.set_settled(True, nox=False)
+split.read_voc()
+check("the VOC baseline seeds while the NOx pixel is still warming",
+      split.vocdet.base == 30094.0 and split.noxdet.base is None,
+      "voc=%s nox=%s" % (split.vocdet.base, split.noxdet.base))
+check("...and the odor path is armed meanwhile, not held back by NOx",
+      split.excess_voc == 0 and split.excess_nox is None,
+      "voc=%s nox=%s" % (split.excess_voc, split.excess_nox))
+split.voc.set_settled(True)
+split.read_voc()
+check("...then NOx seeds on its own schedule",
+      split.noxdet.base == 18000.0, "%s" % split.noxdet.base)
 
 # A latched run returns to IDLE with the air still bad: state IDLE, light
 # off, room dry, sensor settled -- every term the gate used to have. So the

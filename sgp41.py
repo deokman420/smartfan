@@ -49,24 +49,48 @@ conditioning command and returns None until the deadline passes. The 50 ms
 measurement delay does block, which is well inside the budget -- the loop
 already blocks longer than that on the DHT22.
 
-READABLE IS NOT SETTLED. Conditioning ends at 10 s and the readings after it
-are real, but the element is still coming to temperature: measured here from
-cold, sraw_voc climbed about 530 ticks over the first 60 s and was flat
-after. That matters to exactly one caller. A baseline seeded inside that
-ramp lands roughly 500 ticks below where the room actually sits, so the
-deviation reads about -500 -- clean air reported as cleaner than normal --
-and at cfg.VOC_BASELINE_A (0.0005, ~67 min) the odor path stays deaf for
-over an hour after every reboot. That was observed, not predicted: it is
-what produced `base 29593 / raw 30094 / odr -500` on 2026-11-02.
+READABLE IS NOT SETTLED, AND SETTLING IS NOT A TIMER. Conditioning ends at
+10 s and the readings after it are real, but the element is still coming to
+temperature. A baseline seeded inside that ramp is wrong by however far the
+raw count still has to travel, and at cfg.VOC_BASELINE_A (0.0005, ~67 min)
+the odor path then spends an hour deaf. That was observed, not predicted:
+`base 29593 / raw 30094 / odr -500` on 2026-11-02.
 
-So there are two deadlines, not one. `conditioning` gates whether there is a
-reading at all; `settled` gates whether a reading is stable enough to learn
-a baseline from. Ten seconds is Sensirion's figure and also their maximum
-for the conditioning command, so the longer wait cannot simply be folded
-into it -- running 0x2612 for a minute would overheat the pixel. Readings
-between the two deadlines are published and displayed as normal, because
-they are the sensor's honest output; they are only withheld from the
-baseline. main.py decides what to do with that, in _voc_learning().
+This used to be a 60 s timer, from a measurement that said sraw_voc climbed
+about 530 ticks over the first minute and was flat after. BOTH HALVES OF
+THAT WERE WRONG, and in the same way: the ramp was watched for minutes and
+pronounced finished.
+
+  - The VOC pixel was still moving about 4 ticks/min at 30 minutes. Seeded
+    at 60 s, it read +129 against a start threshold of 80 half an hour
+    later, on air nobody could smell.
+  - The NOx pixel takes about TWO HOURS. Measured over a 9.2 h overnight
+    series in an empty room, 2-3 Nov: the hourly drift ran -2.6, -3.8,
+    -0.9 ticks/min and only then crossed into noise. A 20-minute figure
+    taken earlier that day came from a two-minute flatness test, which a
+    long exponential satisfies in passing without having settled at all.
+
+So the gate asks the sensor rather than the clock: a pixel is settled once
+its raw count has stayed inside _FLAT_TICKS across _FLAT_BLOCKS consecutive
+blocks of _FLAT_BLOCK_MS. Per pixel, because the two differ by twenty-fold
+and one gate for both would hold the VOC baseline -- the one the fan acts on
+-- hostage to the NOx pixel for two hours after every power cut.
+
+WHAT THIS CANNOT DO. The late ramp and the settled wander overlap. In that
+same overnight series the pixels drifted +-2.5 ticks/min for hours after
+settling, tracking room humidity, which is the same order as the ramp's last
+hour. No flatness test separates those, and this one does not claim to: it
+removes the steep part, roughly 1400 ticks of NOx ramp down to a ~150 tick
+residual, and the rest is a job for how the trigger reads the signal rather
+than for when the baseline is seeded.
+
+So there are three deadlines, not one. `conditioning` gates whether there is
+a reading at all; `settled_voc` and `settled_nox` gate whether that pixel's
+reading may seed a baseline; and a ceiling gates how long either may refuse,
+because a gate that never opens is a sensor that never works. Readings
+between them are published and displayed as normal, because they are the
+sensor's honest output; they are only withheld from the baseline. main.py
+decides what to do with that, in _voc_learning().
 """
 
 import time
@@ -87,13 +111,80 @@ _T_DEFAULT  = 0x6666
 
 _CONDITION_MS = 10000
 
-# How long from power-on before a reading may seed a baseline. 60 s is the
-# measured settling time of this build's part from cold, with the ramp flat
-# after it; see the module docstring. It is deliberately not cfg-tunable --
-# it is a property of the element, not a preference.
-_SETTLE_MS = 60000
+# What "stopped moving" means. Three consecutive five-minute blocks, judged
+# min-to-max ACROSS ALL THREE at once rather than block by block -- which is
+# what makes a slow monotonic ramp fail. At 4 ticks/min a ramp looks calm
+# inside any one block (20 ticks) and is obvious across three (60).
+#
+# 45 ticks comes from the 2-3 Nov overnight series. Over 15-minute spans in
+# the settled region the NOx pixel moved a median of 23 ticks and a p90 of
+# 36, and the VOC pixel a median of 28; the ramp's second hour moved 57.
+# So the threshold sits between the wander and the ramp, which is the most
+# any single number can do here.
+#
+# Not cfg-tunable: these are properties of the element. The CEILING is a
+# preference -- how long you are willing to be deaf -- and lives in
+# config.py, passed in.
+_FLAT_BLOCK_MS = 300000
+_FLAT_BLOCKS   = 3
+_FLAT_TICKS    = 45
+_CEILING_MS    = 7200000        # 2 h, if the caller names none
 
 _SELF_TEST_PASS = 0xD400
+
+
+class _Flat:
+    """Has one pixel's raw count stopped climbing?
+
+    Tumbling blocks, not a sliding window: at the loop's 2 s cadence a
+    15-minute sliding window is 450 samples per pixel, which is real memory
+    on this part for a question that does not need the resolution. Each
+    completed block contributes only its min and max.
+
+    The verdict is taken across every retained block at once. Judging block
+    by block would pass a ramp -- each block individually calm, each one
+    lower than the last -- which is precisely the failure that made the old
+    60 s figure look right.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self._blocks = []       # (lo, hi) per completed block
+        self._lo = None
+        self._hi = None
+        self._since = None
+
+    def feed(self, raw, now):
+        if self._since is None:
+            self._since = now
+            self._lo = self._hi = raw
+            return
+        if raw < self._lo:
+            self._lo = raw
+        elif raw > self._hi:
+            self._hi = raw
+        if time.ticks_diff(now, self._since) < _FLAT_BLOCK_MS:
+            return
+        self._blocks.append((self._lo, self._hi))
+        if len(self._blocks) > _FLAT_BLOCKS:
+            self._blocks.pop(0)
+        self._since = now
+        self._lo = self._hi = raw
+
+    @property
+    def span(self):
+        """Ticks between the lowest and highest retained block, or None."""
+        if len(self._blocks) < _FLAT_BLOCKS:
+            return None
+        return (max(b[1] for b in self._blocks)
+                - min(b[0] for b in self._blocks))
+
+    @property
+    def flat(self):
+        span = self.span
+        return span is not None and span <= _FLAT_TICKS
 
 
 def crc8(data):
@@ -128,7 +219,8 @@ class SGP41:
     to happen.
     """
 
-    def __init__(self, i2c, addr=0x59, max_fails=10, log=print):
+    def __init__(self, i2c, addr=0x59, max_fails=10, log=print,
+                 settle_ceiling_s=None):
         self.i2c = i2c
         self.addr = addr
         self.max_fails = max_fails
@@ -136,7 +228,12 @@ class SGP41:
         self.ok = True          # False once the path has stood down for good
         self.fails = 0          # consecutive failures, reset by any good read
         self._until = None      # conditioning deadline; None until start()
-        self._settled_at = None # settling deadline; see the settled property
+        self._ceiling_at = None # when a pixel settles whether flat or not
+        self._ceiling_ms = (_CEILING_MS if settle_ceiling_s is None
+                            else int(settle_ceiling_s * 1000))
+        # Per pixel, and latched. See _check_settled for why it latches.
+        self._flat = (_Flat(), _Flat())
+        self._settled = [False, False]
 
     # --- bus ---------------------------------------------------------
     def _xfer(self, cmd, params=(), delay_ms=10, nwords=0):
@@ -202,10 +299,18 @@ class SGP41:
 
     # --- the loop ----------------------------------------------------
     def start(self):
-        """Arm both deadlines. Returns at once -- see the docstring."""
+        """Arm the deadlines and drop any settling evidence. Returns at once.
+
+        A restart means the heater has been off, so whatever flatness was
+        established before it describes a different element temperature and
+        must not be carried over.
+        """
         now = time.ticks_ms()
         self._until = time.ticks_add(now, _CONDITION_MS)
-        self._settled_at = time.ticks_add(now, _SETTLE_MS)
+        self._ceiling_at = time.ticks_add(now, self._ceiling_ms)
+        self._flat[0].reset()
+        self._flat[1].reset()
+        self._settled = [False, False]
 
     @property
     def conditioning(self):
@@ -214,19 +319,50 @@ class SGP41:
         return time.ticks_diff(self._until, time.ticks_ms()) > 0
 
     @property
-    def settled(self):
-        """Has the element been powered long enough for a stable reading?
+    def settled_voc(self):
+        """May the VOC pixel's reading seed a baseline?"""
+        return self._settled[0]
 
-        True once _SETTLE_MS has passed since start(). False before that,
-        and False before start(), which is the safe answer in both cases:
-        nothing may be learned from a sensor whose heater has not run.
+    @property
+    def settled_nox(self):
+        """May the NOx pixel's reading seed a baseline?
 
-        Readings are valid as soon as `conditioning` goes False. This is the
-        stricter question only the baseline needs to ask.
+        Separate from settled_voc and routinely much later: this pixel takes
+        about two hours against the VOC pixel's minutes. Nothing acts on NOx,
+        so the wait costs nothing the fan needs.
+        """
+        return self._settled[1]
+
+    def _check_settled(self, now):
+        """Latch each pixel the first time it looks settled.
+
+        LATCHED, deliberately. Flatness is being used to DETECT the end of
+        warm-up, not as a standing condition -- an element does not un-warm.
+        Left unlatched it would go False again during any real event, which
+        is exactly when main.py's hold-cap escape needs learning to be
+        permitted: _voc_learning() would then refuse for ever and the odor
+        path would deadlock on a stale baseline, which is the bug
+        cfg.VOC_HOLD_MAX_S exists to prevent. Re-arming happens in start(),
+        and only there.
         """
         if self._until is None:
-            return False
-        return time.ticks_diff(self._settled_at, time.ticks_ms()) <= 0
+            return
+        ceiling = time.ticks_diff(self._ceiling_at, now) <= 0
+        for i, name in ((0, "voc"), (1, "nox")):
+            if self._settled[i]:
+                continue
+            if self._flat[i].flat:
+                self._settled[i] = True
+                self._log("%s: settled, %d ticks over %d min"
+                          % (name, self._flat[i].span,
+                             _FLAT_BLOCK_MS * _FLAT_BLOCKS // 60000))
+            elif ceiling:
+                self._settled[i] = True
+                span = self._flat[i].span
+                self._log("%s: settling gave up at the %d min ceiling "
+                          "(span %s) - baseline may be seeded mid-ramp"
+                          % (name, self._ceiling_ms // 60000,
+                             "unknown" if span is None else "%d ticks" % span))
 
     def read(self, rh=None, t=None):
         """(sraw_voc, sraw_nox), or None while conditioning or stood down.
@@ -252,4 +388,11 @@ class SGP41:
         except Exception as e:
             return self._failed(e)
         self.fails = 0
+        # Settling evidence is gathered here, at the one place a reading
+        # exists, so no caller can forget to feed it and silently never
+        # settle.
+        now = time.ticks_ms()
+        self._flat[0].feed(voc, now)
+        self._flat[1].feed(nox, now)
+        self._check_settled(now)
         return voc, nox

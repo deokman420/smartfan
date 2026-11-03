@@ -118,6 +118,19 @@ VOC_RISE_ON     = 0      # ticks below baseline that start the fan; 0 = off
 VOC_FALL_OFF    = 0      # ticks below baseline at which the air is clear
 VOC_BASELINE_A  = 0.0005 # slower than BASELINE_A: odor events are shorter
                          # than showers and must not be learned as normal
+# How long a pixel may refuse to settle before its baseline is seeded
+# anyway. The gate asks the element whether it has stopped climbing, and a
+# gate with no ceiling is a sensor that can decline to work for ever -- a
+# draughty room, a part that wanders, a threshold set a little too tight.
+#
+# Two hours is the measured NOx warm-up (2-3 Nov, 9.2 h overnight series),
+# so the ceiling should rarely be what fires. While a pixel is unsettled its
+# baseline stays unseeded, which makes the odor path inert rather than
+# wrong: humidity and the light still run the fan. That is the trade this
+# number sets -- deaf for a bounded while against deaf for an hour on a
+# baseline seeded mid-ramp, which is what the old 60 s timer bought.
+VOC_SETTLE_MAX_S = 7200
+
 VOC_RECOVER_S   = 900    # no VOC triggering this long after a steam event,
                          # because drying a wet room moves the MOX signal too
 # How long the odor path may hold the baseline still before the baseline,
