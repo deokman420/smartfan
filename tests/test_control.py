@@ -392,9 +392,56 @@ check("the button clears it", c.state == main.IDLE and c.fault_kind is None,
 c = build(boot="watchdog or reset", selftest_s=6)
 check("an OTA or watchdog restart does not spin the fan",
       c.selftest == "skipped", str(c.selftest))
+# Force off DEFERS the test rather than skipping it, and the difference is
+# the whole point. Force off lives in settings.json and survives power
+# cuts, so skipping meant a fan that was never proven again -- silently,
+# and indistinguishably from one that passed.
 c = build(boot="power-on", mode="Force off", selftest_s=6)
 check("Force off is not overruled by a diagnostic",
-      c.selftest == "skipped", str(c.selftest))
+      c.selftest == "deferred" and c.fan.value() == 0, str(c.selftest))
+step(c, 3)
+check("...and a deferred test does not creep into spinning the fan",
+      c.fan.value() == 0 and c.selftest == "deferred",
+      "%s fan=%s" % (c.selftest, c.fan.value()))
+
+# Returning to Auto is both the moment the objection expires and the moment
+# anyone wants to know the fan works, so that is where it gets its turn.
+mode(c, "Auto")
+step(c)
+check("leaving Force off arms the deferred test", c.selftest == "running",
+      str(c.selftest))
+advance(cfg.SPINUP_S + 1)
+step(c)
+check("...and the fan is proved to turn", c.selftest == "passed",
+      "%s rpm=%s" % (c.selftest, c.rpm))
+
+# Once proven, toggling the mode must not keep restarting it: a six second
+# burst of fan every time somebody touches a dropdown is its own fault.
+mode(c, "Force off")
+step(c)
+mode(c, "Auto")
+step(c)
+check("a passed test is not re-run by toggling the mode",
+      c.selftest == "passed", str(c.selftest))
+
+# A FAILED test must not be re-rolled by toggling a mode. A fan that did
+# not turn is a fault to go and look at, not a dice throw to repeat until
+# it comes up passed -- and "leave Force off" would be an easy accidental
+# way to clear the one piece of evidence.
+c2 = build(boot="power-on", mode="Force off", selftest_s=6)
+c2.selftest = "failed"
+mode(c2, "Auto")
+step(c2)
+check("a failed test is not re-rolled by leaving Force off",
+      c2.selftest == "failed", str(c2.selftest))
+
+# And FAULT is not a state to start spinning a fan in.
+c3 = build(boot="power-on", mode="Force off", selftest_s=6)
+c3.set_state(main.FAULT, "bench")
+mode(c3, "Auto")
+step(c3)
+check("a faulted controller does not arm the deferred test",
+      c3.selftest == "deferred", str(c3.selftest))
 c = build(boot="power-on", selftest_s=0)
 check("SELFTEST_S = 0 disables it", c.selftest == "disabled",
       str(c.selftest))

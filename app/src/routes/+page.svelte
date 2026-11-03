@@ -1278,6 +1278,24 @@
                   <span class="v mono-v">{t.fw ?? '—'}</span>
                 </div>
                 <div>
+                  <span class="k">Fan test</span>
+                  {#if t.selftest === 'deferred'}
+                    <span class="v small-v tone-warn">Never run</span>
+                  {:else if t.selftest === 'failed'}
+                    <span class="v small-v tone-bad">Failed</span>
+                  {:else if t.selftest === 'passed'}
+                    <span class="v small-v tone-ok">Passed</span>
+                  {:else if t.selftest === 'running'}
+                    <span class="v small-v">Running</span>
+                  {:else if t.selftest === 'skipped'}
+                    <span class="v small-v tone-dim">Not this boot</span>
+                  {:else if t.selftest === 'disabled'}
+                    <span class="v small-v tone-dim">Off</span>
+                  {:else}
+                    <span class="v">—</span>
+                  {/if}
+                </div>
+                <div>
                   <span class="k">Fault</span>
                   {#if t.fault}
                     <span class="v small-v tone-bad">{t.reason || 'Yes'}</span>

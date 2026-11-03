@@ -181,6 +181,9 @@
       "build": {
         "name": "Firmware build"
       },
+      "self_test": {
+        "name": "Fan self-test"
+      },
       "app_build": {
         "name": "App build"
       },

@@ -316,8 +316,19 @@ class Controller:
             self.selftest = "disabled"
             print("selftest: disabled")
         elif self.st.mode == "Force off":
-            self.selftest = "skipped"
-            print("selftest: skipped, mode is Force off")
+            # DEFERRED, not skipped. Force off is sticky -- it lives in
+            # settings.json and survives power cuts -- so "skip the boot
+            # diagnostic" used to mean "never prove this fan again", and
+            # nothing anywhere said so. A unit that went back into a ceiling
+            # having never turned its fan looked exactly like one that had.
+            #
+            # The objection to running it is that somebody said do not run
+            # this fan. That objection expires the moment the mode returns
+            # to Auto, and that is also the moment anyone wants to know the
+            # fan still works, so decide() picks it up there.
+            self.selftest = "deferred"
+            print("selftest: deferred, mode is Force off - it will run "
+                  "when the mode returns to Auto")
         elif cfg.SELFTEST_PWRON_ONLY and self.boot_reason != "power-on":
             self.selftest = "skipped"
             print("selftest: skipped, boot was %s" % self.boot_reason)
@@ -768,6 +779,13 @@ class Controller:
         # and the fan never sees a transition.
         if self.forced:
             self.forced = False
+            # A self-test that Force off deferred at boot gets its turn now.
+            # Only when it was deferred: a test that already ran, failed, or
+            # was disabled outright must not be restarted by toggling a
+            # mode, and FAULT is not a state to start spinning a fan in.
+            if self.selftest == "deferred" and self.state != FAULT:
+                self.selftest = "running"
+                print("selftest: mode left Force off, proving the fan now")
             if self.state != IDLE:
                 self.set_state(IDLE, "override released")
                 # And the forced run must not spend the automatic cap either.

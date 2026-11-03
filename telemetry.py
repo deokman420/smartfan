@@ -118,6 +118,9 @@ _SENSORS = (
     ("reconnects",  "Link reconnects",   "reconn",   None,      None,          "total_increasing", "mdi:lan-connect"),
     ("last_outage", "Last outage",       "outage_s", "s",       "duration",    None,               "mdi:lan-disconnect"),
     ("boot_reason", "Last boot reason",  "boot",     None,      None,          None,               "mdi:restart"),
+    # Published because it was invisible, and invisible is the whole fault:
+    # `deferred` means this fan has never been proven to turn.
+    ("selftest",    "Fan self-test",     "selftest", None,      None,          None,               "mdi:fan-alert"),
     ("build",       "Build",             "fw",       None,      None,          None,               "mdi:package-variant"),
 )
 

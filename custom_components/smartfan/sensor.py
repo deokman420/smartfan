@@ -194,6 +194,14 @@ SENSORS: tuple[SmartfanSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     SmartfanSensorDescription(
+        # "deferred" is the one worth an automation: it means the boot
+        # diagnostic never ran, because the mode was Force off, and so this
+        # fan has not been proven to turn since it was last powered.
+        key="self_test",
+        field="selftest",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SmartfanSensorDescription(
         key="build",
         field="fw",
         entity_category=EntityCategory.DIAGNOSTIC,
