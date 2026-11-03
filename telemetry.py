@@ -70,9 +70,12 @@ APP_MANIFEST = "www/build.json"
 def _flash_free():
     """Free flash in bytes, or None off-device.
 
-    Published beside the update status because the two answer one question
-    together: an OTA batch stages every file before it installs any, so
-    "why did that push do nothing" is usually "there was nowhere to put it".
+    Published beside the update status so that "why did that push do
+    nothing" can be answered from the network rather than from a serial
+    console. Note what it is NOT: measured on 2026-11-03 this board had
+    596 kB free, against an OTA ceiling of roughly 60 kB, so space is not
+    what stops a large batch. The number is here to rule itself out
+    quickly, which is worth one field. See ota.py.
     """
     try:
         import os

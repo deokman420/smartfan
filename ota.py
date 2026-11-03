@@ -34,21 +34,22 @@ MAX_TRIES = 2          # attempts before rolling back
 COMMIT_S = 60          # healthy running time before an update is kept
 
 # Spare flash a batch must leave behind after staging, over and above the
-# bytes it is about to write.
+# bytes it is about to write. Staging writes every file as `name.new` while
+# the original is still there, so a batch needs its own size free before the
+# install step can begin.
 #
-# Staging writes every file as `name.new` while the original is still there,
-# so a batch needs its own size free before the install step can begin.
-# Measured on this device: ~47 kB installed, ~48 kB installed, ~62 kB
-# installed, ~98 kB did not, ~106 kB did not. The failures staged every file
-# and then died, and said so only to a serial console nobody was holding --
-# from the network the symptom was a device that re-downloaded the same
-# files on every push and kept running the old code.
+# THIS IS A GUARD, NOT THE EXPLANATION, and the difference was measured on
+# 2026-11-03 rather than assumed. docs/TODO.md recorded a ceiling around
+# 60 kB -- ~47, ~48 and ~62 kB installed; ~98 and ~106 kB did not -- and
+# attributed it to space. The board has **596 kB of flash free and 325 kB of
+# heap free while running**. Neither number is anywhere near a constraint at
+# 106 kB, so whatever stops a large batch, it is not room.
 #
-# So the arithmetic is done BEFORE anything is downloaded, and a batch that
-# cannot fit is refused in a sentence that names both numbers. That is not
-# the whole fix -- streaming each body to its file instead of buffering it,
-# and staging one file at a time, is what would remove the ceiling -- but a
-# failure you can read beats one you have to bisect.
+# The check stays because it costs one subtraction and turns the one failure
+# it does cover into a sentence instead of a silence. What the real ceiling
+# is remains open: the likeliest remaining candidate is allocator
+# FRAGMENTATION, since gc.mem_free() is a total and a 70 kB body buffered by
+# r.content needs a contiguous run of it.
 MIN_FREE = 24576       # 24 kB, room for history and a log to keep working
 
 

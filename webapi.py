@@ -51,6 +51,16 @@ already refuses `update` here. See wifi.py.
 
 from httpd import Response, json_response, text_response
 
+
+def _mem_free():
+    """Free heap in bytes, or None where there is no gc to ask."""
+    try:
+        import gc
+        gc.collect()
+        return gc.mem_free()
+    except Exception:
+        return None
+
 try:
     from store import FIELDS, format_row
 except ImportError:                     # history disabled or not installed
@@ -278,10 +288,19 @@ class Api:
             "sample_s": self.cfg.SAMPLE_S,
             "publish_s": self.cfg.PUBLISH_INTERVAL_S,
             "history": self.history.stats() if self.history else None,
-            # Free flash, because an OTA stages the whole batch before it
-            # installs any of it, and "the push did nothing" is usually
-            # this number being too small. See docs/TODO.md.
+            # Free flash. Measured at 596 kB on 2026-11-03, against an OTA
+            # ceiling around 60 kB -- so this rules space out rather than
+            # explaining anything, which is still worth one field when a
+            # push does nothing. See ota.py.
             "flash_free": self.snap.flash_free(),
+            # Free HEAP, beside free flash, because measuring the board on
+            # 2026-11-03 ruled the flash explanation out: 596 kB free with
+            # the ~60 kB OTA ceiling unexplained. An update buffers each
+            # whole body in RAM before writing it, so this is the number
+            # the ceiling is more likely to be about -- and it has to be
+            # read while the controller is actually running to mean
+            # anything, which a cable cannot do without stopping it.
+            "mem_free": _mem_free(),
             "ota": getattr(self.c, "ota_state", None),
             "api": 1,
         })

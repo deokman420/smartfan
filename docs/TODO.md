@@ -251,19 +251,57 @@ Two things fell out of it:
   I/O and `publish()` returns immediately while offline, so an unused one
   costs a few topic strings.
 
-### An OTA batch much past 60 kB does not install — needs USB
+### An OTA installs, then loses a race and is rolled back — needs USB
 
-`ota.py` installs a whole batch or nothing. Past roughly 60 kB of staged bytes
-the batch stages every file and then dies before the install step, and the
-error goes only to a serial console nobody is holding. From the network the
-symptom is silent: the device re-downloads the same files on every push, never
-resets, and keeps running the old code.
-
-Measured on this device: ~47 kB installed, ~48 kB installed, ~62 kB installed,
-~98 kB did not, ~106 kB did not. Note it is the *batch total*, not any single
-file — a 47 kB `main.py` pushed on its own installed fine. Every staged file is
-written as `name.new` while the original and any `name.bak` are still on flash,
-so a push needs roughly twice its own size free.
+> **Re-diagnosed 2026-11-03, and the old heading was wrong.** This was filed as
+> "a batch much past 60 kB does not install", attributed to flash space. It is
+> not about size and it is not about space. The update **installs perfectly**;
+> the *trial boot* then fails, twice, and the rollback correctly puts the old
+> code back. Seen end to end over the cable, serial captured through all three
+> boots:
+>
+> ```
+> ota: 2 file(s), 50232 B to stage, 610304 B free: webapi.py, telemetry.py
+> ota: staged webapi.py (22253 bytes)
+> <<reset>>
+> telemetry: build 22e12496   ota: update on trial, committing after 60s healthy
+> net: offline -> wifi        <<reset>>        <- died before "wdt: armed"
+> telemetry: build 22e12496   ota: update on trial, committing after 60s healthy
+> net: offline -> wifi        <<reset>>        <- again
+> telemetry: build 64bf4aa9                    <- MAX_TRIES spent, rolled back
+> ```
+>
+> **The cause.** `boot_check()` arms an 8 s hardware watchdog whenever an
+> update is pending — that is what catches `main.py` failing at import. But
+> `run()` deliberately feeds nothing for its first 3 s:
+>
+> ```python
+> if self.wdt:
+>     self.wdt.feed()
+> elif cfg.WDT_TIMEOUT_MS and ms_since(started) > 3000:
+>     self.wdt = WDT(timeout=cfg.WDT_TIMEOUT_MS)
+> ```
+>
+> "Arming on the first line would make any startup hiccup a reboot loop" is
+> sound on an ordinary boot, where no watchdog exists yet. On a trial boot it
+> is backwards: one is already running, declining to feed it protects nothing,
+> and WiFi association has to finish inside whatever is left of eight seconds.
+> It is a race, which is why the results looked erratic and size-correlated
+> when the variable is really how long the radio takes to associate.
+>
+> **Size was never plausible.** Measured on the board the same day:
+> **596 kB of flash free, 325 kB of heap free while running.** A 106 kB batch
+> needing twice its own size is nowhere near either number.
+>
+> The original observations stand as observations — ~47, ~48 and ~62 kB
+> installed; ~98 and ~106 kB did not — but the explanation attached to them
+> did not survive being measured.
+>
+> **Proposed fix, not yet applied:** adopt the watchdog immediately when an
+> update is on trial, since `boot_check` has already armed one —
+> `elif cfg.WDT_TIMEOUT_MS and (self._ota_pending or ms_since(started) > 3000)`.
+> Untouched so far because it is the recovery path, which is the one thing a
+> bad change cannot fix remotely.
 
 Two things to do, and the first matters more:
 
