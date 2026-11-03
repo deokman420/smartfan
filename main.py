@@ -286,6 +286,7 @@ class Controller:
         self.selftest = None       # 'running' while the boot test drives the fan
         self.updater = None        # set while an OTA is in progress
         self.ota_state = "idle"
+        self._ota_pending = False  # set in run(); see _wdt_due
 
         self.link = None
         self.prov = None           # wifi.Provisioner, once there is a Link
@@ -1008,6 +1009,34 @@ class Controller:
             self.state_reason = reason
             self._push = True
 
+    def _wdt_due(self, elapsed_ms):
+        """May the loop take ownership of the watchdog on this pass?
+
+        Normally only after a few clean passes. Arming on the first line
+        would make any startup hiccup a reboot loop, and a watchdog cannot
+        be switched off once it is started.
+
+        AN OTA TRIAL BOOT IS THE EXCEPTION, and getting this wrong cost
+        every update the device has ever been offered. boot_check() arms an
+        8 s watchdog whenever an update is pending -- that is what catches
+        main.py failing at import, where MicroPython would otherwise drop to
+        a REPL nobody can reach. So on a trial boot one is ALREADY running,
+        and waiting three seconds protects nothing: it spends three of the
+        eight seconds the trial has, and WiFi association has to fit in what
+        is left. Often it does not.
+
+        Measured 2026-11-03 with the serial captured through every boot:
+        build 22e12496 installed cleanly, then died twice at
+        `net: offline -> wifi` before this line was ever reached, and the
+        rollback correctly restored the old build. From the network that
+        reads as a push that did nothing, which is how it sat in TODO.md for
+        weeks as a size limit. It was never about size -- the board had
+        596 kB of flash and 325 kB of heap free.
+        """
+        if not cfg.WDT_TIMEOUT_MS:
+            return False
+        return self._ota_pending or elapsed_ms > 3000
+
     def step_selftest(self):
         """Prove the fan turns, at boot. True while the test still owns it.
 
@@ -1429,12 +1458,12 @@ class Controller:
             # pass -- not merely survived one.
             if self.wdt:
                 self.wdt.feed()
-            elif cfg.WDT_TIMEOUT_MS and ms_since(started) > 3000:
-                # Armed only after a few clean passes. Enabling it on the
-                # first line would make any startup hiccup a reboot loop,
-                # and a watchdog cannot be switched off once started.
+            elif self._wdt_due(ms_since(started)):
                 self.wdt = WDT(timeout=cfg.WDT_TIMEOUT_MS)
-                print("wdt: armed at %d ms" % cfg.WDT_TIMEOUT_MS)
+                print("wdt: armed at %d ms%s" % (
+                    cfg.WDT_TIMEOUT_MS,
+                    " (trial boot: boot_check already armed one)"
+                    if self._ota_pending else ""))
 
             # One OTA step per pass. A download that hangs stops the loop and
             # the watchdog resets us, which for an update is the right

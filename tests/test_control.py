@@ -1605,6 +1605,45 @@ step(c)
 check("...and an unchanged one is not pushed every pass", c._push is False,
       "%r push=%s" % (c.state_reason, c._push))
 
+# -- the watchdog, and the OTA trial boot it used to kill ------------------
+#
+# boot_check() arms an 8 s watchdog whenever an update is pending, to catch
+# main.py failing at import. The loop then declined to feed anything for its
+# first 3 s, on reasoning that holds only when no watchdog exists yet. On a
+# trial boot it spent three of the eight seconds the update had, WiFi
+# association did not fit in the rest, two trials failed and the rollback
+# reverted a perfectly good build. Measured 2026-11-03.
+#
+# The predicate is its own method so it can be tested at all: the arming
+# lives inside run(), which no host test drives.
+
+c = build()
+c._ota_pending = False
+check("an ordinary boot does not arm the watchdog immediately",
+      c._wdt_due(0) is False and c._wdt_due(2999) is False)
+check("...and does arm it once the loop has run clean for 3 s",
+      c._wdt_due(3001) is True)
+
+c._ota_pending = True
+check("a trial boot adopts the watchdog on the very first pass",
+      c._wdt_due(0) is True,
+      "boot_check already armed one; waiting protects nothing")
+
+# The escape hatch has to survive both paths, or a bench session with the
+# watchdog off would reset anyway.
+saved = cfg.WDT_TIMEOUT_MS
+cfg.WDT_TIMEOUT_MS = 0
+c._ota_pending = True
+check("WDT_TIMEOUT_MS = 0 still disables it, trial boot or not",
+      c._wdt_due(0) is False and c._wdt_due(99999) is False)
+cfg.WDT_TIMEOUT_MS = saved
+
+# And the flag must exist before run() sets it, or the predicate raises on
+# the first pass of every boot.
+fresh = build()
+check("the pending flag exists from construction, not from run()",
+      fresh._ota_pending is False, repr(getattr(fresh, "_ota_pending", "MISSING")))
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)
