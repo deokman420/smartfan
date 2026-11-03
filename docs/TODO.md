@@ -167,6 +167,11 @@ its own colours.
 
 ## Phase backlog
 
+> Entries here describe the plan as written. **The resolved notes at the top
+> of this file supersede them**, and the two had drifted apart — Phase 5 was
+> recorded as resolved up there and as not-yet-flashed down here at the same
+> time. Where they disagree, check the device.
+
 ### Phase 3 — the real fan
 
 The measured spec: **pull the room from 91 % RH back under 56 % within 30
@@ -174,16 +179,34 @@ minutes.** The 40 mm proof-of-concept fan cannot. It plateaus the room at
 68–69 % and only reaches +2.1 % above baseline eventually, which is why
 `MAX_RUN_S` went to 45 minutes rather than `RH_FALL_OFF` being loosened.
 
-Needs a relay, a real ceiling vent fan, and permanent wiring.
+Needs a relay, a real ceiling vent fan, and permanent wiring. **Still open
+as of 2026-11-03** — the hardware is unchanged, still the Noctua NF-A4x10,
+which is why `MAX_RUN_S` is 2700 rather than `RH_FALL_OFF` being loosened.
 
 ### 4d, 4e — the app and its update surface
 
-In progress. See `docs/phase-4-app-plan.md` for the work order.
+In progress against the work order in `docs/phase-4-app-plan.md`, which is
+the authority on what is left. What is observably shipping as of 2026-11-03:
+the app builds, is pushed to flash by `tools/build_www.py --push`, is served
+by the device, backfills a week of stored history, and carries the WiFi
+panel. The update surface for the app is USB only, by design — `www/` is
+versioned apart from the firmware and does not travel over the air.
 
-### Phase 5 — the device serves the app
+### Phase 5 — the device serves the app — **done**
 
-Built and tested on the host; not yet flashed to the board in the ceiling.
-See `docs/phase-5-plan.md`, and the hardware item above for what is left.
+> **Reconciled 2026-11-03.** This said "built and tested on the host; not yet
+> flashed to the board", which contradicted the resolved note at the top of
+> this very file and had done for weeks. Verified against the live device
+> rather than against either note:
+>
+> ```
+> GET http://fan.local/  ->  200, gzip, 3571 bytes decompressed, <!doctype html
+> /api/info              ->  app 5076fe72
+> ```
+>
+> The board serves the app off its own flash, answers the JSON API and keeps
+> a week of history. `tests/test_app.py` drives it in a real browser against
+> the real fan and passes. See `docs/phase-5-plan.md` for the design.
 
 ### Phase 6 — changing the WiFi from the app
 
