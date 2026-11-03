@@ -74,12 +74,22 @@ def fingerprint():
     return outer.hexdigest()[:8]
 
 
-def device_build():
-    """What build the device says it is running, via Home Assistant.
+def device_build(host="fan.local"):
+    """What build the device says it is running.
 
-    The only way to know what is on a device in a ceiling without going to
-    get it.
+    The device's own /api/info first: it is on the same LAN the update is
+    about to be served over, it needs no token, and it touches no USB.
+    Home Assistant stays as the fallback for a board this machine cannot
+    reach directly.
     """
+    try:
+        import urllib.request
+        with urllib.request.urlopen("http://%s/api/info" % host, timeout=5) as f:
+            fw = json.load(f).get("fw")
+        if fw:
+            return fw
+    except Exception:
+        pass
     try:
         import urllib.request
         env = io.open(os.path.join(ROOT, ".env"), encoding="utf-8").read()
@@ -120,7 +130,20 @@ def local_ip():
 
 
 def device_files():
-    """sha256 of each shipped file as it exists on the device, over USB."""
+    """sha256 of each shipped file as it exists on the device, over USB.
+
+    OPT-IN, because it costs far more than it looks. `mpremote exec` takes
+    the REPL, which means sending Ctrl-C and STOPPING main.py. So probing
+    the device to print a prettier table also halts the controller, and the
+    update published a second later goes to a board that is no longer
+    running its loop and will never see the command. That is most of what
+    "OTA cannot land while USB is attached" has always meant, and it cost
+    an afternoon on 2026-11-03 before the cause was spotted.
+
+    It is also the lesser source: /api/info carries `fw`, which answers "is
+    the device current" over the network without disturbing anything. This
+    exists for the per-file breakdown alone, behind --probe-usb.
+    """
     import subprocess
     code = (
         "import hashlib, binascii, os\n"
@@ -175,6 +198,11 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--serve-only", action="store_true")
     ap.add_argument("--seconds", type=int, default=120)
+    ap.add_argument("--probe-usb", action="store_true",
+                    help="per-file diff over USB. HALTS THE CONTROLLER: "
+                         "mpremote takes the REPL, so the update that "
+                         "follows will not be seen. Detach first, or use "
+                         "the build line, which comes over HTTP.")
     args = ap.parse_args()
 
     print("building manifest from %s\n" % ROOT)
@@ -183,12 +211,13 @@ def main():
         print("  excluded  %-16s %s" % (name, reason))
     print()
 
-    on_device = device_files()
+    on_device = device_files() if args.probe_usb else {}
     changed = []
     for name, meta in sorted(man["files"].items()):
         cur = on_device.get(name)
         if cur is None:
-            mark, note = "?", "device not reachable over USB"
+            mark, note = "?", ("device not reachable over USB" if args.probe_usb
+                               else "not probed (--probe-usb halts the board)")
         elif cur == "ABSENT":
             mark, note = "+", "new file"
         elif cur != meta["sha"]:
