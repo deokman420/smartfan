@@ -281,12 +281,25 @@ Two things to do, and the first matters more:
 * **Stop needing the space.** Still owed, and still the real fix. Stream each
   download to its `.new` file instead of buffering the body in `r.content`,
   and stage/swap one file at a time so peak usage is one file rather than the
-  batch. Note the tension to resolve: the install loop swaps everything in
-  one pass *on purpose*, so a reset mid-update cannot leave a half-new set of
-  files. Per-file swapping trades that atomicity for headroom and should only
-  be taken if `boot_check`'s rollback can be shown to cover a partial swap.
-  The refusal above turns the silent failure into a reported one; it does not
-  raise the ceiling.
+  batch.
+
+  **The blocker on this is cleared.** Asking whether `boot_check`'s rollback
+  could cover a partial swap turned up a worse bug than the one being
+  investigated, now fixed: the pending marker was written *after* the rename
+  loop, so a power cut inside it left a half-swapped set and no marker at
+  all — `boot_check` returned False, armed no watchdog and rolled nothing
+  back. In the instant between a file's two renames it does not exist, and
+  if that file were `main.py` the board would drop to the REPL at import
+  with nothing able to rescue it. The marker now goes down first, carrying
+  `swapping: true`, and an interrupted swap is rolled back on sight rather
+  than being given an attempt — validating it would be worse, because a
+  mixture that happened to run would be committed after `COMMIT_S`.
+
+  The rollback was already per-file and tolerant of absent `.bak`s, which is
+  exactly what per-file staging needs, so that trade no longer costs
+  atomicity. `tests/test_ota.py` covers it: breaking the rename loop
+  partway leaves a real missing file, and the rollback puts the whole set
+  back.
 
 What unblocks it: `ota.py` is excluded from OTA on purpose, because it is the
 recovery path and a recovery path you can break remotely is not one. So this is

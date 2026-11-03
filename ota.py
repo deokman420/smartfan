@@ -118,6 +118,29 @@ def _sha(name):
 # boot path -- runs before main.py, from boot.py
 # ---------------------------------------------------------------------------
 
+def _rollback(files, log, why):
+    """Put every backed-up file back, drop the marker, and reset.
+
+    Tolerant of a partial set on purpose: a file with no `.bak` was never
+    swapped, so it is already the old one and skipping it is correct. That
+    is what lets an interrupted swap be undone with the same code as a
+    failed boot. Any `.new` left lying about goes too, so the next push
+    plans against the files that are actually there.
+    """
+    log("ota: %s, rolling back %d file(s)" % (why, len(files)))
+    for name in files:
+        bak = name + ".bak"
+        if _exists(bak):
+            _remove(name)
+            os.rename(bak, name)
+            log("ota:   restored %s" % name)
+        _remove(name + ".new")
+    _remove(PENDING)
+    log("ota: rolled back, resetting")
+    import machine
+    machine.reset()
+
+
 def boot_check(log=print):
     """Roll back if the last update failed to come up. Never raises."""
     try:
@@ -128,19 +151,24 @@ def boot_check(log=print):
         tries = pend.get("tries", 0) + 1
         files = pend.get("files", [])
 
+        # An interrupted swap is never trusted, and never gets an attempt.
+        #
+        # The marker is written before the first rename, so this flag means
+        # power was lost somewhere inside the swap loop. The file set is
+        # then arbitrary: some new, some old, and -- in the instant between
+        # the two renames for one file -- one of them missing outright. If
+        # that one were main.py the board would drop to the REPL at import,
+        # unreachable, with nothing left to roll it back.
+        #
+        # Validating it would be worse than rolling back, because a
+        # half-swapped set that happens to run would be COMMITTED after
+        # COMMIT_S, making the mixture permanent.
+        if pend.get("swapping"):
+            _rollback(files, log, "install was interrupted mid-swap")
+            return True
+
         if tries > MAX_TRIES:
-            log("ota: attempt %d failed, rolling back %d file(s)"
-                % (tries - 1, len(files)))
-            for name in files:
-                bak = name + ".bak"
-                if _exists(bak):
-                    _remove(name)
-                    os.rename(bak, name)
-                    log("ota:   restored %s" % name)
-            _remove(PENDING)
-            log("ota: rolled back, resetting")
-            import machine
-            machine.reset()
+            _rollback(files, log, "attempt %d failed" % (tries - 1))
             return True
 
         pend["tries"] = tries
@@ -282,7 +310,19 @@ class Updater:
 
         # Everything verified. Swap in one pass so a reset mid-update cannot
         # leave a half-new, half-old set of files.
+        #
+        # The marker goes down BEFORE the first rename, not after the last.
+        # Written afterwards it documented a swap that had already finished,
+        # which is the one case that needs no documenting: a power cut
+        # inside the loop left no marker at all, so boot_check returned
+        # False, armed no watchdog and rolled nothing back. In the instant
+        # between a file's two renames it does not exist, and if that file
+        # were main.py the board would drop to the REPL at import with
+        # nothing left able to rescue it. That is a cable job on a device
+        # whose whole point is not needing one.
         self.status = "installing"
+        _write_json(PENDING, {"tries": 0, "files": self._staged,
+                              "swapping": True})
         for name in self._staged:
             if _exists(name):
                 _remove(name + ".bak")

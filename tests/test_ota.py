@@ -192,6 +192,134 @@ drive(up)
 check("a file already at the published hash is skipped",
       up.done and up.ok and "up to date" in up.status, up.status)
 
+# -- the swap, and surviving an interruption inside it ---------------------
+#
+# The marker used to be written AFTER the rename loop, which documented a
+# swap that had already finished -- the one case needing no documentation.
+# A power cut inside the loop left no marker, so boot_check returned False,
+# armed no watchdog and rolled nothing back. And in the instant between a
+# file's two renames the file does not exist at all: if that file were
+# main.py the board drops to the REPL at import, unreachable, with nothing
+# left able to rescue it. That is the exact outcome this module exists to
+# prevent, so it gets a test.
+
+
+RESETS = []
+
+
+def install_machine():
+    """A machine module that records a reset instead of performing one.
+
+    Not one that raises: boot_check wraps everything in `except Exception`
+    on purpose, so that it can never be the reason a board fails to boot.
+    An exception-based stub is therefore swallowed, and every assertion
+    about rolling back would pass for the wrong reason.
+    """
+    mod = types.ModuleType("machine")
+    mod.reset = lambda: RESETS.append(1)
+
+    class WDT:
+        def __init__(self, timeout=0):
+            pass
+
+    mod.WDT = WDT
+    sys.modules["machine"] = mod
+    return mod
+
+
+install_machine()
+ota.free_bytes = lambda: 10_000_000
+
+
+def stage(names, bodies=None):
+    """A device mid-update: originals on disk, verified .new beside them."""
+    for n in names:
+        with open(n, "w") as f:
+            f.write("old %s" % n)
+        with open(n + ".new", "w") as f:
+            f.write((bodies or {}).get(n, "new %s" % n))
+
+
+def run_install(names, break_after=None):
+    """Drive just the install step, optionally dying partway through it."""
+    up = ota.Updater("http://host:8000", log=lambda *a: None)
+    up._queue = []
+    up._staged = list(names)
+    real_rename = os.rename
+    calls = [0]
+
+    def counted(a, b):
+        calls[0] += 1
+        if break_after is not None and calls[0] > break_after:
+            raise OSError("power cut")
+        return real_rename(a, b)
+
+    os.rename = counted
+    try:
+        up.step()
+    finally:
+        os.rename = real_rename
+    return up
+
+
+import json as _json  # noqa: E402
+
+# A clean install leaves a marker with no swapping flag: nothing to undo.
+ota._remove(ota.PENDING)
+stage(["a.py", "b.py"])
+up = run_install(["a.py", "b.py"])
+pend = _json.load(open(ota.PENDING))
+check("a completed install leaves a marker that is not mid-swap",
+      pend.get("swapping") is None and pend["files"] == ["a.py", "b.py"],
+      "%s" % pend)
+check("...and the new files are in place",
+      open("a.py").read().startswith("new"), open("a.py").read().strip())
+
+# Now the failure. Break after the first rename of the second file, which
+# is the instant where b.py has become b.py.bak and nothing is named b.py.
+ota._remove(ota.PENDING)
+for n in ("a.py", "b.py"):
+    ota._remove(n + ".bak")
+stage(["a.py", "b.py"])
+up = run_install(["a.py", "b.py"], break_after=3)
+check("a cut mid-swap really does leave a file missing",
+      not ota._exists("b.py"), "b.py present after the cut")
+pend = _json.load(open(ota.PENDING)) if ota._exists(ota.PENDING) else None
+check("...but the marker is already on disk, flagged mid-swap",
+      pend is not None and pend.get("swapping") is True,
+      "%s" % pend if pend else
+      "NO MARKER - boot_check will return False and rescue nothing")
+
+# And boot_check must undo it at once, without spending an attempt on code
+# that is a mixture of two builds.
+del RESETS[:]
+ota.boot_check(log=lambda *a: None)
+check("boot_check rolls an interrupted swap straight back",
+      ota._exists("b.py") and open("b.py").read().startswith("old"),
+      open("b.py").read().strip() if ota._exists("b.py") else "missing")
+check("...restoring the files that HAD swapped, not just the broken one",
+      open("a.py").read().startswith("old"), open("a.py").read().strip())
+check("...clearing the marker so the next boot is ordinary",
+      not ota._exists(ota.PENDING))
+check("...and sweeping the staged copies, so a retry plans afresh",
+      not ota._exists("a.py.new") and not ota._exists("b.py.new"))
+
+# The ordinary pending path is unchanged: first boot validates, it does not
+# roll back. Breaking that would undo every good update.
+ota._write_json(ota.PENDING, {"tries": 0, "files": ["a.py"]})
+del RESETS[:]
+ota.boot_check(log=lambda *a: None)
+check("a normal pending update still gets its attempts",
+      not RESETS and _json.load(open(ota.PENDING))["tries"] == 1,
+      "resets=%d" % len(RESETS))
+
+ota._write_json(ota.PENDING, {"tries": ota.MAX_TRIES, "files": ["a.py"]})
+del RESETS[:]
+ota.boot_check(log=lambda *a: None)
+check("...and still rolls back once they are spent",
+      len(RESETS) == 1 and not ota._exists(ota.PENDING),
+      "resets=%d" % len(RESETS))
+
 ota.free_bytes = real_free
 os.chdir(ROOT)
 
