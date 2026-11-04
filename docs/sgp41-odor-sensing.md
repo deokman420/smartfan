@@ -168,6 +168,45 @@ Three costs, all of them consequences of the baseline problem above:
   to 120 — but 10 s sampling missed a peak the device itself triggered on at
   `up=265.7`, so the true quiet maximum is above 120 and may reach 140.
 
+### Confirmed on a live event
+
+Measured 4 Nov on a real tidy of the box, with the settings above already
+live. This replaces the prediction in this section with an observation.
+
+    t=0      FAN ON    voc_exc 136   nox_exc -47   (already decaying)
+    t=60     voc_exc  71
+    t=120    voc_exc  67
+    t=270    voc_exc  -4
+    t=298    FAN OFF   ran 5.0 min
+    after    voc_exc returns to 0 and stays
+
+**The run was 298 s, and `MIN_RUN_S` set all of it.** The air was back under
+`VOC_FALL_OFF` within 60 seconds — far faster than either bench event, whose
+decay curves are what the 5-minute figure was derived from. So the floor, not
+the decay, is what makes this work: under the old 180 this would have been a
+3-minute run.
+
+**The attribution is unambiguous**, which is the part worth having on record.
+The device's own history row for the run reads `fan=1, lit=0, rh_exc=1.0` —
+light off, humidity at baseline — so the odour path is the only cause
+available. Across the 11 minutes temperature moved 0.1 C, RH 1.7 % and dew
+point 0.4, confirming gas rather than moisture or the room cooling.
+
+**The veto stayed out of it correctly:** `nox_exc -47`, a 47-tick NOx rise
+against a 300 veto.
+
+**`voc_exc` returned to 0 and stayed there**, with one 26-tick bump that
+restarted nothing. Dust settling on the heated element would leave a
+*permanent* offset, so a real disturbance reconfirms what the bench events
+implied: the sensor is seeing the litter's vapour, not its dust.
+
+One caveat: a launch error in the recorder cost the first minute, so **the
+true peak is unknown** — only that it exceeded 140, since the device had
+already triggered and was passing 136 downward at the first sample. The
+5-minute history interval is too coarse to recover it. This event therefore
+confirms that the trigger fires and that the run length is right; it does not
+add a peak magnitude to the -150/-166 pair.
+
 ## Warm-up, and why it is two questions
 
 The pixels warm at very different rates, measured on a clean boot on 4 Nov:
