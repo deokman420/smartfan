@@ -139,6 +139,13 @@ _SENSORS = (
     # Published because it was invisible, and invisible is the whole fault:
     # `deferred` means this fan has never been proven to turn.
     ("selftest",    "Fan self-test",     "selftest", None,      None,          None,               "mdi:fan-alert"),
+    # The pair that makes a DHT22 fault diagnosable instead of anecdotal.
+    # `dht_fails` is consecutive and trips FAULT at 5, so it says how close
+    # the next one is; `dht_bad` is every bad read since boot and never
+    # resets, so it says whether the sensor is misbehaving at all. Only the
+    # second survives being sampled: one good read zeroes the first.
+    ("dht_fails",   "DHT22 fails in a row", "dht_fails", None,   None,          "measurement",      "mdi:thermometer-alert"),
+    ("dht_bad",     "DHT22 bad reads",   "dht_bad",  None,      None,          "total_increasing", "mdi:thermometer-off"),
     # Published because an OTA that fails is otherwise invisible from the
     # network: the device re-downloads the same files on every push, never
     # resets, and keeps running the old code. docs/TODO.md carries the
@@ -360,6 +367,8 @@ class Snapshot:
             # Assistant gains no entity for something that changes once a
             # boot.
             "selftest": getattr(c, "selftest", None),
+            "dht_fails": getattr(c, "dht_fails", None),
+            "dht_bad": getattr(c, "dht_bad", None),
             "ota": getattr(c, "ota_state", None),
             "flash_free": _flash_free(),
             "boot":     getattr(c, "boot_reason", "unknown"),

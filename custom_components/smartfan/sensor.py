@@ -203,6 +203,23 @@ SENSORS: tuple[SmartfanSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     SmartfanSensorDescription(
+        # Consecutive bad DHT22 reads. FAULT at 5, and a good read puts it
+        # back to 0, so this is "how close is the next fault", not history.
+        key="dht_fails",
+        field="dht_fails",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SmartfanSensorDescription(
+        # Every bad DHT22 read since boot, never reset. The one worth an
+        # automation: it rising at all means the sensor is struggling,
+        # whether or not it ever reaches five in a row.
+        key="dht_bad",
+        field="dht_bad",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SmartfanSensorDescription(
         # An OTA that fails is otherwise invisible from the network: the
         # device re-downloads the same files on every push, never resets,
         # and keeps running the old code. This is the surface that says so.

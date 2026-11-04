@@ -1720,6 +1720,52 @@ check("the hob does not stand down the odor path's siblings",
       c._voc_active() is False and c.excess_rh > c.st.RH_RISE_ON,
       "voc_active=%s excess_rh=%.1f" % (c._voc_active(), c.excess_rh))
 
+# -- the two DHT22 counters --------------------------------------------
+#
+# They exist because they answer different questions and only one of them
+# survives being sampled. dht_fails is CONSECUTIVE and a single good read
+# zeroes it, so a poller sees 0 almost always -- which is why the 4 Nov
+# fault has no cause. dht_bad never resets. If a refactor ever makes
+# dht_bad resettable, the next fault is anecdotal again, so pin it here.
+
+c = build()
+c.dht.measure = lambda: (_ for _ in ()).throw(OSError("no reply"))
+for _ in range(4):
+    c.read_climate()
+check("four bad reads: four in a row, four in total",
+      (c.dht_fails, c.dht_bad) == (4, 4), "%s" % ((c.dht_fails, c.dht_bad),))
+check("...and four in a row has not faulted yet", c.state != main.FAULT)
+
+# The good read is the whole point: it hides the run from dht_fails and
+# cannot hide it from dht_bad.
+c.dht.measure = lambda: None
+c.read_climate()
+check("one good read zeroes the streak but not the total",
+      (c.dht_fails, c.dht_bad) == (0, 4), "%s" % ((c.dht_fails, c.dht_bad),))
+
+# Five in a row is the documented fault threshold.
+c.dht.measure = lambda: (_ for _ in ()).throw(OSError("no reply"))
+for _ in range(5):
+    c.read_climate()
+c.check_fan_health()
+check("five in a row faults on the sensor",
+      c.state == main.FAULT and c.fault_kind == "sensor",
+      "%s / %s" % (c.state, c.fault_kind))
+check("...and the total kept counting through it", c.dht_bad == 9, c.dht_bad)
+
+# Recovery must clear the streak and keep the history.
+c.dht.measure = lambda: None
+c.on_command("fan/bathroom/cmd", b"clear")
+c.read_climate()
+check("clear resets the streak and keeps the total",
+      c.dht_fails == 0 and c.dht_bad == 9,
+      "fails=%s bad=%s" % (c.dht_fails, c.dht_bad))
+
+# That both reach the published payload is already enforced structurally,
+# by tests/test_integration.py checking every _SENSORS field against the
+# snapshot's keys. Asserting it a second time here would need telemetry
+# imported into a suite that deliberately does not have it.
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)

@@ -187,6 +187,12 @@
       "self_test": {
         "name": "Fan self-test"
       },
+      "dht_fails": {
+        "name": "DHT22 fails in a row"
+      },
+      "dht_bad": {
+        "name": "DHT22 bad reads"
+      },
       "update_status": {
         "name": "Update status"
       },

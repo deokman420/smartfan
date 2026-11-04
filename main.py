@@ -276,6 +276,19 @@ class Controller:
         self.temp = None
         self.rpm = 0
         self.dht_fails = 0
+        # Total bad DHT22 reads since boot, and never reset -- not by a good
+        # read, not by `clear`, not by leaving FAULT.
+        #
+        # dht_fails alone cannot answer "was that fault coming?", because it
+        # is a CONSECUTIVE count that one good read puts back to zero.
+        # Sampled every few seconds it reads 0 almost always, and a run of
+        # four failures looks exactly like a quiet day. That is why the
+        # 4 Nov fault has no cause: there was no record of the reads that
+        # led to it. See docs/TODO.md.
+        #
+        # So both are published. This one says whether the sensor is
+        # misbehaving at all; dht_fails says how close the next fault is.
+        self.dht_bad = 0
         self.fault_reason = ""
         self.state_reason = ""
         self.fault_kind = None     # 'sensor' or 'fan'
@@ -426,6 +439,7 @@ class Controller:
             return True
         except OSError:
             self.dht_fails += 1
+            self.dht_bad += 1
             return False
 
     def read_voc(self):
