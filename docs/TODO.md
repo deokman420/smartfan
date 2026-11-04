@@ -274,6 +274,40 @@ Two things fell out of it:
   I/O and `publish()` returns immediately while offline, so an unused one
   costs a few topic strings.
 
+### A DHT22 fault appeared minutes after a USB push — cause not established
+
+Seen once, 4 Nov, on build e3b61612 just after the three-file USB push:
+
+    state  FAULT
+    reason DHT22 not responding
+    up_min 10.5
+
+`clear` recovered it immediately and the sensor has read correctly since
+(24.8 C, 60-63 %RH), so the hardware is fine and nothing is disconnected.
+
+**The obvious explanation is wrong.** The first guess was the safemode dance,
+which resets the board twice in quick succession, and a DHT22 read attempted
+before the sensor settles. But `check_fan_health()` needs `dht_fails >= 5`,
+and **any successful read puts the counter back to 0**, so this took five
+CONSECUTIVE failures. A settling problem would have faulted in the first
+seconds; instead the board was in `LEARN` with no fault at 0.9 min and
+faulted somewhere before 10.5 min.
+
+What is known:
+
+* It was not faulted at boot. Something produced a run of five bad reads
+  roughly 1-10 minutes in.
+* `tests/test_ha.py` ran in that window and drives Force on / Force off
+  cycles, so the fan was switching. A fan transient coupling into the DHT22
+  line is a candidate and nothing more -- the two have never been correlated.
+* The preceding 8-hour run did not fault once, so this is not a steady rate.
+
+Worth catching rather than guessing at: `dht_fails` is not published, so a
+run of four failures looks identical to a run of none. Publishing it, or the
+time of the last successful read, would turn this from a story into a
+measurement the next time it happens. Until then it is one event, recovered,
+with the cause unknown -- and NOT, as first written here, explained.
+
 ### `main.py` cannot be sent over the air — the downloader buffers whole files
 
 **Measured 4 Nov, and it settles the open question about the size ceiling.** A
