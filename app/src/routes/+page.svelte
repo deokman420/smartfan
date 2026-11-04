@@ -245,7 +245,7 @@
             id: 'noxCompare',
             title: 'Odor against NOx',
             blurb:
-              'Two pixels, opposite chemistry. Bathroom odor is reducing gases and moves the odor line alone; a gas flame makes NO₂ and moves both. Nothing acts on the NOx line yet — it is being recorded so the thresholds come from this room rather than a datasheet.',
+              'Two pixels, opposite chemistry. Bathroom odor is reducing gases and moves the odor line alone; a gas flame makes NO₂ and moves both. The NOx line now acts as a veto rather than a trigger: past the combustion threshold the odor path stands down, so cooking in another room cannot start this fan. Humidity and the light are unaffected.',
             unit: 'ticks',
             bands: F.fan,
             bandOn: 'Fan on',
@@ -442,6 +442,7 @@
     { key: 'LIGHT_ONLY_MAX_S', label: 'Light-only run', unit: 's', step: 60, hint: 'then humidity only' },
     { key: 'VOC_RISE_ON', label: 'Start at', unit: '', step: 10, hint: 'ticks below baseline' },
     { key: 'VOC_FALL_OFF', label: 'Stop below', unit: '', step: 10, hint: 'ticks below baseline' },
+    { key: 'VOC_NOX_VETO', label: 'Ignore if burning', unit: '', step: 25, hint: 'ticks of NOx rise' },
     { key: 'MIN_RUN_S', label: 'Minimum run', unit: 's', step: 30, hint: 'once started' },
     { key: 'MAX_RUN_S', label: 'Maximum run', unit: 's', step: 60, hint: 'then latches off' },
     { key: 'POST_LIGHT_S', label: 'After lights out', unit: 's', step: 30, hint: 'keep running' },
@@ -462,8 +463,8 @@
     {
       title: 'Odor',
       blurb:
-        'Measured in sensor ticks away from the room’s learned clean-air level, not in any unit of smell — what matters is the size of the deviation. A real event in this room reads around a hundred; quiet air wanders under forty. Set to zero to watch the sensor without ever letting it start the fan.',
-      keys: ['VOC_RISE_ON', 'VOC_FALL_OFF']
+        'Measured in sensor ticks away from the room’s learned clean-air level, not in any unit of smell — what matters is the size of the deviation. A real event in this room reads around a hundred; quiet air wanders under forty. Set the start threshold to zero to watch the sensor without ever letting it start the fan. The last of these reads the second pixel instead: a gas flame makes NO₂ and a bathroom does not, so a large NOx rise means the smell is cooking somewhere else and the fan sits it out.',
+      keys: ['VOC_RISE_ON', 'VOC_FALL_OFF', 'VOC_NOX_VETO']
     },
     {
       title: 'Timing',

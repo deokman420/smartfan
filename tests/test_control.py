@@ -1644,6 +1644,82 @@ fresh = build()
 check("the pending flag exists from construction, not from run()",
       fresh._ota_pending is False, repr(getattr(fresh, "_ota_pending", "MISSING")))
 
+# -- the combustion veto -------------------------------------------------
+#
+# Measured 4 Nov on one baseline a few hours apart: a gas hob in the kitchen
+# reached the bathroom sensor as VOC +504 / NOx rise +1498, and a genuine
+# bathroom event as VOC +899 / NOx rise +64. The unwanted event is the
+# SMALLER one on VOC, which is why the veto reads NOx and why no VOC
+# threshold could have done this. Both figures are replayed here.
+
+COOK_VOC, COOK_NOX = 504, 1498      # kitchen hob, must NOT run the fan
+REAL_VOC, REAL_NOX = 899, 64        # bathroom odor, must still run it
+
+
+def armed_with(voc_exc, nox_rise, veto=300):
+    """A controller with both baselines seeded and a given pair of excesses."""
+    c = build()
+    # Without a working sensor _voc_active() is False whatever the veto
+    # says, and the three cooking assertions below then pass for the wrong
+    # reason. Caught exactly that way: they passed while every "should
+    # still run" case failed.
+    c.voc = FakeSGP41()
+    c.st.set("VOC_RISE_ON", 200)
+    c.st.set("VOC_FALL_OFF", 70)
+    c.st.set("VOC_NOX_VETO", veto)
+    # excess() is base - raw for both pixels, and a NOx RISE is therefore a
+    # negative excess. Seed baselines and place the raw counts accordingly.
+    c.vocdet.base, c.vocdet.raw = 30000.0, 30000 - voc_exc
+    c.noxdet.base, c.noxdet.raw = 16000.0, 16000 + nox_rise
+    return c
+
+
+c = armed_with(COOK_VOC, COOK_NOX)
+check("cooking: the odor path stands down", c._voc_active() is False)
+check("cooking: the fan is not armed on odor", c._voc_armed() is False)
+check("cooking: the path raises no objection to stopping",
+      c._voc_quiet() is True)
+
+c = armed_with(REAL_VOC, REAL_NOX)
+check("bathroom odor: the odor path is live", c._voc_active() is True)
+check("bathroom odor: the fan is armed", c._voc_armed() is True)
+check("bathroom odor: the path holds the run open",
+      c._voc_quiet() is False)
+
+# The margin is the whole claim, so test both sides of the line rather than
+# only the measured points.
+check("just under the veto still runs",
+      armed_with(REAL_VOC, 299)._voc_active() is True)
+check("just over the veto does not",
+      armed_with(REAL_VOC, 300)._voc_active() is False)
+
+# A veto of 0 is the documented off switch and must restore the old
+# behaviour exactly, or there is no way back from a bad threshold.
+check("veto 0 disables the veto",
+      armed_with(COOK_VOC, COOK_NOX, veto=0)._voc_active() is True)
+
+# Absence must not suppress. An unsettled or missing NOx pixel has no
+# opinion, and no opinion is not a veto -- otherwise the first two hours of
+# every boot would silently disable odor sensing.
+c = armed_with(REAL_VOC, COOK_NOX)
+c.noxdet.base = None
+check("no NOx baseline does not veto", c._voc_active() is True)
+c = armed_with(REAL_VOC, COOK_NOX)
+c.noxdet.raw = None
+check("no NOx reading does not veto", c._voc_active() is True)
+
+# A VOC falling the wrong way must not veto either: the test is a RISE.
+check("a NOx fall is not combustion",
+      armed_with(REAL_VOC, -1498)._voc_active() is True)
+
+# And the veto must leave the other two reasons alone, which is the point of
+# putting it in _voc_active() and not in decide().
+c = armed_with(0, COOK_NOX)
+c.baseline, c.rh, c.temp = 50.0, 62.0, 22.0
+check("the hob does not stand down the odor path's siblings",
+      c._voc_active() is False and c.excess_rh > c.st.RH_RISE_ON,
+      "voc_active=%s excess_rh=%.1f" % (c._voc_active(), c.excess_rh))
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)

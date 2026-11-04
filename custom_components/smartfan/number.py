@@ -74,6 +74,16 @@ NUMBERS: tuple[SmartfanNumberDescription, ...] = (
         native_unit_of_measurement=TICKS,
         mode=NumberMode.BOX,
     ),
+    # Ceiling 3000: the hob measured 1498 and a closer source has room.
+    SmartfanNumberDescription(
+        key="odor_combustion_veto",
+        setting="VOC_NOX_VETO",
+        native_min_value=0,
+        native_max_value=3000,
+        native_step=25,
+        native_unit_of_measurement=TICKS,
+        mode=NumberMode.BOX,
+    ),
     SmartfanNumberDescription(
         key="light_switch_step",
         setting="LIGHT_STEP_ON",

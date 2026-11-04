@@ -36,6 +36,9 @@ SPECS = {
     # disable the path. A cap you are sitting on is not a cap.
     "VOC_RISE_ON":  ("number", 0, 1000, 5, None,      "Odor rise to start",    "mdi:scent"),
     "VOC_FALL_OFF": ("number", 0, 1000, 5, None,      "Odor fall to stop",     "mdi:scent-off"),
+    # Ceiling 3000: cooking peaked at a 1498-tick NOx rise and a closer or
+    # larger source has room above that. 0 turns the veto off.
+    "VOC_NOX_VETO": ("number", 0, 3000, 25, None,     "Ignore odor if combustion", "mdi:fire-off"),
     "LIGHT_STEP_ON":    ("number", 2000, 40000, 500, None, "Light switch step",  "mdi:brightness-6"),
     "LIGHT_RISE_ON":    ("number", 1000, 40000, 500, None, "Light rise to start", "mdi:brightness-5"),
     "LIGHT_RISE_OFF":   ("number", 500, 39000, 500, None, "Light rise to stop",  "mdi:brightness-4"),

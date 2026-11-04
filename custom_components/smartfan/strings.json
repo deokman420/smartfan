@@ -69,6 +69,9 @@
       "odor_rise_to_start": {
         "name": "Odor rise to start"
       },
+      "odor_combustion_veto": {
+        "name": "Ignore odor if combustion"
+      },
       "odor_fall_to_stop": {
         "name": "Odor fall to stop"
       },

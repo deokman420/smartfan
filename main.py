@@ -242,6 +242,7 @@ class Controller:
         # which is how the VOC thresholds were set. voc.py carries why the
         # sign cannot be assumed and why there is no threshold to go with it.
         self.noxdet = voc.Detector(self.st, log=print, name="nox")
+        self._comb = False     # last logged state of the combustion veto
         self.voc = None            # sgp41.SGP41, or None if absent/disabled
         self.voc_recover_until = None   # VOC_RECOVER_S after a steam event
         # When the odor path first went non-quiet, so a hold that has gone
@@ -479,6 +480,19 @@ class Controller:
             learning = self._voc_learning()
             self.vocdet.update(got[0], learning and self.voc.settled_voc)
             self.noxdet.update(got[1], learning and self.voc.settled_nox)
+
+            # Say when the veto takes the odor path away and when it gives
+            # it back. A suppression nobody can see is the fault that cost
+            # two days here already: the fan sat still while the app showed
+            # an odor excess, and nothing anywhere said why.
+            comb = self._combustion()
+            if comb != self._comb:
+                self._comb = comb
+                print("voc: %s (nox %+d, veto %d)"
+                      % ("combustion - odor path standing down" if comb
+                         else "combustion cleared - odor path live again",
+                         -(self.excess_nox or 0),
+                         getattr(self.st, "VOC_NOX_VETO", 0)))
         except Exception as e:
             # A sensor fault here is logged and dropped. It must never reach
             # set_state(FAULT): see __init__.
@@ -611,7 +625,41 @@ class Controller:
         return (self.voc is not None
                 and self.voc.ok
                 and bool(self.st.VOC_RISE_ON)
-                and self.vocdet.base is not None)
+                and self.vocdet.base is not None
+                and not self._combustion())
+
+    def _combustion(self):
+        """Is the NOx pixel saying this smell is a flame, not a bathroom?
+
+        The odor path exists for a bathroom. This unit's hob is in another
+        room, so cooking that reaches the sensor is a false positive, and on
+        the VOC pixel it is not separable from the real thing -- measured
+        4 Nov, the cooking event peaked at +504 and the genuine bathroom
+        event at +899, so the unwanted one is the SMALLER signal and no VOC
+        threshold can reject it without rejecting what it is for.
+
+        NOx separates them almost cleanly: +1498 for the hob against +64 for
+        the bathroom, because a flame makes NO2 and a bathroom does not. See
+        VOC_NOX_VETO in config.py for both series and why the line is 300.
+
+        Sign: the measured direction is that bad air moves the NOx raw count
+        UP, which is opposite to VOC, and `excess()` is `base - raw` for
+        both pixels. So a rise is a NEGATIVE excess_nox and the test needs
+        the sign flipped here. voc.py's "THE NOx SIGN IS NOT CONFIRMED" is
+        what this resolves; the published value keeps its old convention
+        because changing it would change the recorded row's meaning.
+
+        False whenever there is nothing to go on -- no veto, no baseline, no
+        reading -- so a missing or unsettled NOx pixel leaves the odor path
+        exactly as it was rather than silently disabling it.
+        """
+        veto = getattr(self.st, "VOC_NOX_VETO", 0)
+        if not veto:
+            return False
+        exc = self.excess_nox
+        if exc is None:
+            return False
+        return -exc >= veto
 
     def _voc_armed(self):
         """As _voc_active, plus the post-steam recovery window."""

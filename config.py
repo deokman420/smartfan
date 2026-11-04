@@ -147,6 +147,38 @@ VOC_ENABLED     = True   # False disables the whole path, no rewiring
 # over the 150 that would also have been clean on this night's numbers.
 VOC_RISE_ON     = 0      # ticks below baseline that start the fan; 0 = off
 VOC_FALL_OFF    = 0      # ticks below baseline at which the air is clear
+# Ticks the NOx pixel may RISE above its baseline before the odor path is
+# treated as smelling combustion rather than a bathroom, and stands down.
+#
+# This unit is in the bathroom and the hob is not, so cooking reaching the
+# sensor is a false positive: the fan running for it is exactly what is not
+# wanted. Separating the two needs a signal that distinguishes them, and the
+# NOx pixel turns out to be almost a pure one. Measured 4 Nov, both events on
+# the same baseline a few hours apart:
+#
+#                       VOC excess peak   NOx RISE peak
+#   bathroom odor            +899              +64
+#   gas hob, kitchen         +504            +1498
+#
+# NOx is the stronger signal of the two by nine to one on the event it
+# responds to, and it barely moves on the one it does not -- a flame makes
+# NO2 and a bathroom does not. So the discriminating variable is NOx, not
+# VOC: on VOC alone the cooking event is the SMALLER of the two and no
+# threshold can separate them without also losing the real one.
+#
+# 300 sits 4.7x above the bathroom event's NOx and 5.0x below cooking's. The
+# ratio NOx/VOC separates them too (0.48 against 1.85) but less widely, and
+# it coupled the test to a second noisy number for nothing.
+#
+# This vetoes ONLY the odor path, through _voc_active(), which is also what
+# stops it holding a run open. Humidity and the light are untouched: a shower
+# taken while the hob is going still runs the fan, on the sensor that has no
+# opinion about NO2. 0 disables the veto.
+#
+# One event of each kind, so the line is drawn from a single example either
+# side. The margins are wide enough to be worth having now, and docs/TODO.md
+# records that a second cooking event should be checked against it.
+VOC_NOX_VETO    = 300
 VOC_BASELINE_A  = 0.0005 # slower than BASELINE_A: odor events are shorter
                          # than showers and must not be learned as normal
 # How long a pixel may refuse to settle before its baseline is seeded
