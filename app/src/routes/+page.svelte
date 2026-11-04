@@ -43,6 +43,7 @@
   import { history, since, stats, F } from '$lib/history.js';
   import { learnTau, timeToOff, runContext } from '$lib/dryrate.js';
   import WifiPanel from '$lib/WifiPanel.svelte';
+  import { sheetDrag } from '$lib/sheetdrag.js';
   import { onMount } from 'svelte';
 
   let showSettings = $state(false);
@@ -1328,14 +1329,31 @@
   </div>
 
   {#if detailChart}
-    <!-- The backdrop is decoration, not a control. Giving it a role and a
-         label put a second "Close chart" in the accessibility tree next to
-         the real button, so a screen reader announced two identical
-         controls. Keyboard users close with Escape or the button. -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="scrim" aria-hidden="true" onclick={() => (detail = null)}></div>
-    <div class="sheet wide card" role="dialog" aria-label={detailChart.title}>
+    <!-- The backdrop is decoration, not a control, so it is hidden from the
+         accessibility tree: giving it a role and a label put a second
+         "Close chart" next to the real button and a screen reader announced
+         two identical controls. Keyboard users close with Escape or the
+         button.
+
+         It is nonetheless a <button>, not a <div>. iOS Safari only
+         dispatches click to a non-interactive element if that element looks
+         clickable, and a bare div with a listener attached by Svelte does
+         not qualify -- so tap-to-dismiss worked everywhere except the phone
+         this app is mostly used on. aria-hidden plus tabindex=-1 keeps it
+         out of the tree while leaving it natively tappable. -->
+    <button
+      type="button"
+      class="scrim"
+      aria-hidden="true"
+      tabindex="-1"
+      onclick={() => (detail = null)}
+    ></button>
+    <div
+      class="sheet wide card"
+      role="dialog"
+      aria-label={detailChart.title}
+      use:sheetDrag={() => (detail = null)}
+    >
       <div class="detail-head">
         <div>
           <h3>{detailChart.title}</h3>
@@ -1400,11 +1418,26 @@
   {/if}
 
   {#if showSettings}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="scrim" aria-hidden="true" onclick={() => (showSettings = false)}></div>
-    <div class="sheet card" role="dialog" aria-label="Settings">
-      <div class="grabber" aria-hidden="true"></div>
+    <!-- A button and not a div, for the iOS reason above the chart sheet. -->
+    <button
+      type="button"
+      class="scrim"
+      aria-hidden="true"
+      tabindex="-1"
+      onclick={() => (showSettings = false)}
+    ></button>
+    <div
+      class="sheet card"
+      role="dialog"
+      aria-label="Settings"
+      use:sheetDrag={() => (showSettings = false)}
+    >
+      <!-- The grabber is the drag target as well as the promise of one. It
+           carries data-sheet-handle, which is also what sheetDrag reads to
+           decide whether it should be active at all: the handle is display
+           none above 560px, where this is a centred dialog rather than a
+           bottom sheet. -->
+      <div class="grabber" data-sheet-handle aria-hidden="true"></div>
       <h3>Connection</h3>
       <p class="sub">
         Nothing leaves the network either way. The difference is what has to be
@@ -1764,7 +1797,7 @@
   .empty {
     text-align: center;
     padding: 56px 24px;
-    margin-top: 8vh;
+    margin-top: 8dvh;
   }
   .empty .lead {
     margin: 0 0 6px;
@@ -2606,16 +2639,37 @@
     backdrop-filter: blur(6px);
     border: 0;
     z-index: 30;
+    /* It is a <button>, so these undo the parts of being one that a backdrop
+       must not have. cursor:pointer is load-bearing on iOS even now it is an
+       element Safari will dispatch to -- and it is the honest cursor, since
+       clicking really does close. */
+    cursor: pointer;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .scrim:focus {
+    outline: none;
   }
   .sheet {
     position: fixed;
     z-index: 31;
     left: 50%;
-    transform: translateX(-50%);
+    /* --sheet-dy is written by sheetDrag during a dismiss gesture and is
+       0 the rest of the time. It composes with the centring translate
+       rather than replacing it. */
+    transform: translateX(-50%) translateY(var(--sheet-dy, 0px));
+    transition: transform 180ms ease-out;
     bottom: 0;
     width: min(480px, 100%);
-    max-height: min(88vh, 100%);
+    /* dvh, not vh. On iOS vh is the LARGE viewport -- it ignores the
+       browser's own toolbars -- so 88vh could put the sheet's action row
+       underneath the Safari chrome, which is how a sheet ends up with no
+       reachable way to close it. dvh is the viewport actually visible. */
+    max-height: 88dvh;
     overflow-y: auto;
+    /* Keep a flick at the end of the sheet's own scroll from scrolling the
+       page behind it, and keep iOS from treating it as a page overscroll. */
+    overscroll-behavior: contain;
     border-radius: 20px 20px 0 0;
     border-color: var(--border-strong);
     box-shadow: var(--shadow);
@@ -2624,13 +2678,30 @@
     align-content: start;
     padding-bottom: calc(20px + env(safe-area-inset-bottom));
   }
+  /* The pill is 4px tall and the thumb aiming at it is not. The padding
+     box is 36x24 with the pill drawn by the border, so there is something
+     to grab; margin pulls the row back to its old visual height. */
   .grabber {
-    width: 36px;
-    height: 4px;
-    border-radius: 999px;
+    /* 56x20 of touch target around a 36x4 pill: padding makes the box, and
+       background-clip paints only the content, so the thing you aim at is
+       five times the thing you see. A border-top drawn on a rounded box
+       renders as an arc, not a pill -- this is the way round that looks
+       like the pill it is. */
+    width: 56px;
+    height: 20px;
+    box-sizing: border-box;
+    padding: 8px 10px;
     background: var(--border-strong);
+    background-clip: content-box;
+    border-radius: 999px;
     justify-self: center;
-    margin-bottom: 4px;
+    margin: -6px 0 -2px;
+    cursor: grab;
+    /* The drag is ours; do not let the scroll container claim it first. */
+    touch-action: none;
+  }
+  .grabber:active {
+    cursor: grabbing;
   }
   .sheet h3 {
     font-size: 1.2rem;
@@ -2729,10 +2800,28 @@
       grid-template-columns: 1fr;
     }
   }
+  /* Pinned to the bottom of the sheet's own scroll, because measured at
+     390x664 the settings content is 1528px tall inside a 582px sheet and
+     the action row sat 1000px below the fold. Scrolling to it works, but
+     nothing on screen said it was there -- so the sheet read as something
+     that had opened with no way to accept or leave it, which is most of
+     what "not able to slide it away" means in practice.
+
+     The negative inline margins and matching padding let the bar bleed to
+     the sheet's edges so content passes behind it rather than beside it,
+     and the bottom offset cancels .sheet's own bottom padding so the bar
+     sits flush on the safe-area edge. */
   .sheet-actions {
+    position: sticky;
+    bottom: calc(-20px - env(safe-area-inset-bottom));
     display: flex;
     gap: 10px;
-    margin-top: 16px;
+    margin: 16px -20px calc(-20px - env(safe-area-inset-bottom));
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+    background: var(--bg-card);
+    border-top: 1px solid var(--border);
+    /* Above the fields it scrolls over, including a focused one. */
+    z-index: 1;
   }
   .sheet-actions button {
     flex: 1;
@@ -2747,10 +2836,12 @@
     .sheet {
       bottom: auto;
       top: 50%;
-      transform: translate(-50%, -50%);
+      transform: translate(-50%, -50%) translateY(var(--sheet-dy, 0px));
       border-radius: 20px;
       padding-bottom: 20px;
     }
+    /* No grabber here, which is also what makes sheetDrag inert: it reads
+       this display value rather than repeating the breakpoint. */
     .grabber {
       display: none;
     }
