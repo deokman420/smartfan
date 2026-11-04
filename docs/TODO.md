@@ -274,6 +274,27 @@ Two things fell out of it:
   I/O and `publish()` returns immediately while offline, so an unused one
   costs a few topic strings.
 
+### Watchdog restarts every few hours — watching, cause not proven
+
+Seen 2026-11-03 at 13:18, 16:51 and 22:10 on build 4b4e29f1, reported as
+`watchdog or reset`, with plenty of memory free and a strong signal. Network
+steps could wait longer than the 8 s watchdog: a 10 s MQTT connect timeout, and
+5 s for a PINGRESP plus 5 s for the close. That fits the evidence but was not
+caught happening.
+
+Build 40a26ae8 keeps every network wait inside the watchdog (`tests/test_net_budget.py`)
+and records the step in progress in a watchdog scratch register. After a restart
+that step is sent retained on `fan/<room>/last_stall`:
+
+* a network step name means the budget still has a hole;
+* `idle` means the stall was outside `net.py`, so look at the sensors, flash and
+  the web step, which will need `main.py` and may be too big to push over the air;
+* no message at all after a restart means the record itself does not work. It
+  could not be tested on the board when it shipped, as there is no remote restart.
+
+Close this after a few quiet days. Note that the OTA trial commits on "no FAULT
+for 60 s" and does not check the network, so a bad `net.py` would be kept.
+
 ### An OTA installs, then loses a race and is rolled back — needs USB
 
 > **Re-diagnosed 2026-11-03, and the old heading was wrong.** This was filed as
