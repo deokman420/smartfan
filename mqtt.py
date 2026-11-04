@@ -53,10 +53,16 @@ class MQTTClient:
             s = s.encode()
         return struct.pack("!H", len(s)) + s
 
-    def connect(self):
+    def connect(self, timeout_s=2):
+        """TCP connect and CONNACK, each bounded by timeout_s.
+
+        This runs inside the control loop, so together with everything else in
+        the pass it has to stay well under the 8 s watchdog. net.py holds the
+        budget. A broker this slow gets retried, which beats a reset.
+        """
         ai = socket.getaddrinfo(self.server, self.port)[0][-1]
         self.sock = socket.socket()
-        self.sock.settimeout(10)
+        self.sock.settimeout(timeout_s)
         self.sock.connect(ai)
 
         flags = 0x02                                   # clean session
@@ -94,14 +100,14 @@ class MQTTClient:
         """cb(topic, payload) for every inbound PUBLISH. Keep it fast."""
         self.cb = cb
 
-    def subscribe(self, topic, qos=0):
+    def subscribe(self, topic, qos=0, timeout_ms=2000):
         """SUBSCRIBE and wait for its SUBACK."""
         self._pid = (self._pid % 65534) + 1
         var = struct.pack("!H", self._pid)
         payload = self._str(topic) + bytes([qos])
         self.sock.write(bytes([0x82]) + self._rlen(len(var) + len(payload))
                         + var + payload)
-        if not self._recv(5000, want=0x90):
+        if not self._recv(timeout_ms, want=0x90):
             raise OSError("MQTT: no SUBACK for %s" % topic)
         return True
 
@@ -168,7 +174,7 @@ class MQTTClient:
         """Dispatch any already-arrived PUBLISH. Never blocks."""
         self._recv(0, want=None)
 
-    def ping(self):
+    def ping(self, timeout_ms=3000):
         """PINGREQ, then verify PINGRESP.
 
         Writing to a half-open TCP socket succeeds silently for a long time,
@@ -176,12 +182,15 @@ class MQTTClient:
         connection while the broker has already fired our LWT.
         """
         self.sock.write(bytes([0xC0, 0x00]))
-        if not self._recv(5000, want=0xD0):
+        if not self._recv(timeout_ms, want=0xD0):
             raise OSError("MQTT: no PINGRESP")
 
     def close(self):
         try:
             if self.sock:
+                # Usually called because the socket has already stalled, so
+                # the courtesy DISCONNECT gets very little time.
+                self.sock.settimeout(0.5)
                 self.sock.write(b"\xe0\x00")           # DISCONNECT
                 self.sock.close()
         except Exception:

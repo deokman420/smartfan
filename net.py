@@ -13,6 +13,7 @@ by a short timeout and rate-limited by backoff, so a dead broker costs a few
 seconds once a minute rather than a stall every pass.
 """
 
+import sys
 import time
 
 try:
@@ -35,8 +36,50 @@ WIFI_ONLY = "wifi-only"
 _BACKOFF_START_S = 2
 _BACKOFF_MAX_S = 60
 _WIFI_TIMEOUT_S = 20
-_MQTT_TIMEOUT_S = 5                       # socket connect + CONNACK
 _PING_INTERVAL_S = 30
+
+# Everything here runs between two feeds of an 8 s watchdog (WDT_TIMEOUT_MS).
+# feed -> poll() -> web step -> sensors -> publish() -> feed. A timeout that
+# looks generous on its own can still add up to a reset, and did: a 10 s connect
+# timeout could not finish inside an 8 s watchdog at all.
+_CONNECT_TIMEOUT_S = 2                    # TCP connect, then CONNACK
+_SOCKET_TIMEOUT_S = 1.5                   # each read or write once connected
+_SUBACK_TIMEOUT_MS = 2000
+_PINGRESP_TIMEOUT_MS = 3000
+_SUBSCRIBE_BUDGET_MS = 4000               # no new SUBSCRIBE after this long
+_PUBLISH_BUDGET_MS = 4000                 # no new write after this long
+
+# Which blocking step the link is in, kept where it survives a watchdog reset:
+# WATCHDOG SCRATCH0 on the RP2350, which only a power-on clears. It costs no
+# flash wear, so it can be updated this often. After a reset it names the step
+# the loop was stuck in, and "idle" means the stall was outside this module.
+_CRUMB_ADDR = 0x400D800C                  # WATCHDOG_BASE + SCRATCH0
+_CRUMB_MAGIC = 0x0FA10000                 # small enough to stay a small int
+_STEPS = ("idle", "wifi", "ntp", "connect", "subscribe", "recv", "ping",
+          "publish", "close")
+_IDLE, _WIFI, _NTP, _CONNECT, _SUBSCRIBE, _RECV, _PING, _PUBLISH, _CLOSE = range(9)
+
+try:
+    from machine import mem32 as _mem32
+    if "RP2350" not in sys.implementation._machine:
+        _mem32 = None                     # the address is RP2350-specific
+except (ImportError, AttributeError):     # off-device, or a port without it
+    _mem32 = None
+
+
+def _mark(step):
+    if _mem32 is not None:
+        _mem32[_CRUMB_ADDR] = _CRUMB_MAGIC | step
+
+
+def _read_crumb():
+    """The step recorded before this boot, or None if nothing was recorded."""
+    if _mem32 is None:
+        return None
+    v = _mem32[_CRUMB_ADDR]
+    if v & 0xFFFF0000 != _CRUMB_MAGIC or (v & 0xFFFF) >= len(_STEPS):
+        return None
+    return _STEPS[v & 0xFFFF]
 
 
 def _now():
@@ -60,6 +103,13 @@ class Link:
         self._hostname = hostname
         self.clock_ok = False
         self.ip = None
+
+        # What the loop was doing when the last reset happened. Sent retained
+        # on the first connection after it, so it outlives the next clean boot.
+        self.last_stall = _read_crumb()
+        self._stall_topic = status_topic[:-len("status")] + "last_stall"
+        self._spent = 0                   # ms blocked since the last feed
+        _mark(_IDLE)
 
         # Broker settings to use INSTEAD of secrets.py, while wifi.py is
         # trying a new one. Same shape and same reason as _try below.
@@ -195,6 +245,7 @@ class Link:
         except Exception:
             pass
         if self.client:
+            _mark(_CLOSE)
             self.client.close()
             self.client = None
         self._backoff = _BACKOFF_START_S
@@ -215,6 +266,7 @@ class Link:
         if self._down_since is None:
             self._down_since = _now()
         if self.client:
+            _mark(_CLOSE)
             self.client.close()
             self.client = None
         self._retry_at = time.ticks_add(_now(), self._backoff * 1000)
@@ -229,6 +281,8 @@ class Link:
         Cheap in every state except the two connect attempts, and those are
         gated behind backoff so they cannot run on consecutive passes.
         """
+        started = _now()
+        self._spent = 0
         try:
             if self.state == OFFLINE:
                 self._poll_offline()
@@ -242,6 +296,9 @@ class Link:
                 self._poll_online()
         except Exception as e:                     # never propagate
             self._fail("poll: %s" % e)
+        _mark(_IDLE)
+        # The loop has just fed the watchdog, so this starts the pass's count.
+        self._spent = _since(started)
         return self.online
 
     def _poll_offline(self):
@@ -249,6 +306,7 @@ class Link:
             return                                  # still backing off
         if network is None:
             return
+        _mark(_WIFI)
         if self._wlan is None:
             # The hostname must be set BEFORE the interface comes up, and
             # that ordering is the whole reason http://fan.local/ works.
@@ -280,6 +338,7 @@ class Link:
         self._goto(WIFI_WAIT)
 
     def _poll_wifi(self):
+        _mark(_WIFI)
         if self._wlan.isconnected():
             self.ip = self._wlan.ifconfig()[0]
             self.wifi_fails = 0
@@ -303,6 +362,7 @@ class Link:
         """One NTP attempt per association. Failure is not fatal."""
         if self.clock_ok or ntptime is None:
             return
+        _mark(_NTP)
         try:
             ntptime.settime()
             self.clock_ok = time.localtime()[0] >= 2024
@@ -322,21 +382,27 @@ class Link:
             will_topic=self.status_topic,
             will_msg="offline",
         )
+        started = _now()
+        _mark(_CONNECT)
         try:
-            c.connect()
+            c.connect(_CONNECT_TIMEOUT_S)
         except Exception as e:
+            c.close()                          # not yet self.client; close it here
             self._fail("mqtt connect: %s" % e)
             return
         try:
-            c.sock.settimeout(_MQTT_TIMEOUT_S)
+            c.sock.settimeout(_SOCKET_TIMEOUT_S)
         except Exception:
             pass
 
         if self._on_msg:
             c.set_callback(self._on_msg)
+        _mark(_SUBSCRIBE)
         try:
             for t in self._subs:
-                c.subscribe(t)
+                if _since(started) > _SUBSCRIBE_BUDGET_MS:
+                    raise OSError("over budget")
+                c.subscribe(t, timeout_ms=_SUBACK_TIMEOUT_MS)
                 self._log("net: subscribed %s" % t)
         except Exception as e:
             c.close()                          # not yet self.client; close it here
@@ -351,6 +417,18 @@ class Link:
         self._backoff = _BACKOFF_START_S
         self._last_ping = _now()
         self._goto(ONLINE)
+        self._report_stall()
+
+    def _report_stall(self):
+        """Publish the recorded step once. A failure just tries again next time."""
+        if self.last_stall is None:
+            return
+        self._log("net: last reset was in step: %s" % self.last_stall)
+        when = time.time() if self.clock_ok else 0
+        if self.publish(self._stall_topic,
+                        '{"step":"%s","reported":%d}' % (self.last_stall, when),
+                        retain=True):
+            self.last_stall = None
 
     def _poll_wifi_only(self):
         """Hold WiFi up and keep the clock honest. Cheap, and never blocks.
@@ -372,6 +450,7 @@ class Link:
             self._sync_clock()
 
     def _poll_online(self):
+        _mark(_RECV)
         try:
             self.client.check_msg()          # non-blocking; dispatches commands
         except Exception as e:
@@ -380,11 +459,12 @@ class Link:
         if _since(self._last_ping) < _PING_INTERVAL_S * 1000:
             return
         self._last_ping = _now()
+        _mark(_PING)
         if self._wlan is not None and not self._wlan.isconnected():
             self._fail("wifi dropped")
             return
         try:
-            self.client.ping()                      # verifies PINGRESP
+            self.client.ping(_PINGRESP_TIMEOUT_MS)  # verifies PINGRESP
         except Exception as e:
             self._fail("ping: %s" % e)
 
@@ -394,9 +474,18 @@ class Link:
         """Returns True if it reached the socket. False is not fatal."""
         if not self.online:
             return False
+        # A pass that has already spent its time skips the write, and whatever
+        # was going out goes on a later pass.
+        if self._spent > _PUBLISH_BUDGET_MS:
+            return False
+        started = _now()
+        _mark(_PUBLISH)
         try:
             self.client.publish(topic, payload, retain=retain)
+            _mark(_IDLE)
+            self._spent += _since(started)
             return True
         except Exception as e:
             self._fail("publish: %s" % e)
+            _mark(_IDLE)
             return False
