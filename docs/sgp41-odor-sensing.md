@@ -168,10 +168,13 @@ Three costs, all of them consequences of the baseline problem above:
   to 120 — but 10 s sampling missed a peak the device itself triggered on at
   `up=265.7`, so the true quiet maximum is above 120 and may reach 140.
 
-### Confirmed on a live event
+### Confirmed on a live event, of unestablished source
 
-Measured 4 Nov on a real tidy of the box, with the settings above already
-live. This replaces the prediction in this section with an observation.
+Measured 4 Nov with the settings above already live, during a tidy of the
+box. This replaces the prediction in this section with an observation --
+about the *path*, not about litter. See the source note below: the decay
+curve does not match either bench event, and the occupant's rival
+explanation for it cannot be ruled out.
 
     t=0      FAN ON    voc_exc 136   nox_exc -47   (already decaying)
     t=60     voc_exc  71
@@ -186,10 +189,10 @@ decay curves are what the 5-minute figure was derived from. So the floor, not
 the decay, is what makes this work: under the old 180 this would have been a
 3-minute run.
 
-**The attribution is unambiguous**, which is the part worth having on record.
-The device's own history row for the run reads `fan=1, lit=0, rh_exc=1.0` —
-light off, humidity at baseline — so the odour path is the only cause
-available. Across the 11 minutes temperature moved 0.1 C, RH 1.7 % and dew
+**The *path* attribution is unambiguous**, which is the part worth having on
+record. The device's own history row for the run reads `fan=1, lit=0,
+rh_exc=1.0` — light off, humidity at baseline — so the odour path is the only
+cause available, and no other reason could have started this run. Across the 11 minutes temperature moved 0.1 C, RH 1.7 % and dew
 point 0.4, confirming gas rather than moisture or the room cooling.
 
 **The veto stayed out of it correctly:** `nox_exc -47`, a 47-tick NOx rise
@@ -197,15 +200,48 @@ against a 300 veto.
 
 **`voc_exc` returned to 0 and stayed there**, with one 26-tick bump that
 restarted nothing. Dust settling on the heated element would leave a
-*permanent* offset, so a real disturbance reconfirms what the bench events
-implied: the sensor is seeing the litter's vapour, not its dust.
+*permanent* offset, not a recovery, so this is a second line of evidence for
+a vapour.
 
-One caveat: a launch error in the recorder cost the first minute, so **the
-true peak is unknown** — only that it exceeded 140, since the device had
+#### What produced it is not established
+
+This was first written up as a litter event. That was an assumption carried
+over from what was happening in the room, not a measurement, and the data
+mildly argues against it. The occupant's own suggestion -- that the sensor
+had caught a fart -- fits the curve better:
+
+| event | peak | time to clear `VOC_FALL_OFF` |
+|---|---|---|
+| used litter, bench | -150 | 5-6 min |
+| fresh litter, bench | -166 | 4-5 min |
+| bathroom event, 4 Nov | +899 | above 120 for 8.3 min |
+| **this event** | **>140, clipped** | **60 s** |
+
+**It cleared five times faster than either litter event.** Agitated litter
+outgasses from the whole tray and decays slowly; a single puff of gas
+disperses and is gone. A 60-second clear is the shape of a transient point
+source, not of a disturbed mass of material. Against that reading, the event
+was *small*, where the one documented bathroom event was +899 -- so if that is
+what it was, it was a modest one, and one event gives no distribution to judge
+against.
+
+The sensor cannot settle this. The VOC pixel measures reducing gases and has
+no access to their origin; litter vapour and a human bathroom event differ in
+shape alone. **So record it as an odour event in the bathroom, source
+unknown** -- which costs nothing, because the fan's response is the same
+either way and that response was correct.
+
+It does leave a marker worth having: if a ~60-second clear turns out to be
+repeatable for puffs and a multi-minute one for the tray, that is a
+discriminator, and it would come for free from the data already being stored.
+Two more labelled events of each kind would test it.
+
+One further caveat: a launch error in the recorder cost the first minute, so
+**the true peak is unknown** — only that it exceeded 140, since the device had
 already triggered and was passing 136 downward at the first sample. The
-5-minute history interval is too coarse to recover it. This event therefore
-confirms that the trigger fires and that the run length is right; it does not
-add a peak magnitude to the -150/-166 pair.
+5-minute history interval is too coarse to recover it. That is also why the
+NOx ratio here (~0.35 against the clipped peak) cannot be compared with the
+bench events' 0.14: the denominator is wrong by an unknown amount.
 
 ## Warm-up, and why it is two questions
 
@@ -244,7 +280,8 @@ values come from `settings.json`.
 ## Open, in priority order
 
 1. **Temperature-compensate the VOC baseline.** The blocker for everything
-   else here, and the only route to detecting a litter event.
+   else here, and what would let the threshold come down without the costs
+   recorded above.
 2. **Per-pixel flatness threshold**, so the VOC settle gate fires on flatness
    instead of timing out.
 3. **Latch the combustion veto.** NOx clears faster than VOC, so late in a
@@ -252,6 +289,10 @@ values come from `settings.json`.
    `VOC_RECOVER_S` is the precedent.
 4. **Measure the cat's own event**, which needs a long watcher rather than a
    window somebody picked.
+5. **Test decay time as a source discriminator.** The one live event cleared
+   in 60 s where both bench litter events took 4-6 minutes, so a puff and the
+   tray may be separable by decay alone. Needs two more labelled events of
+   each kind; the data is already stored, so this costs only the labelling.
 
 Related: `docs/TODO.md` for the open items with their evidence,
 `custom_components/smartfan/` for what Home Assistant sees, and `config.py`
