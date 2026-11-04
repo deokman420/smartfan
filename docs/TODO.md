@@ -274,6 +274,40 @@ Two things fell out of it:
   I/O and `publish()` returns immediately while offline, so an unused one
   costs a few topic strings.
 
+### `main.py` cannot be sent over the air — the downloader buffers whole files
+
+**Measured 4 Nov, and it settles the open question about the size ceiling.** A
+106 kB batch (`main.py` 74073 B, `config.py`, `settings.py`) was published to
+the device. It fetched all three and then:
+
+    ota: error: memory allocation failed, allocating 40449 bytes
+
+with **330 kB of heap free and 581 kB of flash free**. So the ceiling is not
+flash, and not total RAM either — it is **heap fragmentation against a single
+contiguous buffer**, because `ota.py` holds each response body in memory before
+writing it. A 74 kB file needs a 74 kB block, and after hours of uptime there
+isn't one.
+
+This is why the largest batch ever proven is 50 kB. It is a per-file limit, not
+a per-batch one, and `main.py` is permanently over it.
+
+**The failure was clean**: no reboot (uptime unbroken), no fault, `fw` unchanged,
+flash unchanged, nothing staged, no rollback needed. It gave up before touching
+anything, which is the right behaviour.
+
+Two things follow:
+
+* **The streaming rewrite is required, not optional.** It was filed here as
+  "possibly unnecessary". It is the only way `main.py` ever goes over the air,
+  and `main.py` is where the control logic lives — so today every control change
+  needs the cable.
+* **The pre-flight check is half a check.** `MIN_FREE` and `free_bytes()` verify
+  flash and never look at RAM, so a batch that cannot possibly be buffered is
+  waved through and fails mid-download. It should refuse on the largest single
+  file against `gc.mem_free()` and say so, the way it already does for flash.
+
+Until then: changes to `main.py` need USB, and the safemode dance.
+
 ### The VOC settle gate never fires on flatness — it times out
 
 Measured 4 Nov on a clean boot (2085 samples, 6 h, the device in the bathroom):
