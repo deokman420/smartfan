@@ -274,6 +274,42 @@ Two things fell out of it:
   I/O and `publish()` returns immediately while offline, so an unused one
   costs a few topic strings.
 
+### The VOC settle gate never fires on flatness — it times out
+
+Measured 4 Nov on a clean boot (2085 samples, 6 h, the device in the bathroom):
+
+| pixel | flattest 15-min window | outcome |
+|---|---|---|
+| NOx | 31 ticks | fired honestly at **75.6 min** |
+| VOC | **51 ticks** | hit the **120 min ceiling** |
+
+`_FLAT_TICKS` is 45 and shared by both pixels, so VOC can never satisfy it —
+its own quiet-air noise over 15 minutes is wider than the threshold. The log
+line reads `VOC SETTLED at up_min=120.2`, which is `VOC_SETTLE_MAX_S` expiring,
+not the gate deciding anything. **For VOC the gate is currently a 2-hour timer.**
+
+It is not doing harm: the ceiling seeded 30417 and the following six quiet
+hours sat at a mean of +11 ticks, so the baseline was right. But the gate was
+written to notice flatness and for half the sensor it does not. VOC's flattest
+patch was 70–85 min and the raw count there is within 5 ticks of where it
+settled, so a per-pixel threshold near 70 would fire genuinely and land on the
+same number 35 minutes sooner.
+
+Wants a per-pixel `_FLAT_TICKS` rather than a looser shared one: 70 would make
+NOx's gate (which works, at 31) meaningfully slacker for no reason.
+
+### Nothing bounds the fan's off-time, only its on-time
+
+Same series. The real odour event decayed through the trigger band and
+restarted the fan twice, with **0.6 and 1.1 minutes off** in between.
+`MIN_RUN_S` is 180 s and there is no counterpart; `VOC_REST_S` only applies
+after a `MAX_RUN_S` latch, which is a different situation.
+
+Raising `VOC_RISE_ON` to 200 widened the hysteresis gap to 130 ticks (3.7 sd of
+quiet noise, up from 1.4) and both restarts fall below the new line, so this is
+**masked rather than fixed**. A source that genuinely oscillates across 200
+would still cycle. The honest fix is a minimum off-time on the odour path.
+
 ### Watchdog restarts every few hours — watching, cause not proven
 
 Seen 2026-11-03 at 13:18, 16:51 and 22:10 on build 4b4e29f1, reported as

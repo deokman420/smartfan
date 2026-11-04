@@ -114,6 +114,37 @@ BASELINE_A  = 0.002  # EMA weight; ~15 min to settle at 2 s samples
 PIN_SDA = 0          # I2C0 SDA, physical pin 1
 PIN_SCL = 1          # I2C0 SCL, physical pin 2
 VOC_ENABLED     = True   # False disables the whole path, no rewiring
+# This room's data has now given them up, and the device runs RISE_ON 200,
+# FALL_OFF 70 from settings.json. Both ship at 0 regardless, so a reflash
+# is never louder than the unit it replaced.
+#
+# 200 is a measurement, not a margin picked for comfort. From the 4 Nov
+# overnight series (2085 samples, 6 h, first one taken in the bathroom on a
+# baseline the settle gate actually allowed):
+#
+#   quiet air      sd 35.5 ticks, peak-to-peak 212, highest sample +125
+#   a real event   peak +899, above +120 for 8.3 minutes
+#
+# So the two populations are three-quarters of an order of magnitude apart
+# and the threshold can sit almost anywhere between them. 120 could not:
+# quiet air reached +125 unaided, and it did so twice that night, starting
+# the fan at 04:25 on nothing at all (humidity, dew point and temperature
+# every one of them flat to 0.1 over the preceding ten minutes -- so not
+# the room cooling, which is the other thing that moves this channel).
+#
+# The second reason is hysteresis. RISE_ON minus FALL_OFF was 50 ticks
+# against a quiet sd of 35.5 -- a 1.4 sd gap, which noise crosses in both
+# directions, so the decaying tail of the real event restarted the fan
+# twice more with 0.6 and 1.1 minutes off in between. MIN_RUN_S bounds the
+# on-time and nothing bounded the off-time; VOC_REST_S only applies after a
+# MAX_RUN_S latch. At 200 the gap is 130 ticks, or 3.7 sd, and the tail no
+# longer reaches back over the line.
+#
+# The cost is 2.8 minutes of the event's 8.3 spent below the trigger, which
+# buys nothing back: one crossing is already a MIN_RUN_S run. Sampling was
+# 10 s and the device triggered on a peak my log never saw, so true peaks
+# sit somewhat above the recorded ones -- which is the argument for 200
+# over the 150 that would also have been clean on this night's numbers.
 VOC_RISE_ON     = 0      # ticks below baseline that start the fan; 0 = off
 VOC_FALL_OFF    = 0      # ticks below baseline at which the air is clear
 VOC_BASELINE_A  = 0.0005 # slower than BASELINE_A: odor events are shorter
