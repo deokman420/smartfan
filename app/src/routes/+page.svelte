@@ -913,7 +913,7 @@
                   Detail
                 </button>
               </div>
-              <Activity rows={cardRows} compact />
+              <Activity rows={cardRows} {cfg} compact />
             </section>
           </div>
         {/if}
@@ -1200,7 +1200,7 @@
                   <svg viewBox="0 0 16 16">{@html ICONS.expand}</svg>
                 </span>
               </div>
-              <Activity rows={cardRows} compact />
+              <Activity rows={cardRows} {cfg} compact />
             </div>
             {#each CHARTS as c (c.id)}
               {@const st = chartStats(cardRows, c.series[0].field, c)}
@@ -1355,7 +1355,7 @@
       </div>
 
       {#if detailChart.id === 'activity'}
-        <Activity rows={detailRows} />
+        <Activity rows={detailRows} {cfg} />
       {:else}
       <Chart
         rows={detailRows}

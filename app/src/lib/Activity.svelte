@@ -11,9 +11,18 @@
    */
   import { mode } from '$lib/link.js';
   import { F, GAP_MS, STATE_NAME } from '$lib/history.js';
+  import { CAUSES, burning, odourAt, runDuration } from '$lib/runcause.js';
   import { clock as clockPref, fmtClock } from '$lib/units.js';
 
-  let { rows = [], compact = false } = $props();
+  /* `cfg` arrives because this chart now reports WHY the fan ran, and the
+     answer depends on the device's own thresholds. Defaulted to {} so the
+     component still renders against a history with no live device behind
+     it -- the lanes it cannot justify simply do not appear. */
+  let { rows = [], compact = false, cfg = {} } = $props();
+
+  let rhStop = $derived(Number(cfg.RH_FALL_OFF) || 0);
+  let vocStop = $derived(Number(cfg.VOC_FALL_OFF) || 0);
+  let vocVeto = $derived(Number(cfg.VOC_NOX_VETO) || 0);
 
   /* IDLE is --border-strong, not --text-dim. Both read as "quiet" on dark,
      where --text-dim is a pale grey on a dark track, but this is a FILL:
@@ -34,6 +43,14 @@
   let fanSegs = $derived(bits(F.fan, 'var(--accent)', 'Fan on'));
   let lightSegs = $derived(bits(F.lit, 'var(--purple)', 'Lights on'));
   let stateSegs = $derived(states());
+  let odourSegs = $derived(odour());
+  /* Only drawn when the history actually carries the column. Rows written
+     before 2026-11-01 are 11 or 12 wide and have no odour at all, and an
+     empty lane reads as "no smell" rather than "not recorded". */
+  let hasOdour = $derived(
+    vocStop > 0 &&
+      rows.some((r) => r.length > F.vocExc && r[F.vocExc] !== null && r[F.vocExc] !== undefined)
+  );
   let hasState = $derived(rows.some((r) => r.length > F.st && r[F.st] !== null && r[F.st] !== undefined));
 
   let summary = $derived.by(() => {
@@ -44,10 +61,17 @@
     parts.push(fan >= 20_000 ? `Fan on for ${fmtDur(fan)}.` : 'Fan stayed off.');
     parts.push(lit >= 20_000 ? `Lights on for ${fmtDur(lit)}.` : 'The room stayed dark.');
     if (hasState) {
-      const runs = duration(F.st, (v) => v === 2);
+      /* This used to read "Clearing humidity" for EVERY run, which was
+         simply untrue once there were three reasons to run: it once said
+         it over a room 0.9% above baseline while the fan ran on odour.
+         Every column needed to tell them apart is recorded, so each RUN
+         sample is attributed instead of assumed. */
+      for (const [cause, text] of CAUSES) {
+        const ms = runDuration(rows, cause, cfg);
+        if (ms >= 20_000) parts.push(`${text} for ${fmtDur(ms)}.`);
+      }
       const boosts = duration(F.st, (v) => v === 3);
       const faults = duration(F.st, (v) => v === 4);
-      if (runs >= 20_000) parts.push(`Clearing humidity for ${fmtDur(runs)}.`);
       if (boosts >= 20_000) parts.push(`Boosted for ${fmtDur(boosts)}.`);
       if (faults >= 20_000) parts.push(`Faulted for ${fmtDur(faults)}.`);
     }
@@ -85,6 +109,28 @@
   }
 
   function spans(field, classify) {
+    return rowSpans((r) => {
+      const missing = r.length <= field || r[field] === null || r[field] === undefined;
+      return missing ? null : classify(r[field]);
+    });
+  }
+
+  /* The odour lane needs two columns at once -- the excess, and the NOx
+     rise that decides whether that excess counted -- so the span builder
+     takes a row rather than a field. */
+  function odour() {
+    return rowSpans((r) => {
+      const e = r.length > F.vocExc ? r[F.vocExc] : null;
+      if (e === null || e === undefined || e <= vocStop) return null;
+      return burning(r, vocVeto)
+        ? { key: 'burn', color: 'var(--orange)', label: 'Combustion — odour ignored' }
+        : { key: 'odour', color: 'var(--green)', label: 'Odour above baseline' };
+    });
+  }
+
+
+
+  function rowSpans(classify) {
     if (rows.length < 2 || t1 === t0) return [];
     const out = [];
     let cur = null;
@@ -97,8 +143,7 @@
     };
     for (const r of rows) {
       const gap = prevT !== null && r[F.t] - prevT > GAP_MS;
-      const missing = r.length <= field || r[field] === null || r[field] === undefined;
-      const mark = gap || missing ? null : classify(r[field]);
+      const mark = gap ? null : classify(r);
       if (!mark) {
         flush(prevT);
       } else if (!cur || cur.key !== mark.key) {
@@ -118,6 +163,8 @@
     }));
   }
 
+
+
   function duration(field, pred) {
     let ms = 0;
     for (let i = 0; i < rows.length - 1; i++) {
@@ -128,6 +175,8 @@
     }
     return ms;
   }
+
+
 
   function fmtDur(ms) {
     const m = Math.round(ms / 60_000);
@@ -163,6 +212,7 @@
       clock: clock(row[F.t]),
       fan: row[F.fan] === 1 ? 'Fan on' : 'Fan off',
       light: row[F.lit] === 1 ? 'Lights on' : 'Dark',
+      odour: odourAt(row, cfg),
       state: STATE_NAME[code] || 'State not recorded'
     };
   }
@@ -198,6 +248,16 @@
         {/each}
       </div>
     </div>
+    {#if hasOdour}
+      <div class="lane">
+        <span class="name">Odour</span>
+        <div class="track">
+          {#each odourSegs as s, i (i)}
+            <i style="left:{s.left}%; width:{s.width}%; background:{s.color}"></i>
+          {/each}
+        </div>
+      </div>
+    {/if}
     <div class="lane">
       <span class="name">State</span>
       <div class="track">
@@ -225,6 +285,7 @@
             <span>{hover.state}</span>
             <span>{hover.fan}</span>
             <span>{hover.light}</span>
+            {#if hover.odour}<span>{hover.odour}</span>{/if}
           </div>
         {/if}
       </div>
@@ -240,6 +301,12 @@
   <div class="legend">
     <span><i style="background:var(--accent)"></i>Fan on</span>
     <span><i style="background:var(--purple)"></i>Lights on</span>
+    {#if hasOdour}
+      <span><i style="background:var(--green)"></i>Odour</span>
+      {#if vocVeto}
+        <span><i style="background:var(--orange)"></i>Combustion, ignored</span>
+      {/if}
+    {/if}
     <span><i style="background:var(--accent)"></i>Run</span>
     <span><i style="background:var(--warn)"></i>Boost</span>
     <span><i style="background:var(--bad)"></i>Fault</span>
