@@ -105,7 +105,7 @@ BASELINE_A  = 0.002  # EMA weight; ~15 min to settle at 2 s samples
 # --- Odor sensing (SGP41) -------------------------------------------
 # The second sensed reason to run. Humidity covers showers; this covers the
 # rest, which produces no humidity signal at all. See voc.py for the sign of
-# the signal and logistics/sgp41-odor-sensing.md for the whole argument.
+# the signal and docs/sgp41-odor-sensing.md for the whole argument.
 #
 # Both thresholds ship at 0, which _voc_armed() reads as "never trigger":
 # the sensor publishes and the recorder keeps it, while the fan behaves
