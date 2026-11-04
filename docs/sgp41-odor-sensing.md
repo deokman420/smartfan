@@ -123,22 +123,50 @@ because the sensor is noisy, but because the room cooled, and
 Measured: **VOC -115 and NOx +138 ticks per %RH**, *after* the SGP41's own
 on-chip humidity compensation.
 
-So `VOC_RISE_ON = 200` is sized to survive **baseline error**, not sensor
-noise, and that is exactly what puts a genuine 150-tick litter event out of
-reach. Lowering the threshold to about 120 would catch litter and would also
-reintroduce the 3 a.m. false start that raising it to 200 fixed.
+So a `VOC_RISE_ON` sized to survive **baseline error** rather than sensor
+noise is what put a genuine 150-tick litter event out of reach, and the two
+requirements pull against each other directly: 200 is clean overnight and
+blind to litter, while something near 120 sees litter and reintroduces the
+3 a.m. false start.
 
 **The unexplored fix is to compensate the baseline for temperature**, using
 the coefficients above and the nine hours of labelled quiet data already
-recorded. If that cuts the noise floor several-fold, a threshold near 120
-becomes safe, litter events trigger, and the NOx veto keeps cooking out. That
-combination is what would make a litter event run the fan. It has not been
-attempted.
+recorded. If that cuts the noise floor several-fold, a low threshold becomes
+safe without the trade below, litter events trigger, and the NOx veto keeps
+cooking out. It has not been attempted.
 
-Run length needs no new work. `MIN_RUN_S` guarantees 3 minutes and the run
-ends when the excess falls under `VOC_FALL_OFF`. Both litter events decayed
-through 70 ticks within 4-6 minutes, so such a run would last roughly 4-7
-minutes and end itself.
+## The litter run, and what it costs
+
+The trade was taken deliberately rather than waited out, because a short run
+during a litter event is wanted for its own sake — it keeps the disturbed
+material from drifting out of the bathroom — and an occasional unexplained
+short run is acceptable here. Settings only, no firmware:
+
+    VOC_RISE_ON   200 -> 140      clears both litter events (-150, -166)
+    MIN_RUN_S     180 -> 300      the 5 minutes the material needs
+    VOC_FALL_OFF   70             unchanged
+    VOC_NOX_VETO  300             unchanged; litter's NOx ratio is 0.14
+
+`MIN_RUN_S` is doing the real work on run length. Fresh litter stayed over
+140 for only **1.5 minutes**, so without the floor it would have been a
+3-minute run; used litter decayed through 70 in about 5-6 minutes and so
+self-limits at roughly the same place. Both give a clean 5 minutes. A real
+bathroom event at +899 is untouched and still runs until the air is clear,
+not for 5 minutes.
+
+Three costs, all of them consequences of the baseline problem above:
+
+- **The hysteresis gap falls from 130 ticks to 70** — 3.7 sd of quiet noise
+  down to 2.0. That is the margin that stopped the decaying tail of the real
+  event restarting the fan twice. `MIN_RUN_S 300` lengthens each cycle and so
+  partly masks it, but the off-time is still unbounded (`docs/TODO.md`).
+- **`MIN_RUN_S` is global**, so every run now has a 5-minute floor, including
+  a brief light-on with dry air. A per-reason minimum would be control-logic
+  work in `main.py`, and `main.py` cannot go over the air.
+- **False starts become possible.** A genuinely quiet 3.5 h window (1204
+  samples, fan off, excess -87..+117) crossed nothing at any threshold down
+  to 120 — but 10 s sampling missed a peak the device itself triggered on at
+  `up=265.7`, so the true quiet maximum is above 120 and may reach 140.
 
 ## Warm-up, and why it is two questions
 
@@ -164,8 +192,9 @@ baselines live in RAM.
 
 | setting | live | measured from |
 |---|---|---|
-| `VOC_RISE_ON` | 200 | quiet air reached +125 unaided; the real event was +899 |
-| `VOC_FALL_OFF` | 70 | leaves a 130-tick gap, 3.7 sd of quiet noise |
+| `VOC_RISE_ON` | 140 | clears both litter events; 200 was the quiet-air answer |
+| `VOC_FALL_OFF` | 70 | leaves a 70-tick gap, 2.0 sd of quiet noise |
+| `MIN_RUN_S` | 300 | fresh litter is only 1.5 min over the trigger |
 | `VOC_NOX_VETO` | 300 | 4.7x above the bathroom event's NOx, 5.0x below cooking's |
 | `VOC_SETTLE_MAX_S` | 7200 | the measured NOx warm-up, so the ceiling rarely fires |
 

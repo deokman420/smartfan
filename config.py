@@ -114,9 +114,35 @@ BASELINE_A  = 0.002  # EMA weight; ~15 min to settle at 2 s samples
 PIN_SDA = 0          # I2C0 SDA, physical pin 1
 PIN_SCL = 1          # I2C0 SCL, physical pin 2
 VOC_ENABLED     = True   # False disables the whole path, no rewiring
-# This room's data has now given them up, and the device runs RISE_ON 200,
+# This room's data has now given them up, and the device runs RISE_ON 140,
 # FALL_OFF 70 from settings.json. Both ship at 0 regardless, so a reflash
 # is never louder than the unit it replaced.
+#
+# 140 is a deliberate step back from the 200 the overnight series argued
+# for, and the reasoning for 200 below is still the honest reading of that
+# night. What changed is the requirement: the cat's litter box is in this
+# room, and disturbing it -- by him or by whoever tidies it -- throws a
+# measurable gas event that the fan should catch, because a short run keeps
+# the material from drifting out of the bathroom. Measured 4 Nov, used
+# litter -150 ticks and fresh litter -166, both recovering fully in 5-8
+# minutes, both at a NOx ratio of 0.14 (so the combustion veto leaves them
+# alone). 200 cannot see either of them; 140 clears both.
+#
+# What that costs, stated plainly because it will be noticed before it is
+# remembered:
+#
+#   - The hysteresis gap drops from 130 ticks to 70, from 3.7 sd of quiet
+#     noise to 2.0, which is the margin that stopped the decaying tail of
+#     a real event restarting the fan. MIN_RUN_S 300 lengthens each cycle
+#     and so partly masks it; the off-time is still unbounded.
+#   - False starts become possible. A quiet 3.5 h window crossed nothing
+#     at 120, but 10 s sampling missed a peak the device itself triggered
+#     on, so the true quiet maximum is above 120 and may reach 140. Expect
+#     the occasional unexplained run. Short runs are acceptable here.
+#
+# Both costs are symptoms of the same unfixed thing: the threshold is
+# sized against baseline error, not sensor noise. Temperature-compensating
+# the baseline is what would remove them. See docs/TODO.md.
 #
 # 200 is a measurement, not a margin picked for comfort. From the 4 Nov
 # overnight series (2085 samples, 6 h, first one taken in the bathroom on a
@@ -248,7 +274,18 @@ VOC_MAX_FAILS   = 10     # consecutive I2C failures before the path stands down
 
 # --- Timing, seconds --------------------------------------------------
 SAMPLE_S     = 2     # DHT22 cannot be read faster than every 2 s
-MIN_RUN_S    = 180   # never short-cycle the fan
+MIN_RUN_S    = 300   # never short-cycle the fan
+                     # Was 180. Raised to give a litter event the 5 minutes
+                     # that keeps the disturbed material in the bathroom:
+                     # fresh litter stayed over VOC_RISE_ON for only 1.5
+                     # minutes, so the floor and not the decay is what sets
+                     # that run's length. Used litter self-limits at about
+                     # 5 minutes anyway, so the two agree.
+                     #
+                     # This is global, so EVERY run now has a 5-minute
+                     # floor -- a brief light-on with dry air included.
+                     # Accepted over a per-reason minimum, which would be
+                     # control-logic work in main.py and so a cable job.
 MAX_RUN_S    = 2700  # hard stop after 45 min no matter what
                      # Was 30. A real shower measured here peaked at +38.5 %RH
                      # and the room took longer than half an hour to come back
