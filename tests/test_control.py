@@ -2320,6 +2320,261 @@ check("a wet room keeps both the latch and its message",
       repr(holding.state_reason))
 
 
+import light                                          # noqa: E402
+
+print("\nthe light detector, driven directly\n")
+
+# light.py's own docstring says "the tests drive it directly with four days
+# of real readings". No test file imported the module at all. Mutation
+# testing put numbers on what that cost: 13 of 17 mutants survived, including
+# the one that matters most -- turning `jump AND rise` into `jump OR rise`,
+# which is precisely the failure docs/daylight-is-brighter-than-the-bulb.md
+# was written about. The fan ran 75 minutes on 10-27 and 175 on 10-28, in a
+# bone-dry room, on sunlight.
+
+
+class LightSt:
+    """Just the three settings the detector reads."""
+    LIGHT_STEP_ON = 10000
+    LIGHT_RISE_ON = 8000
+    LIGHT_RISE_OFF = 4000
+
+
+def det(amb=3000):
+    d = light.Detector(LightSt(), log=lambda *a: None)
+    d.update(amb)          # the first reading owns the ambient
+    return d
+
+
+# BOTH TERMS, AND EACH CATCHES A DIFFERENT LIE. Either one alone is a
+# detector that has already failed in this room.
+
+# The sky. Climbing faster than the ambient slew can absorb, so a rise does
+# build -- but no single sample ever steps like a switch. This is the exact
+# shape that ran the fan for 175 minutes on sunlight.
+sky = det()
+raw = 3000
+for _ in range(40):
+    raw += cfg.LIGHT_AMB_UP + 500          # outruns the slew by 500/sample
+    on = sky.update(raw)
+check("a sunrise never trips the light, however high it climbs",
+      on is False, "rise=%d after %d samples" % (sky.rise(raw), 40))
+check("...and it did build a rise well past the threshold",
+      sky.rise(raw) >= LightSt.LIGHT_RISE_ON,
+      "%d >= %d" % (sky.rise(raw), LightSt.LIGHT_RISE_ON))
+
+# A shadow. One sample steps hard enough to be a switch, but it only climbs
+# back to where the room already was, so there is no rise above ambient.
+shadow = det(20000)
+shadow.update(5000)                         # into shade; ambient follows down
+on = shadow.update(16000)                   # back out, a 11000 step
+check("climbing out of a shadow is not a light coming on",
+      on is False, "jump=11000 rise=%d" % shadow.rise(16000))
+
+# The fixture. Both at once, which only a switch does.
+real = det()
+on = real.update(3000 + LightSt.LIGHT_STEP_ON + 1000)
+check("the fixture, which does both at once, does trip it", on is True)
+
+# The exact corner, both terms on their thresholds.
+edge = det()
+on = edge.update(3000 + LightSt.LIGHT_STEP_ON)
+check("exactly the step and exactly the rise is on", on is True,
+      "jump=%d rise=%d" % (LightSt.LIGHT_STEP_ON, edge.rise(3000 + 10000)))
+
+one_short = det()
+one_short.update(3000 + LightSt.LIGHT_STEP_ON - 1)
+check("one count short of the step is not", one_short.on is False)
+
+
+# LETTING GO. Three separate ways out, and a detector that cannot take any of
+# them leaves the fan running on a reading nobody can see.
+
+# The switch going off: a downward step, which also re-anchors the ambient --
+# the sun may have climbed while the fan ran.
+off_step = det()
+off_step.update(53000)
+check("the fixture is on", off_step.on is True)
+off_step.update(53000 - LightSt.LIGHT_STEP_ON - 1)
+check("a downward step turns it off", off_step.on is False)
+check("...and re-anchors the ambient to the room it left behind",
+      abs(off_step.amb - (53000 - LightSt.LIGHT_STEP_ON - 1)) < 1,
+      "amb=%.0f" % off_step.amb)
+
+# The offset simply closing, with no step: a dimmer, or an ambient that rose
+# to meet the bulb.
+off_rise = det()
+off_rise.update(53000)
+off_rise.amb = 53000 - LightSt.LIGHT_RISE_OFF
+off_rise.update(53000 - 1)
+check("the offset closing turns it off, with no step at all",
+      off_rise.on is False, "rise=%d" % off_rise.rise(53000 - 1))
+
+# Neither edge ever arrives. This is the backstop that bounds every light
+# misreading whatever its cause, so it has to actually fire.
+was = cfg.LIGHT_MAX_ON_S
+cfg.LIGHT_MAX_ON_S = 1800
+stuck = det()
+stuck.update(53000)
+check("still on just under the cap", stuck.on is True)
+advance(cfg.LIGHT_MAX_ON_S - 1)
+stuck.update(53000)
+check("...still on at one second under", stuck.on is True)
+advance(2)
+stuck.update(53000)
+check("past the cap it re-anchors and lets go", stuck.on is False)
+check("...onto the reading it had been staring at",
+      abs(stuck.amb - 53000) < 1, "amb=%.0f" % stuck.amb)
+cfg.LIGHT_MAX_ON_S = was
+
+
+# THE AMBIENT TRACKER, which is asymmetric on purpose: a falling reading
+# cannot be a fixture switching on, so it is believed quickly; a rising one
+# is absorbed only as fast as weather can explain.
+fall = det(20000)
+fall.update(10000)
+check("a falling ambient is believed quickly",
+      fall.amb < 20000 - 2000, "amb=%.0f" % fall.amb)
+
+rise_cap = det(3000)
+rise_cap.update(3000 + 100000)              # absurd, far past any slew
+check("a rising ambient is slew-limited, not followed",
+      rise_cap.amb <= 3000 + cfg.LIGHT_AMB_UP + 1, "amb=%.0f" % rise_cap.amb)
+
+# And it must not track at all while the fixture is lit, or the ambient
+# climbs to meet the bulb and the light reads off in a blazing room.
+lit_amb = det()
+lit_amb.update(53000)
+check("the fixture is on before the ambient is checked", lit_amb.on is True)
+amb_was = lit_amb.amb
+for _ in range(20):
+    lit_amb.update(53000)
+check("the ambient does not climb while the bulb is lit",
+      lit_amb.amb == amb_was, "%.0f -> %.0f" % (amb_was, lit_amb.amb))
+
+# rise() is what every log line and app tile explains itself with, so it has
+# to mean what it says before a baseline exists too.
+fresh = light.Detector(LightSt(), log=lambda *a: None)
+check("rise is 0 before any ambient is learned", fresh.rise(50000) == 0)
+fresh.update(3000)
+check("...and is the offset above it afterwards", fresh.rise(11000) == 8000)
+
+
+print("\nsettings validation, which anything on the LAN can reach\n")
+
+# Found by mutation testing: 52 of 67 mutants in settings.py survived, and
+# the survivors include every early return in set(). Turning `return False,
+# "unknown setting"` into `return True` broke nothing, anywhere. The only
+# match for that string in tests/ was a STUB inside test_httpd.py imitating
+# this module, never the module itself.
+#
+# This is not an internal helper. POST /api/set/<name> lands here with a
+# body off the network, on a device with no authentication, so "what does
+# it do with a value it should refuse" is worth more than one test.
+
+
+def fresh_settings():
+    s = settings.Settings(log=lambda *a: None)
+    s.reset()
+    return s
+
+
+st = fresh_settings()
+
+# An unknown key must be refused outright, not quietly stored. Storing it
+# would put an unvalidated name into settings.json, which is read back at
+# every boot.
+ok, why = st.set("NOT_A_SETTING", 5)
+check("an unknown setting is refused", ok is False, repr(why))
+check("...and nothing is stored under it",
+      not hasattr(st, "NOT_A_SETTING"))
+
+ok, why = st.set("MIN_RUN_S", "banana")
+check("a non-numeric value is refused", ok is False, repr(why))
+
+ok, why = st.set("MIN_RUN_S", None)
+check("None is refused rather than becoming 0.0", ok is False, repr(why))
+
+# NaN is the one that gets through a naive check: every comparison against
+# it is False, so a clamp silently passes it and the stored threshold can
+# never be met again.
+ok, why = st.set("MIN_RUN_S", float("nan"))
+check("NaN is refused", ok is False, repr(why))
+ok, why = st.set("MIN_RUN_S", float("inf"))
+check("infinity is refused", ok is False, repr(why))
+ok, why = st.set("MIN_RUN_S", float("-inf"))
+check("negative infinity is refused", ok is False, repr(why))
+
+# A refused write must leave the old value alone.
+before = st.MIN_RUN_S
+st.set("MIN_RUN_S", float("nan"))
+check("a refused write does not disturb the setting",
+      st.MIN_RUN_S == before, "%s" % st.MIN_RUN_S)
+
+# Out of range is clamped rather than refused, which is deliberate -- but
+# it must actually clamp, at both ends.
+lo, hi = settings.SPECS["MIN_RUN_S"][1], settings.SPECS["MIN_RUN_S"][2]
+ok, v = st.set("MIN_RUN_S", hi + 10_000)
+check("far above the ceiling is clamped to it", ok is True and v == hi,
+      "%s" % v)
+ok, v = st.set("MIN_RUN_S", lo - 10_000)
+check("far below the floor is clamped to it", ok is True and v == lo,
+      "%s" % v)
+ok, v = st.set("MIN_RUN_S", hi)
+check("exactly the ceiling is kept, not clamped away",
+      ok is True and v == hi, "%s" % v)
+
+# An integer setting must come back an int. The app and HA both render
+# these, and 300.0000001 seconds is not a thing anyone meant.
+ok, v = st.set("MIN_RUN_S", 300.4)
+check("an integer setting rounds to an int",
+      isinstance(v, int) and v == 300, "%r" % v)
+
+# MODE is the one select, and it is matched case-insensitively because the
+# MQTT and HTTP paths both carry user-typed text.
+ok, v = st.set("MODE", "force off")
+check("a mode is matched regardless of case", ok is True and v == "Force off",
+      "%r" % v)
+ok, why = st.set("MODE", "sideways")
+check("an unknown mode is refused", ok is False, repr(why))
+
+# PAIRED THRESHOLDS. Whichever was written wins and the other moves out of
+# its way, because refusing the write would tell the user no without saying
+# which other value blocked them.
+st = fresh_settings()
+st.set("RH_RISE_ON", 8.0)
+st.set("RH_FALL_OFF", 3.0)
+st.set("RH_FALL_OFF", 7.5)             # pushed up under the rise
+check("writing the lower threshold pushes the upper one out of the way",
+      st.RH_RISE_ON > st.RH_FALL_OFF,
+      "rise=%s fall=%s" % (st.RH_RISE_ON, st.RH_FALL_OFF))
+
+st = fresh_settings()
+st.set("RH_RISE_ON", 8.0)
+st.set("RH_FALL_OFF", 3.0)
+st.set("RH_RISE_ON", 3.2)              # squeezed down onto the fall
+check("writing the upper threshold pushes the lower one down",
+      st.RH_RISE_ON > st.RH_FALL_OFF,
+      "rise=%s fall=%s" % (st.RH_RISE_ON, st.RH_FALL_OFF))
+
+# ...and the ordering survives a round trip through flash, or it is only
+# true until the next boot.
+st.set("RH_RISE_ON", 3.2)
+again = settings.Settings(log=lambda *a: None)
+check("the order still holds after reloading from flash",
+      again.RH_RISE_ON > again.RH_FALL_OFF,
+      "rise=%s fall=%s" % (again.RH_RISE_ON, again.RH_FALL_OFF))
+
+# A zero upper bound is the documented off switch and must not be dragged
+# up by enforcing a gap against it -- that would arm odor triggering at a
+# few ticks against a signal whose quiet-room spread is hundreds.
+st = fresh_settings()
+st.set("VOC_RISE_ON", 0)
+st.set("VOC_FALL_OFF", 70)
+check("a disabled upper bound is not armed by writing its partner",
+      st.VOC_RISE_ON == 0, "%s" % st.VOC_RISE_ON)
+
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)
