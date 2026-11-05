@@ -678,8 +678,9 @@ class EchoBus:
 class FakeSGP41:
     """The driver's contract, without the bus: a reading, or None."""
 
-    def __init__(self, voc=29000):
+    def __init__(self, voc=29000, nox=18000):
         self.voc = voc
+        self.nox = nox
         self.ok = True
         self.fails = 0
         self.reads = 0
@@ -700,7 +701,7 @@ class FakeSGP41:
         self.reads += 1
         if self.raises:
             raise OSError(5)
-        return None if self.voc is None else (self.voc, 18000)
+        return None if self.voc is None else (self.voc, self.nox)
 
     def start(self):
         pass
@@ -1883,6 +1884,275 @@ _c = build()
 _c.st.set("NET_STALL_S", 999999)
 check("a huge value is clamped to the ceiling",
       _c.st.NET_STALL_S <= 3600, _c.st.NET_STALL_S)
+
+# -- the light's own clock ------------------------------------------------
+#
+# Reported 5 Nov: "I had an event with the light off, then turned light on
+# and fan stopped while light was on. I had to turn the light off and on
+# again for it to start."
+#
+# LIGHT_ONLY_MAX_S is an allowance for the light. It was being measured
+# against fan_seconds(), the whole run, so a run that started on odor or on
+# a shower spent the light's allowance before the light was involved. In
+# the worst case -- a run already past the allowance when the air clears --
+# the light got none of it at all.
+
+def lit_run(reason="odor", on_at=0.0, allowance=600, min_run=300,
+            voc_exc=300):
+    """A RUN started by something other than the light, joined by it later.
+
+    `on_at` is seconds into the run at which the light comes on. Nothing is
+    poked onto the controller that the firmware would not find there: the
+    light is driven through the detector the way the LDR drives it.
+    """
+    # voc_exc=0 is clean air, which is what makes a run light-ONLY. The
+    # default leaves the odor path objecting, which is the reported case.
+    c = armed(rise=200, fall=70, base=30000.0, raw=30000 - voc_exc)
+    c.st.set("MIN_RUN_S", min_run)
+    c.st.set("LIGHT_ONLY_MAX_S", allowance)
+    c.st.set("MAX_RUN_S", 3600)
+    c.rh = c.baseline                      # dry throughout
+    c.set_state(main.RUN, reason)
+    c.set_fan(True)
+    advance(on_at)
+    return c
+
+
+def light(c, on):
+    """Turn the bathroom light on or off, through the detector."""
+    LIGHT[0] = 60000 if on else 3000
+    c.lightdet.amb = 3000.0
+    c.light_on = bool(on)
+
+
+# The reported sequence, to the minute. Odor run, light on at ten minutes,
+# air clears at twelve. The old code latched at the first pass after the
+# air cleared, because `ran` was already past 600.
+c = lit_run(reason="odor +200", on_at=600)
+light(c, True)
+c.decide()
+check("the light joining a 10 min odor run does not stop it",
+      c.state == main.RUN, "%s %r" % (c.state, c.state_reason))
+# Now the air clears. This is the exact pass that used to latch.
+c.vocdet.raw = 30000
+advance(60)
+c.decide()
+check("...nor does the air clearing a minute later",
+      c.state == main.RUN, "%s %r" % (c.state, c.state_reason))
+check("...and the fan is still actually turning", c.fan.value() == 1)
+
+# The allowance is real, it just starts when the light becomes the reason.
+advance(540)
+c.decide()
+check("the light still holds it at 9 of its own 10 minutes",
+      c.state == main.RUN, "%s" % c.state)
+advance(61)
+c.decide()
+check("...and lets go once its own 10 minutes are up",
+      c.state == main.IDLE, "%s %r" % (c.state, c.state_reason))
+check("...latching, so a light left on cannot restart it",
+      c.maxed is True)
+
+# A plain light-only run is unaffected: this is the case the allowance was
+# written for and it must keep its old length to the second.
+c = lit_run(reason="light on", voc_exc=0)
+light(c, True)
+c.decide()
+advance(599)
+c.decide()
+check("a light-only run still runs its full allowance",
+      c.state == main.RUN, "%s" % c.state)
+advance(2)
+c.decide()
+check("...and still latches at the end of it",
+      c.state == main.IDLE and c.maxed is True,
+      "%s maxed=%s" % (c.state, c.maxed))
+
+# The clock must not carry across runs.
+c = lit_run(reason="light on", voc_exc=0)
+light(c, True)
+c.decide()
+advance(400)
+c.decide()
+light(c, False)
+c.decide()                                  # dark, dry, quiet -> run ends
+advance(400)
+c.decide()
+check("a finished run leaves no clock behind", c.light_only_since is None)
+
+# The light going out and coming back is a new occupancy event, and the
+# allowance starts again with it rather than resuming.
+c = lit_run(reason="light on", voc_exc=0)
+light(c, True)
+c.decide()
+advance(500)
+c.decide()
+light(c, False)
+c.decide()
+light(c, True)
+c.decide()
+advance(300)
+c.decide()
+check("a second visit gets the whole allowance, not the remainder",
+      c.state == main.RUN, "%s" % c.state)
+
+# And a wet room is not a light-only run, so the allowance never starts.
+c = lit_run(reason="humidity +9.0")
+light(c, True)
+c.rh = c.baseline + 9.0
+c.decide()
+advance(1200)
+c.decide()
+check("a wet room is not the light running the fan",
+      c.state == main.RUN and c.light_only_since is None,
+      "%s" % c.state)
+
+
+# -- combustion is a rise, not a level ------------------------------------
+#
+# Measured 5 Nov. The hob peaked at a NOx rise of 1088 and decayed through
+# 930, 638, 509, 475, 376, 316 over the next half hour -- every one above
+# VOC_NOX_VETO. A level-only veto kept the odor path switched off for the
+# whole decay, and a genuine bathroom event at 08:00 reading +381 on the
+# VOC pixel, against a threshold of 140, was swallowed by the tail.
+
+def trend(c, rises, secs=cfg.NOX_TREND_S):
+    """Walk the NOx rise through a series, secs apart, as read_voc would."""
+    for r in rises:
+        c.noxdet.raw = int(c.noxdet.base + r)
+        c._update_nox_trend()
+        advance(secs)
+
+
+# No history at all must still veto: arriving at a high level IS a rise,
+# and the safe default for a veto is to apply it.
+c = armed_with(COOK_VOC, COOK_NOX)
+check("a high NOx reading with no trend yet is combustion",
+      c._combustion() is True)
+check("...so the odor path stands down as before", c._voc_armed() is False)
+
+# The hob, climbing. Still combustion.
+c = armed_with(COOK_VOC, 400)
+trend(c, [400, 700, 1088])
+check("a climbing NOx rise is combustion", c._combustion() is True)
+
+# The hob, finished. The decay must give the odor path back.
+c = armed_with(COOK_VOC, 400)
+trend(c, [400, 700, 1088, 930, 638])
+check("a decaying NOx rise is not combustion", c._combustion() is False)
+check("...so the odor path is live again during the clear-out",
+      c._voc_armed() is True)
+
+# The event that was missed, end to end: the morning's real numbers.
+c = armed_with(0, 283)
+trend(c, [283, 711, 1088, 930, 638, 509])
+c.vocdet.raw = int(c.vocdet.base - 381)     # the 08:00 bathroom event
+c.noxdet.raw = int(c.noxdet.base + 475)
+check("the 08:00 event is seen through the hob's tail",
+      c._voc_armed() is True and c.excess_voc == 381,
+      "armed=%s exc=%s" % (c._voc_armed(), c.excess_voc))
+
+# A second pan going on must be caught like the first.
+c = armed_with(COOK_VOC, 400)
+trend(c, [400, 1088, 638, 509])
+check("the veto has stepped aside before the second pan",
+      c._combustion() is False)
+trend(c, [900, 1400])
+check("a fresh climb re-arms the veto", c._combustion() is True)
+
+# Below the veto level there is no episode, whatever the direction.
+c = armed_with(REAL_VOC, REAL_NOX)
+trend(c, [64, 40, 20])
+check("a bathroom event is never combustion", c._combustion() is False)
+check("...and dropping under the level clears the trend state",
+      c._nox_decaying is False and c._nox_ref is None)
+
+# Noise must not flip it. Moves under NOX_TREND_EPS say nothing.
+c = armed_with(COOK_VOC, 1000)
+trend(c, [1000, 1000 - (cfg.NOX_TREND_EPS - 1)])
+check("a move smaller than the epsilon is not a fall",
+      c._combustion() is True, "eps=%d" % cfg.NOX_TREND_EPS)
+
+# The reference is refreshed on a timer, so samples taken faster than
+# NOX_TREND_S must not be read as a trend.
+c = armed_with(COOK_VOC, 1000)
+trend(c, [1000, 500, 400], secs=1)
+check("samples closer together than the trend window do not decide",
+      c._combustion() is True)
+
+# A veto of 0 is still the off switch.
+check("veto 0 disables the direction test too",
+      armed_with(COOK_VOC, COOK_NOX, veto=0)._combustion() is False)
+
+
+# -- the veto must not feed the baselines ---------------------------------
+#
+# _voc_learning() asked _voc_quiet(), which answers True whenever the odor
+# path is inert -- including when it is inert because of the veto. So a
+# cooking event switched the path off and thereby switched baseline
+# learning back ON, over the worst air of the day. Measured 5 Nov: raw fell
+# 30427 to 30160 while the baseline followed it down 30703 to 30593.
+
+c = armed_with(COOK_VOC, COOK_NOX)
+c.rh = c.baseline
+check("the veto does not re-enable learning", c._voc_learning() is False,
+      "voc_exc=%s" % c.excess_voc)
+check("...and _voc_quiet still says the fan may stop",
+      c._voc_quiet() is True, "unchanged, it answers a different question")
+
+# The distinction that matters: inert-because-absent still learns.
+c = build()
+check("no sensor at all still learns as before",
+      c._voc_settled() is True)
+c = armed(rise=0, fall=70, base=30000.0, raw=29000)
+check("an observe-only rollout still learns as before",
+      c._voc_settled() is True, "VOC_RISE_ON=0")
+
+# The NOx pixel must not learn its own exhaust.
+c = armed_with(0, COOK_NOX)
+c.rh = c.baseline
+check("the hob does not teach the NOx baseline it is normal",
+      c._nox_settled() is False, "rise=%d" % -c.excess_nox)
+c = armed_with(0, REAL_NOX)
+c.rh = c.baseline
+check("a quiet NOx pixel still learns", c._nox_settled() is True)
+
+# ...and the predicate has to be WIRED IN, which is the half a test of the
+# predicate alone cannot show. Reverting the term at the read_voc() call
+# site broke none of the checks above, so this drives the real read and
+# watches the baseline instead of asking the gate about itself.
+def reading(nox_raw, nox_base=16000.0, voc_raw=30000, voc_base=30000.0):
+    c = armed(rise=200, fall=70, base=voc_base, raw=voc_raw)
+    c.voc.nox = nox_raw
+    c.noxdet.base, c.noxdet.raw = nox_base, nox_raw
+    c.st.set("VOC_NOX_VETO", 300)
+    c.rh = c.baseline
+    return c
+
+
+hob = reading(nox_raw=17500)          # a 1500 rise: the hob
+check("the room is otherwise perfectly learnable",
+      hob._voc_learning() is True and hob.voc.settled_nox is True)
+was = hob.noxdet.base
+hob.read_voc()
+check("yet read_voc leaves the NOx baseline where it was",
+      hob.noxdet.base == was, "%s -> %s" % (was, hob.noxdet.base))
+
+calm = reading(nox_raw=16064)          # a 64 rise: the bathroom
+was = calm.noxdet.base
+calm.read_voc()
+check("while a quiet pixel still learns normally",
+      calm.noxdet.base != was, "%s -> %s" % (was, calm.noxdet.base))
+
+# ...including through the decay, which is exactly when the veto has
+# stepped aside and the reading is still nowhere near normal.
+c = armed_with(0, 400)
+c.rh = c.baseline
+trend(c, [400, 1088, 638])
+check("the decay releases the veto but not the NOx baseline",
+      c._combustion() is False and c._nox_settled() is False,
+      "rise=%d" % -c.excess_nox)
+
 
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))

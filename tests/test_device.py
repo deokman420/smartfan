@@ -276,7 +276,9 @@ import urllib.request                                         # noqa: E402
 
 HTTP_HOST = "fan.local"
 UP_DEADLINE = 150
-BASELINE_DEADLINE = 120
+# How long to allow for the sensor to answer again after the reset. NOT how
+# long the baseline takes: see the note at the check itself.
+SENSOR_DEADLINE = 120
 
 
 def device_state(timeout=5):
@@ -299,26 +301,40 @@ while time.time() - began < UP_DEADLINE:
 check("controller restarted and answers over the network", state is not None,
       "after %ds" % int(time.time() - began))
 
-# The baseline is a learned value, so "present" is the only thing worth
-# waiting for -- not a particular number. A board with no SGP41 fitted never
-# reports one and must not hang this for two minutes, so an absent sensor
-# skips the wait entirely.
+# What the reset actually risks is the SGP41 failing to re-initialise on the
+# bus. That is what is checked here.
+#
+# It used to wait for voc_base instead, with a 120 s deadline, and that was
+# never a test the device could pass from cold. sgp41.py seeds a baseline
+# only once the pixel looks settled, and settled means flat across
+# _FLAT_BLOCKS (3) blocks of _FLAT_BLOCK_MS (5 min) -- a structural floor of
+# fifteen minutes, with a ceiling of VOC_SETTLE_MAX_S (2 h) beyond that.
+# Measured on this board 2026-11-05: a reboot at 23:25 reseeded at 00:05,
+# forty minutes later. So the old check could only pass when the suite was
+# run against a board that had already been up for an hour, which is
+# precisely the case in which it demonstrated nothing -- and it failed,
+# correctly but uselessly, whenever the reset above had actually just
+# happened.
+#
+# Waiting the real forty minutes would be honest and would also make this
+# suite unrunnable. So this asks the deterministic half of the question --
+# did the sensor come back and is it producing readings -- and leaves the
+# warm-up to the clock.
 #
 # Gated on voc_ok, not on voc. A reading of None means "no opinion yet",
 # which is what a FITTED sensor reports for the first ten seconds of its
-# conditioning window -- so testing voc here skipped the wait in precisely
-# the case it exists for, immediately after the reset above. voc_ok is None
-# only when no sensor answered the bus at boot.
+# conditioning window. voc_ok is None only when no sensor answered the bus
+# at boot, so a board with no SGP41 skips this entirely.
 if state is not None and state.get("voc_ok") is not None:
     began = time.time()
-    while (state.get("voc_base") is None
-           and time.time() - began < BASELINE_DEADLINE):
+    while (state.get("voc") is None
+           and time.time() - began < SENSOR_DEADLINE):
         time.sleep(5)
         state = device_state() or state
-    check("...and has learned its odor baseline again",
-          state.get("voc_base") is not None,
-          "voc=%s base=%s after %ds"
-          % (state.get("voc"), state.get("voc_base"),
+    check("...and the odor sensor is reading again after the reset",
+          state.get("voc_ok") is True and state.get("voc") is not None,
+          "ok=%s voc=%s base=%s after %ds"
+          % (state.get("voc_ok"), state.get("voc"), state.get("voc_base"),
              int(time.time() - began)))
 
 # --- summary --------------------------------------------------------------

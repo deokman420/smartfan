@@ -205,6 +205,31 @@ VOC_FALL_OFF    = 0      # ticks below baseline at which the air is clear
 # side. The margins are wide enough to be worth having now, and docs/TODO.md
 # records that a second cooking event should be checked against it.
 VOC_NOX_VETO    = 300
+# The veto needs a DIRECTION as well as a level, because NO2 outlives the
+# cooking that made it.
+#
+# Measured here 2026-11-05. The hob ran, peaked at a NOx rise of 1088, and
+# then decayed through 930, 638, 509, 475, 376, 316 over the following
+# half hour. Every one of those is above VOC_NOX_VETO, so a level-only test
+# kept the odor path switched off for 35 minutes after the cooking had
+# finished -- and a genuine bathroom event at 08:00, reading +381 on the VOC
+# pixel against a threshold of 140, was silently swallowed by the tail.
+#
+# So combustion is a NOx rise that is still RISING. The onset is what
+# identifies a flame; the decay afterwards is just the room clearing, and
+# during it the odor path has to be live or the veto costs more than it
+# saves. VOC_NOX_VETO still sets the level -- nothing below it is ever
+# combustion, whatever its direction.
+#
+# The trend is read against a reference sample refreshed every NOX_TREND_S
+# rather than against the previous reading, because the loop samples far
+# faster than this signal moves and consecutive samples differ mostly by
+# noise. Two minutes of the measured decay is 150-200 counts, which clears
+# NOX_TREND_EPS by three to four times, so the direction is unambiguous
+# without being twitchy. A fresh climb re-arms the veto immediately, so a
+# second pan going on is caught like the first.
+NOX_TREND_S     = 120    # how far back the trend reference sits
+NOX_TREND_EPS   = 50     # counts that count as a real move, not noise
 VOC_BASELINE_A  = 0.0005 # slower than BASELINE_A: odor events are shorter
                          # than showers and must not be learned as normal
 # How long a pixel may refuse to settle before its baseline is seeded

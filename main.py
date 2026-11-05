@@ -227,6 +227,15 @@ class Controller:
         self.boost_until = None
         self.light_on = False
         self.dark_since = None
+        # Since when the RUN in progress has been the light's alone. Not
+        # the same as when the light came on: a run started by odor or by a
+        # shower and joined later by the light has already spent part of
+        # its length on a reason that was not the light, and
+        # LIGHT_ONLY_MAX_S is an allowance for the light. Measured 5 Nov:
+        # an odor run was ten minutes old when the light came on, so the
+        # allowance was gone before anyone was in the room and the fan cut
+        # out the moment the air cleared, with the light still on.
+        self.light_only_since = None
 
         # Daylight here reads brighter than the bulb does, so the fixture is
         # found by its step away from a learned ambient rather than by any
@@ -250,6 +259,14 @@ class Controller:
         # sign cannot be assumed and why there is no threshold to go with it.
         self.noxdet = voc.Detector(self.st, log=print, name="nox")
         self._comb = False     # last logged state of the combustion veto
+        # The NOx trend, for _combustion(). _nox_decaying starts False so
+        # that a controller with no trend history yet treats a high NOx
+        # reading as combustion: arriving at a high level IS a rise, and
+        # the safe default for a veto is to apply it. Only an observed fall
+        # turns it off. config.py carries the measurement.
+        self._nox_ref = None       # the rise this trend is measured against
+        self._nox_ref_at = None    # when that reference was taken
+        self._nox_decaying = False
         self.voc = None            # sgp41.SGP41, or None if absent/disabled
         self.voc_recover_until = None   # VOC_RECOVER_S after a steam event
         # When the odor path first went non-quiet, so a hold that has gone
@@ -500,7 +517,16 @@ class Controller:
             # pixel nothing acts on would be deaf for no benefit.
             learning = self._voc_learning()
             self.vocdet.update(got[0], learning and self.voc.settled_voc)
-            self.noxdet.update(got[1], learning and self.voc.settled_nox)
+            # ...and the NOx pixel additionally refuses to learn while it is
+            # itself reading combustion. Without that term the hob teaches
+            # the NOx baseline that its own exhaust is normal -- measured
+            # 5 Nov, the baseline walked 16300 to 16593 during one cooking
+            # event -- which quietly raises the bar for every veto after it.
+            # A sensor must not be allowed to calibrate itself deaf.
+            self.noxdet.update(got[1], learning and self.voc.settled_nox
+                               and self._nox_settled())
+
+            self._update_nox_trend()
 
             # Say when the veto takes the odor path away and when it gives
             # it back. A suppression nobody can see is the fault that cost
@@ -585,7 +611,7 @@ class Controller:
         return (self.state == IDLE
                 and not self.light_on
                 and self.excess_rh <= self.st.RH_FALL_OFF
-                and (self._voc_quiet() or self._voc_hold_expired())
+                and (self._voc_settled() or self._voc_hold_expired())
                 and self.voc is not None)
 
     def _odor_latch_rested(self):
@@ -643,11 +669,46 @@ class Controller:
         False for ever: the fan held open to MAX_RUN_S, latched, and the
         latch unable to release -- a dead sensor cycling the fan for good.
         """
+        return self._voc_usable() and not self._combustion()
+
+    def _voc_usable(self):
+        """_voc_active without the veto: is there a signal here at all?
+
+        Split out because the two questions had been conflated and the
+        conflation cost a baseline. "The odor path may not act" and "there
+        is nothing to read" are not the same state, and only the second is
+        a reason to let the baseline learn. See _voc_settled().
+        """
         return (self.voc is not None
                 and self.voc.ok
                 and bool(self.st.VOC_RISE_ON)
-                and self.vocdet.base is not None
-                and not self._combustion())
+                and self.vocdet.base is not None)
+
+    def _voc_settled(self):
+        """Is the VOC deviation small enough to learn a baseline from?
+
+        _voc_quiet() answers a different question -- may the fan stop --
+        and answers True whenever the path is inert, which is right for
+        that question and wrong for this one. A combustion veto makes the
+        path inert while the sensor is reading heavily polluted air, so
+        _voc_learning() asking _voc_quiet() meant the veto quietly handed
+        the baseline the whole cooking event to learn from.
+
+        Measured 5 Nov: through one hob event the raw count fell 30427 to
+        30160 -- the air getting worse -- while the baseline followed it
+        down 30703 to 30593. The event was teaching the baseline to ignore
+        it, which is the exact failure the four terms in _voc_learning()
+        exist to prevent, entering by a door nobody had checked.
+
+        Inert-because-absent still learns, so a missing or disabled sensor
+        and an observe-only rollout behave exactly as they did.
+        """
+        if not self._voc_usable():
+            return True
+        exc = self.excess_voc
+        if exc is None:
+            return True
+        return exc <= self.st.VOC_FALL_OFF
 
     def _combustion(self):
         """Is the NOx pixel saying this smell is a flame, not a bathroom?
@@ -673,6 +734,20 @@ class Controller:
         False whenever there is nothing to go on -- no veto, no baseline, no
         reading -- so a missing or unsettled NOx pixel leaves the odor path
         exactly as it was rather than silently disabling it.
+
+        LEVEL AND DIRECTION. The level alone was not enough, and the way it
+        failed is the reason this paragraph exists: NO2 outlives the flame
+        that made it, so a hob that finished at 07:40 left a NOx rise above
+        this threshold until past 08:10, and the whole of that half hour
+        was a window in which the odor path was switched off. A real
+        bathroom event landed in it, reading nearly three times
+        VOC_RISE_ON, and the fan did not move.
+
+        So a flame is a NOx rise that is still rising. The decay afterwards
+        is the room clearing, which is the one time the odor path most
+        needs to be awake. _nox_decaying is maintained by read_voc() and is
+        False until a fall is actually observed, so this stays a veto by
+        default and only steps aside on evidence.
         """
         veto = getattr(self.st, "VOC_NOX_VETO", 0)
         if not veto:
@@ -680,7 +755,63 @@ class Controller:
         exc = self.excess_nox
         if exc is None:
             return False
-        return -exc >= veto
+        if -exc < veto:
+            return False
+        return not self._nox_decaying
+
+    def _nox_settled(self):
+        """Is the NOx pixel quiet enough to learn a baseline from?
+
+        The same question _voc_settled() asks of the other pixel, against
+        the only threshold NOx has. Deliberately NOT _combustion(), which
+        now steps aside during the decay: the decay is exactly when the
+        reading is still far from normal and still must not be learned.
+        """
+        veto = getattr(self.st, "VOC_NOX_VETO", 0)
+        if not veto:
+            return True
+        exc = self.excess_nox
+        if exc is None:
+            return True
+        return -exc < veto
+
+    def _update_nox_trend(self):
+        """Track whether the NOx rise is climbing or clearing.
+
+        Against a reference refreshed every cfg.NOX_TREND_S rather than
+        against the previous sample: the loop reads this sensor far faster
+        than NO2 moves, so consecutive readings differ mostly by noise and
+        a sample-to-sample comparison would flap the veto on and off
+        several times a minute. Over two minutes the measured hob decay
+        moves 150-200 counts, three to four times NOX_TREND_EPS.
+
+        Below the veto level there is no episode to have a direction, so
+        the whole thing resets -- which is what makes a second pan going on
+        half an hour later read as a fresh rise rather than as a
+        continuation of the first one's tail.
+        """
+        veto = getattr(self.st, "VOC_NOX_VETO", 0)
+        exc = self.excess_nox
+        rise = None if exc is None else -exc
+        if not veto or rise is None or rise < veto:
+            self._nox_ref = None
+            self._nox_ref_at = None
+            self._nox_decaying = False
+            return
+        now = time.ticks_ms()
+        if self._nox_ref_at is None:
+            self._nox_ref = rise
+            self._nox_ref_at = now
+            return
+        if ms_since(self._nox_ref_at) / 1000.0 < cfg.NOX_TREND_S:
+            return
+        was = self._nox_ref
+        self._nox_ref = rise
+        self._nox_ref_at = now
+        if rise >= was + cfg.NOX_TREND_EPS:
+            self._nox_decaying = False
+        elif rise <= was - cfg.NOX_TREND_EPS:
+            self._nox_decaying = True
 
     def _voc_armed(self):
         """As _voc_active, plus the post-steam recovery window."""
@@ -810,8 +941,28 @@ class Controller:
 
         if self.light_on:
             self.dark_since = None
-        elif self.dark_since is None:
-            self.dark_since = now
+        else:
+            if self.dark_since is None:
+                self.dark_since = now
+
+        # Since when has the light been the ONLY thing that could be asking
+        # for a run? Maintained in every state, not just RUN, so the answer
+        # does not depend on which pass happens to look at it -- the first
+        # version was computed inside the RUN branch and cleared by
+        # set_state, which meant the clock started on the second pass of a
+        # run rather than the first. Harmless at a 2 s loop and wrong
+        # anywhere else, which is the kind of thing that stays wrong.
+        #
+        # It is read against the run's own length (see LIGHT_ONLY_MAX_S
+        # below), so time spent light-only in IDLE is not credited to a run
+        # that has not started.
+        if (self.light_on
+                and self.excess_rh <= self.st.RH_FALL_OFF
+                and self._voc_quiet()):
+            if self.light_only_since is None:
+                self.light_only_since = now
+        else:
+            self.light_only_since = None
 
         # Mode sits above the automatic logic, including LEARN. Force off is
         # how you stop the fan during a long bath without pulling power, or
@@ -1003,9 +1154,26 @@ class Controller:
         # ...and only when nothing else still justifies the run. Latching a
         # dry room while the odor signal is still high would stop the very
         # event the second sensor exists to catch.
-        if (self.light_on and ran >= self.st.LIGHT_ONLY_MAX_S
-                and self.excess_rh <= self.st.RH_FALL_OFF
-                and self._voc_quiet()):
+        #
+        # Measured from when the run BECAME the light's alone, not from
+        # when it started. `ran` was the wrong clock and failed the obvious
+        # way on 5 Nov: a run that began on odor was already past
+        # LIGHT_ONLY_MAX_S when the light came on, so the allowance was
+        # spent before anyone entered the room and the fan latched off the
+        # instant the air cleared -- with the light on and someone
+        # standing under it. The light then could not restart it either,
+        # because the latch releases on a rising edge and the light was
+        # already on, so the only way back was to flick the switch off and
+        # on again. Which is what happened.
+        # Never older than the run itself, so a light that was already on
+        # over a dry room before anything started does not arrive with its
+        # allowance spent -- and equally, a run that only became the
+        # light's alone partway through is measured from that moment.
+        light_only_s = 0.0
+        if self.light_only_since is not None:
+            light_only_s = min(ms_since(self.light_only_since) / 1000.0, ran)
+        if (self.light_only_since is not None
+                and light_only_s >= self.st.LIGHT_ONLY_MAX_S):
             self.maxed = True
             self.maxed_at = time.ticks_ms()
             self.set_state(IDLE, "light on %d min with a dry room - latched "
