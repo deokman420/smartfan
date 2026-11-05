@@ -188,6 +188,31 @@ for kind in ("sensor.", "binary_sensor.", "button.", "number.", "select."):
 # says yes.
 odor_fitted = states.get(eid("binary_sensor", "odour_sensor"), {})     .get("state") == "on"
 exempt = () if odor_fitted else ("odour", "excess_odour")
+
+# A third state this used to have no idea about: a sensor that is fitted,
+# healthy, and has simply not learned a baseline yet. The gas baselines live
+# in RAM and are seeded only once the pixel looks settled, which sgp41.py
+# allows up to VOC_SETTLE_MAX_S for -- two hours. So for two hours after any
+# reboot the baseline and excess entities correctly read unknown, and this
+# check failed every time, for a reason that was never a fault.
+#
+# Caught 5 Nov, half an hour after a deliberate reboot. It is the same shape
+# as BASELINE_DEADLINE in test_device.py: a test encoding "a fitted sensor
+# always has a baseline", which the firmware openly and deliberately does
+# not promise.
+#
+# Bounded by uptime rather than waived, so a baseline still missing tomorrow
+# is still a failure.
+WARMUP_MIN = 125                       # VOC_SETTLE_MAX_S, plus a little
+try:
+    up_min = float(states.get(eid("sensor", "uptime"), {}).get("state"))
+except (TypeError, ValueError):
+    up_min = WARMUP_MIN                # unknown uptime: excuse nothing
+if up_min < WARMUP_MIN:
+    exempt = exempt + ("odour_baseline", "excess_odour",
+                       "nox_baseline", "excess_nox")
+    print("  (device up %.0f min; gas baselines may still be warming)"
+          % up_min)
 unavail = [k for k, v in mine.items()
            if v["state"] in ("unavailable", "unknown")
            and not k.startswith("button.")

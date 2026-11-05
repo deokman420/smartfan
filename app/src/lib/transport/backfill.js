@@ -55,6 +55,38 @@ const HISTORY_TIMEOUT_MS = 15_000;
 // boundary sample cannot fall between the two sources.
 export const OVERLAP_S = 600;
 
+/* How many times a failed backfill is worth re-asking for, and how long to
+ * wait between tries.
+ *
+ * Bounded on purpose. History is a nicety and the live stream is the point,
+ * so a fan that cannot serve its flash must not turn into a browser asking
+ * for 97 kB every two seconds for ever. Five tries a minute apart covers the
+ * cases that actually happen -- a phone whose wifi is still associating, a
+ * device busy with an OTA, one dropped connection during the burst of
+ * requests a page load makes -- and then gives up quietly.
+ */
+export const BACKFILL_TRIES = 5;
+export const BACKFILL_RETRY_MS = 60_000;
+
+/**
+ * Should another backfill attempt be made right now?
+ *
+ * Pure, because the bug this replaces was a scheduling decision and not a
+ * fetch: `backfilled = true` was set BEFORE the await, so the one attempt
+ * was recorded as done whether or not it worked. Keeping the decision
+ * separate from the I/O is what makes it checkable.
+ *
+ * @param done   has a backfill already succeeded?
+ * @param tries  attempts made so far
+ * @param now    current time in ms
+ * @param nextAt earliest time the next attempt may run
+ */
+export function shouldTryBackfill(done, tries, now, nextAt) {
+  if (done) return false;
+  if (tries >= BACKFILL_TRIES) return false;
+  return now >= nextAt;
+}
+
 /**
  * The device's history format: a comment line, then one CSV row per bucket.
  *
@@ -116,8 +148,18 @@ export function parseRows(text) {
 }
 
 /**
- * Fetch the fan's stored rows and fold them into the buffer. Returns the
- * number of rows added, or 0 for every kind of failure.
+ * Fetch the fan's stored rows and fold them into the buffer.
+ *
+ * Returns the number of rows added on success -- which may be 0, meaning
+ * the fetch worked and had nothing this browser was missing -- and null
+ * when the fetch itself failed.
+ *
+ * The difference is the whole point. This used to return 0 for both, and
+ * both callers took "0" as done and never asked again, so a single dropped
+ * connection cost the user the entire stored week with no banner, no retry
+ * and no way back short of a full reload. Seen on a phone on 5 Nov: charts
+ * that began at the moment the app was opened, with seven days sitting on
+ * the fan's flash the whole time.
  *
  * `base` is an origin with no trailing slash, or '' for same-origin.
  * `knewUpTo` is the newest sample this browser held BEFORE connecting, in ms.
@@ -135,7 +177,7 @@ export async function loadHistory(base, knewUpTo = 0) {
       signal: ac.signal,
       cache: 'no-store'
     });
-    if (!res.ok) return 0;
+    if (!res.ok) return null;
     const parsed = parseRows(await res.text());
     const { rows, interval, short, unparseable, ahead, widest } = parsed;
     if (short || unparseable) {
@@ -157,7 +199,7 @@ export async function loadHistory(base, knewUpTo = 0) {
     return rows.length ? backfill(rows, interval) : 0;
   } catch (err) {
     console.warn('history backfill failed:', err);
-    return 0;
+    return null;
   } finally {
     clearTimeout(id);
   }

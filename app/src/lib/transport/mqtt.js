@@ -16,7 +16,8 @@
  * never in the control path, and nothing here should ever make it so.
  */
 import { record } from '$lib/history.js';
-import { loadHistory, canReachDevice } from './backfill.js';
+import { loadHistory, canReachDevice, shouldTryBackfill,
+         BACKFILL_RETRY_MS } from './backfill.js';
 
 function topics(room) {
   return {
@@ -36,6 +37,8 @@ export function create(getSettings, sink) {
   // "what is newer than my newest row" a moment later asks for the last
   // half minute rather than for the week that is actually missing.
   let knewUpTo = 0;
+  let backfillTries = 0;
+  let backfillAt = 0;
 
   /**
    * Ask the fan for its stored week, once, using the address it just
@@ -61,12 +64,22 @@ export function create(getSettings, sink) {
   function tryBackfill(payload) {
     if (backfilled) return;
     const ip = payload?.ip;
-    if (!ip || !canReachDevice()) {
-      backfilled = true;      // nothing will change on a later reading
+    if (!canReachDevice()) {
+      backfilled = true;      // an https page never can; stop asking
       return;
     }
-    backfilled = true;
-    loadHistory(`http://${ip}`, knewUpTo);
+    // A missing ip is NOT final: the fan publishes it, and a retained
+    // payload from an older firmware simply has not carried it yet. The
+    // old code treated that as settled and gave up for the session.
+    if (!ip) return;
+    if (!shouldTryBackfill(backfilled, backfillTries, Date.now(), backfillAt)) {
+      return;
+    }
+    backfillTries += 1;
+    backfillAt = Date.now() + BACKFILL_RETRY_MS;
+    loadHistory(`http://${ip}`, knewUpTo).then((n) => {
+      if (n !== null) backfilled = true;
+    });
   }
 
   function publish(topic, message) {
@@ -98,6 +111,8 @@ export function create(getSettings, sink) {
       const s = getSettings();
       t = topics(s.room);
       backfilled = false;
+      backfillTries = 0;
+      backfillAt = 0;
       knewUpTo = sink.newestSample();
 
       sink.link.set('connecting');

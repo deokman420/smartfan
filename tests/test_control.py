@@ -2154,6 +2154,172 @@ check("the decay releases the veto but not the NOx baseline",
       "rise=%d" % -c.excess_nox)
 
 
+print("\nthings a mutant could break in silence\n")
+
+# Found by mutation testing on 2026-11-05: deliberately corrupt one decision
+# at a time and see whether the suite notices. 244 of 389 mutants survived.
+# Most were boundary nudges and log formatting, but the ones below change
+# real behaviour and nothing anywhere objected. None of them is a bug today.
+# They are the places where tomorrow's edit would be.
+
+# THE OLDEST RULE IN THE CONTROLLER. The humidity baseline is what every
+# shower is measured against, and it may only be learned from a quiet, dark
+# room. Dropping the `not` from `if not self.light_on` inverts it, so the
+# baseline would learn only while somebody is in the bathroom -- it would
+# climb to shower humidity, call that normal, and the fan would never run
+# again. The entire suite passed with that inversion in place.
+dark = build()
+dark.baseline, dark.rh = 50.0, 53.7
+was = dark.baseline
+dark.decide()
+check("a dark room teaches the humidity baseline", dark.baseline != was,
+      "%.3f -> %.3f" % (was, dark.baseline))
+
+lit = build()
+lit.baseline, lit.rh = 50.0, 53.7
+lit.light_on = True
+was = lit.baseline
+lit.decide()
+check("a lit room does not", lit.baseline == was, "%.3f" % lit.baseline)
+
+# ...nor does a room with no reading. Learning from None would raise, and
+# raising inside decide() is a dead controller.
+blind = build()
+blind.baseline, blind.rh = 50.0, None
+blind.decide()
+check("and neither does a room with no humidity reading",
+      blind.baseline == 50.0, "%s" % blind.baseline)
+
+# LEAVING LEARN. Both halves matter and neither was pinned: without the
+# baseline term the controller enters IDLE with baseline None, and
+# excess_rh then reads 0.0 for ever against a baseline that does not exist,
+# so humidity triggering is silently dead until a reboot.
+early = build()
+early.state = main.LEARN
+early.entered_at = CLOCK[0]
+early.baseline, early.rh = 53.7, 53.7
+advance(30)
+early.decide()
+check("LEARN is not left inside the first minute",
+      early.state == main.LEARN, early.state)
+advance(40)
+early.decide()
+check("...and is left once the minute is up", early.state == main.IDLE,
+      early.state)
+
+unseeded = build()
+unseeded.state = main.LEARN
+unseeded.entered_at = CLOCK[0]
+unseeded.baseline, unseeded.rh = None, 53.7
+advance(300)
+unseeded.decide()
+check("LEARN is never left without a baseline",
+      unseeded.state == main.LEARN, unseeded.state)
+
+# A STALE FAULT READS AS A CURRENT ONE. fault_reason is published on every
+# reading, so it has to be cleared on the way out of FAULT and left alone
+# everywhere else. All three mutations of that condition survived.
+recovered = build()
+recovered.set_state(main.FAULT, "fan stalled")
+recovered.fault_reason = "fan stalled at 0 rpm"
+recovered.set_state(main.IDLE, "retrying")
+check("leaving FAULT clears the reason it left behind",
+      recovered.fault_reason == "", repr(recovered.fault_reason))
+
+ordinary = build()
+ordinary.fault_reason = "fan stalled at 0 rpm"
+ordinary.set_state(main.RUN, "light on")
+check("an ordinary transition does not clear it",
+      ordinary.fault_reason == "fan stalled at 0 rpm",
+      repr(ordinary.fault_reason))
+
+# THE REST ESCAPE MUST REFUSE A STOOD-DOWN PATH. _odor_latch_rested() lets
+# a latch held open only by odor try again, and its first guard is `if not
+# armed or quiet: return False`. Turning that `or` into `and` survived,
+# because every existing case had both halves agreeing. The case that
+# separates them is a path reading loudly while stood down for post-steam
+# recovery: armed is False, quiet is also False, and only `or` refuses.
+stood_down = armed(rise=200, fall=70, base=30000.0, raw=29700)
+stood_down.rh = stood_down.baseline
+stood_down.maxed = True
+stood_down.maxed_at = CLOCK[0] - (stood_down.st.VOC_REST_S + 60) * 1000
+stood_down.voc_recover_until = CLOCK[0] + 600_000
+check("a stood-down odor path cannot rest a latch open",
+      stood_down._odor_latch_rested() is False,
+      "armed=%s quiet=%s" % (stood_down._voc_armed(), stood_down._voc_quiet()))
+
+# ...and the same controller with the stand-down lifted may, or the check
+# above would pass on a path that simply never releases anything.
+stood_down.voc_recover_until = None
+check("...and may once the stand-down is lifted",
+      stood_down._odor_latch_rested() is True)
+
+# THE EDGES OF THE NEW NOx WORK, which are mine and were unpinned.
+check("a NOx rise exactly at the veto is not settled enough to learn",
+      armed_with(0, 300)._nox_settled() is False)
+check("...and one tick under it is",
+      armed_with(0, 299)._nox_settled() is True)
+
+c = armed_with(COOK_VOC, 1000)
+trend(c, [1000, 1000 - cfg.NOX_TREND_EPS])
+check("a fall of exactly the epsilon is a fall",
+      c._combustion() is False, "eps=%d" % cfg.NOX_TREND_EPS)
+trend(c, [1000 - cfg.NOX_TREND_EPS + cfg.NOX_TREND_EPS])
+check("...and a climb of exactly the epsilon re-arms the veto",
+      c._combustion() is True)
+
+
+
+# A MONITORING FIELD THAT LIES. state_reason is published on every reading
+# and feeds the app and Home Assistant's Reason sensor, but only set_state()
+# and _refresh_run_reason() ever wrote it -- and the latter runs only in RUN.
+# So IDLE kept whatever ended the last run for as long as it sat there.
+# Measured 5 Nov: the fan reported "max run time - latched until the room
+# dries or the light comes back on" for forty minutes after the latch had
+# released, which sent this session's own diagnosis down the wrong path.
+stale = build()
+stale.state = main.RUN
+stale.set_state(main.IDLE, "max run time - latched until the room dries "
+                           "or the light comes back on")
+stale.maxed = True
+stale.maxed_at = CLOCK[0]
+stale.rh = stale.baseline              # dry
+check("the latch message is right while the latch is on",
+      "latched" in stale.state_reason)
+stale.decide()
+check("the latch releases in a settled room", stale.maxed is False)
+check("...and stops being reported as latched",
+      "latched" not in stale.state_reason, repr(stale.state_reason))
+check("...and the change is pushed, not left for the next poll",
+      stale._push is True)
+
+# The odor-rest release says its own true thing rather than inheriting.
+rested = armed(rise=200, fall=70, base=30000.0, raw=29700)
+rested.state = main.RUN
+rested.set_state(main.IDLE, "max run time - latched until the room dries "
+                            "or the light comes back on")
+rested.maxed = True
+rested.maxed_at = CLOCK[0] - (rested.st.VOC_REST_S + 60) * 1000
+rested.rh = rested.baseline
+rested.decide()
+check("a latch released by resting says so",
+      rested.maxed is False and "rested" in rested.state_reason,
+      repr(rested.state_reason))
+
+# And a latch that is genuinely still holding must not be talked out of it.
+holding = build()
+holding.state = main.RUN
+holding.set_state(main.IDLE, "max run time - latched until the room dries "
+                             "or the light comes back on")
+holding.maxed = True
+holding.maxed_at = CLOCK[0]
+holding.rh = holding.baseline + 9.0    # still wet
+holding.decide()
+check("a wet room keeps both the latch and its message",
+      holding.maxed is True and "latched" in holding.state_reason,
+      repr(holding.state_reason))
+
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)

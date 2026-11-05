@@ -1103,6 +1103,7 @@ class Controller:
                         and self.excess_rh <= self.st.RH_FALL_OFF
                         and self._voc_quiet()):
                     self.maxed = False
+                    self._say("room settled, free to run again")
                 elif self._odor_latch_rested():
                     # Dry room, light off, and the only thing still holding
                     # the latch is odor -- which is the one reason whose
@@ -1111,6 +1112,7 @@ class Controller:
                     # Resting and re-asking beats sitting out the event.
                     # config.py carries the asymmetry and the figure.
                     self.maxed = False
+                    self._say("odor latch rested, free to run again")
                     print("odor: latch rested %d min, free to run again"
                           % (self.st.VOC_REST_S // 60))
             elif self.excess_rh >= self.st.RH_RISE_ON:
@@ -1241,7 +1243,24 @@ class Controller:
             # reason. Overwriting it here with "nothing" would replace a
             # real answer with a worse one.
             return
-        reason = ", ".join(why)
+        self._say(", ".join(why))
+
+    def _say(self, reason):
+        """Publish a new reason without a state change.
+
+        set_state() is the only other writer, which meant state_reason was
+        only ever correct at the instant of a transition. _refresh_run_reason
+        fixed that for RUN; IDLE kept whatever ended the last run, however
+        long ago and however much had changed since.
+
+        That is not cosmetic. The MAX_RUN_S latch leaves behind "latched
+        until the room dries or the light comes back on", and when the latch
+        did release the device went on reporting it -- to the app, to Home
+        Assistant's Reason sensor, and to anyone debugging. Measured 5 Nov:
+        the fan sat in IDLE reading that message for forty minutes after the
+        latch had gone, which sent this session's own diagnosis down the
+        wrong path until the predicates were read instead of the field.
+        """
         if reason != self.state_reason:
             self.state_reason = reason
             self._push = True

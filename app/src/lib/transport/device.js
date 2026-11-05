@@ -18,7 +18,8 @@
  * fan answers or nothing does.
  */
 import { record } from '$lib/history.js';
-import { loadHistory as fetchHistory } from './backfill.js';
+import { loadHistory as fetchHistory, shouldTryBackfill,
+         BACKFILL_RETRY_MS } from './backfill.js';
 
 const POLL_MS = 2000;
 const TIMEOUT_MS = 4000;
@@ -55,6 +56,8 @@ export function create(getSettings, sink) {
   let stopped = true;
   let inflight = false;
   let backfilled = false;
+  let backfillTries = 0;
+  let backfillAt = 0;
   let misses = 0;
   // The newest sample this browser held BEFORE we connected. Captured up
   // front because the first poll records a live sample immediately, and
@@ -80,9 +83,15 @@ export function create(getSettings, sink) {
       sink.telemetry.set(payload);
       sink.lastSeen.set(Date.now());
       record(payload);
-      if (!backfilled) {
-        backfilled = true;
-        loadHistory();
+      // Marked done only once it has actually worked. The old version set
+      // the flag before awaiting, so one dropped connection discarded the
+      // fan's whole stored week for the life of the session.
+      if (shouldTryBackfill(backfilled, backfillTries, Date.now(), backfillAt)) {
+        backfillTries += 1;
+        backfillAt = Date.now() + BACKFILL_RETRY_MS;
+        loadHistory().then((n) => {
+          if (n !== null) backfilled = true;
+        });
       }
     } catch (err) {
       // One miss is a dropped packet on a busy loop, not an outage. Say
@@ -135,6 +144,8 @@ export function create(getSettings, sink) {
     connect() {
       stopped = false;
       backfilled = false;
+      backfillTries = 0;
+      backfillAt = 0;
       misses = 0;
       knewUpTo = sink.newestSample();
       sink.link.set('connecting');

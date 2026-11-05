@@ -23,7 +23,18 @@ const libRoot = pathToFileURL(join(root, 'app', 'src', 'lib') + '/').href;
 
 register('./lib_alias_hook.mjs', import.meta.url, { data: { libRoot } });
 
-const { parseRows } = await import(
+// localStorage must exist before history.js is imported: its module body
+// calls load() at once, and a throwing accessor there would be swallowed
+// into an empty buffer and quietly weaken every check below.
+globalThis.localStorage = {
+  _v: null,
+  getItem() { return this._v; },
+  setItem(k, v) { this._v = v; },
+  removeItem() { this._v = null; }
+};
+
+const { parseRows, loadHistory, shouldTryBackfill, BACKFILL_TRIES,
+        BACKFILL_RETRY_MS } = await import(
   pathToFileURL(join(root, 'app', 'src', 'lib', 'transport', 'backfill.js')).href
 );
 const { F } = await import(
@@ -100,6 +111,77 @@ check('...and defaults to 300 when absent or unparseable',
 got = parseRows('');
 check('empty input yields no rows and no complaints',
   got.rows.length === 0 && got.short === 0 && got.unparseable === 0);
+
+/* ------------------------------------------------- failure vs emptiness --
+ *
+ * loadHistory returned 0 for "fetched nothing" AND for "could not fetch",
+ * and both callers read 0 as done. One dropped connection therefore cost
+ * the whole stored week for the life of the session, silently. Seen on a
+ * phone on 5 Nov: charts starting at the moment the app was opened with
+ * seven days sitting on the fan's flash.
+ */
+console.log('');
+
+const NL = String.fromCharCode(10);
+// Inside the 7-day window, or backfill() drops them on age and the
+// check reads 0 -- which is the correct answer to a different question.
+const T0 = Math.floor(Date.now() / 1000) - 900;
+const ROWS = [HEAD, line(WIDTH, T0), line(WIDTH, T0 + 300)].join(NL);
+
+function withFetch(impl, fn) {
+  const was = globalThis.fetch;
+  globalThis.fetch = impl;
+  return fn().finally(() => { globalThis.fetch = was; });
+}
+
+const ok = (body) => async () => ({ ok: true, text: async () => body });
+const status = (code) => async () => ({ ok: false, status: code, text: async () => '' });
+const boom = () => async () => { throw new Error('connection reset'); };
+
+let r = await withFetch(ok(ROWS), () => loadHistory('', 0));
+check('a good fetch reports how many rows it added', r > 0, `added ${r}`);
+
+r = await withFetch(ok(HEAD), () => loadHistory('', 0));
+check('a fetch that worked but had nothing new is 0, not null', r === 0, `${r}`);
+
+r = await withFetch(status(500), () => loadHistory('', 0));
+check('a 500 is null, so the caller knows to ask again', r === null, `${r}`);
+
+r = await withFetch(status(404), () => loadHistory('', 0));
+check('...and so is a 404', r === null, `${r}`);
+
+r = await withFetch(boom(), () => loadHistory('', 0));
+check('a dropped connection is null, not a silent 0', r === null, `${r}`);
+
+/* ------------------------------------------------------- the retry gate --
+ *
+ * The original bug was a scheduling decision, not a fetch: `backfilled`
+ * was set to true BEFORE awaiting, so the single attempt counted as done
+ * whether or not it had worked. This is that decision, on its own.
+ */
+console.log('');
+
+check('a fresh session tries immediately',
+  shouldTryBackfill(false, 0, 1000, 0) === true);
+check('a succeeded backfill is never retried',
+  shouldTryBackfill(true, 0, 1000, 0) === false);
+check('...not even once the window reopens',
+  shouldTryBackfill(true, 1, 9e9, 0) === false);
+check('a failure inside the window waits',
+  shouldTryBackfill(false, 1, 1000, 5000) === false);
+check('...and goes again once the window opens',
+  shouldTryBackfill(false, 1, 5000, 5000) === true);
+check('exactly at the window boundary is allowed',
+  shouldTryBackfill(false, 1, 5000, 5000) === true);
+check('giving up is bounded, so a deaf fan is not hammered',
+  shouldTryBackfill(false, BACKFILL_TRIES, 9e9, 0) === false);
+check('...and the last permitted try is the Nth',
+  shouldTryBackfill(false, BACKFILL_TRIES - 1, 9e9, 0) === true);
+check('the retry spacing is a minute, not a tight loop',
+  BACKFILL_RETRY_MS >= 10_000, `${BACKFILL_RETRY_MS}ms`);
+check('the whole giving-up window outlasts a wifi association',
+  (BACKFILL_TRIES - 1) * BACKFILL_RETRY_MS >= 120_000,
+  `${((BACKFILL_TRIES - 1) * BACKFILL_RETRY_MS) / 1000}s`);
 
 const failed = results.filter((r) => !r).length;
 console.log('\n%d/%d passed\n', results.length - failed, results.length);
