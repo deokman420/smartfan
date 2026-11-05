@@ -55,46 +55,6 @@ your account, not a technical constraint.
 Host tests cover everything that can be decided without a radio. These
 cannot be, and no amount of stubbing substitutes.
 
-### A Raspberry Pi as the fan's permanent USB host
-
-**Needed by:** leaving the fan mounted in the bathroom.
-
-**Status:** requested 2026-11-05, Pi plugged in and said to be configured for
-SSH already. Not yet verified — nothing below has been checked.
-
-The cable is the thing that keeps dragging this unit back to the desk. `www/`
-is USB-only by design, `ota.py` cannot ship itself, and `main.py` is still a
-cable job until streaming downloads land. Every one of those means physically
-retrieving a fan from a ceiling.
-
-A Pi sitting in the bathroom with the Pico on its USB port removes that: push
-over SSH to the Pi, and let the Pi run `mpremote` against the local port.
-
-What has to be worked out, in rough order:
-
-- Confirm the Pi answers on SSH at all, and on what address. Prefer an mDNS
-  name over a lease, for the reason recorded for the fan itself.
-- Confirm the Pico enumerates on the Pi and which device node it takes.
-  `/dev/ttyACM0` is the likely answer and the wrong one to hard-code: it
-  moves. Bind by USB serial (`A8A41D0587B3EFE6` on this board) via a
-  `by-id` path or a udev rule.
-- Get `mpremote` onto the Pi, and check it can do the safe-mode dance
-  remotely — touch `safemode`, reset, copy, remove, reset. That dance is the
-  part most likely to behave differently over a slower link.
-- Decide where the repo lives. Pushing the whole tree to the Pi each time is
-  simplest; a git clone it pulls is tidier and survives a laptop being away.
-- Rework `tools/build_www.py --push` so the port may be a remote one. Today
-  it takes a COM port and drives mpremote locally.
-- Make sure the Pi cannot hold the Pico in reset or in safe mode across its
-  own reboot. A fan that comes up in safe mode is a fan that does not run,
-  and the bathroom is the one place nobody will notice for a day.
-
-**Worth saying plainly:** this makes the fan remotely re-flashable, which is
-also a way to brick it remotely. `boot.py`, `secrets.py` and `settings.json`
-are already protected from OTA; the same care has to apply here, and the
-safe-mode file is the recovery path that must never depend on the Pi being
-healthy.
-
 ### iOS Captive Network Assistant
 
 **Needed by:** trusting 4b in the field.
