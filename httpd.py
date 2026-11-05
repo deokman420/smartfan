@@ -593,9 +593,20 @@ class Server:
             # the size that way, and flash is the scarce resource here. Every
             # browser since the nineties accepts it. curl needs --compressed.
             headers["Content-Encoding"] = "gzip"
-        headers["Cache-Control"] = (
-            "public, max-age=31536000, immutable"
-            if "immutable" in rel else "no-cache")
+        # Three cases, not two. Hashed assets never change under their own
+        # name, so they are cached forever. version.json is how the running
+        # app finds out it is stale, and a cached answer to that question is
+        # worse than no answer. The shell is no-store because no-cache was
+        # not enough: no-cache asks a browser to revalidate, and iOS keeps a
+        # home-screen app's shell regardless -- a fix went live on the fan
+        # and stayed invisible on the phone the app is mostly used from.
+        if "immutable" in rel:
+            cc = "public, max-age=31536000, immutable"
+        elif rel.endswith("version.json") or rel.endswith(".html") or rel == "":
+            cc = "no-store"
+        else:
+            cc = "no-cache"
+        headers["Cache-Control"] = cc
         if req.method == "HEAD":
             return Response(200, b"", _mime(rel), headers)
         return Response(200, b"", _mime(rel), headers, path=path)

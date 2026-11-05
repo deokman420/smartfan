@@ -333,9 +333,18 @@ def test_server(tmp):
               st == 200 and gunzip(body) == ASSET)
         check("immutable assets are cached forever",
               "immutable" in hdr.get("Cache-Control", ""))
+        # no-store and not merely no-cache. no-cache asks a browser to
+        # revalidate; iOS keeps a home-screen app's shell anyway, which hid
+        # a shipped fix on the one device the app is mostly used from.
         st, hdr, _ = get(port, "/")
-        check("the shell is not cached forever",
-              hdr.get("Cache-Control") == "no-cache")
+        check("the shell is never stored",
+              hdr.get("Cache-Control") == "no-store",
+              hdr.get("Cache-Control"))
+        # The file whose whole job is to report that the bundle changed.
+        st, hdr, _ = get(port, "/_app/version.json")
+        check("version.json is never stored",
+              hdr.get("Cache-Control") == "no-store",
+              "%s status %d" % (hdr.get("Cache-Control"), st))
 
         st, _, body = get(port, "/charts")
         check("a client-side route falls back to the shell",

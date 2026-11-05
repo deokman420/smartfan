@@ -45,6 +45,8 @@
   import WifiPanel from '$lib/WifiPanel.svelte';
   import { sheetDrag } from '$lib/sheetdrag.js';
   import { onMount } from 'svelte';
+  import { updated } from '$app/state';
+  import { version as loadedBuild } from '$app/environment';
 
   let showSettings = $state(false);
   let draft = $state({ ...DEFAULTS });
@@ -278,7 +280,37 @@
     // Served by the fan itself there is nothing to ask, `configured` is
     // already true, and this never fires.
     if (!$configured) openSettings();
+
+    // Is this browser running the bundle that is actually on the fan?
+    //
+    // Needed because it was not, and there was no way to tell. A push to
+    // the device replaces every file, but a phone that has the app on its
+    // home screen can keep serving the shell it already has -- iOS holds a
+    // standalone web app's shell far harder than Cache-Control asks it to,
+    // so a fix can be live on the fan and invisible on the one device the
+    // app is mostly used from. updated.check() fetches _app/version.json
+    // and compares it with the version this bundle was built as.
+    //
+    // On visibility rather than a timer: the question only matters when
+    // somebody is looking, and a phone in a pocket should not be polling.
+    const check = () => {
+      if (document.visibilityState === 'visible') updated.check();
+    };
+    check();
+    document.addEventListener('visibilitychange', check);
+    return () => document.removeEventListener('visibilitychange', check);
   });
+
+  /* Reload past the cache rather than through it.
+   *
+   * location.reload() asks the browser to revalidate, which is exactly what
+   * the browser has already decided not to do. A navigation to a URL it has
+   * never seen cannot be served from a cache keyed on the old one. */
+  function reloadFresh() {
+    const u = new URL(location.href);
+    u.searchParams.set('v', Date.now().toString(36));
+    location.replace(u.toString());
+  }
 
   // Nothing here is optimistic. Every value shown is the last one the
   // device actually reported, so a command that silently failed looks like
@@ -570,6 +602,15 @@
 </svelte:head>
 
 <div class="app wrap">
+  <!-- Shown only when this browser is demonstrably behind the fan, so it is
+       absent in the normal case and unmissable in the case that used to be
+       silent. -->
+  {#if updated.current}
+    <div class="update-bar" role="status">
+      <span>A newer app is on the fan.</span>
+      <button type="button" onclick={reloadFresh}>Reload</button>
+    </div>
+  {/if}
   {#snippet modeControl(labelId)}
     <div class="mode">
       <span class="k" id={labelId}>Mode</span>
@@ -1291,8 +1332,27 @@
                   <span class="v small-v">{t.boot ?? '—'}</span>
                 </div>
                 <div>
-                  <span class="k">Build</span>
+                  <span class="k">Firmware</span>
                   <span class="v mono-v">{t.fw ?? '—'}</span>
+                </div>
+                <!-- Two app builds, not one, because they can disagree and
+                     the disagreement is the thing worth seeing: what the fan
+                     is serving, and what this browser actually loaded. One
+                     row said "Build" and showed the firmware, which answered
+                     neither question. -->
+                <div>
+                  <span class="k">App on fan</span>
+                  <span class="v mono-v">{t.app ?? '—'}</span>
+                </div>
+                <div>
+                  <span class="k">App loaded</span>
+                  <span
+                    class="v mono-v"
+                    class:tone-warn={updated.current}
+                    title={loadedBuild}
+                  >
+                    {updated.current ? 'stale' : 'current'}
+                  </span>
                 </div>
                 <div>
                   <span class="k">Fan test</span>
@@ -2628,6 +2688,27 @@
   }
   .sheet.wide {
     width: min(760px, 100%);
+  }
+
+  /* A bar, not a toast: it must survive being ignored, because the thing
+     it is reporting is that the app you are looking at is the wrong one. */
+  .update-bar {
+    position: sticky;
+    top: 0;
+    z-index: 29;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: var(--accent-soft, var(--bg-card));
+    border-bottom: 1px solid var(--border-strong);
+    font-size: 0.88rem;
+  }
+  .update-bar button {
+    padding: 6px 14px;
+    font-size: 0.85rem;
   }
 
   /* --- sheets ---------------------------------------------------------- */
