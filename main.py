@@ -6,6 +6,15 @@ slowly learned baseline. Absolute humidity thresholds do not work --
 a muggy summer day sits at 65 %RH all by itself -- so everything here
 is expressed as a rise above what this room normally sits at.
 
+This file is the largest thing shipped to the device -- about 87 kB, more
+than twice any other module -- which used to mean it could not be replaced
+over the air. ota.py buffered each body whole before writing it, so a file
+needed one CONTIGUOUS allocation its own size, and updates stopped landing
+somewhere above 60 kB while flash and heap both sat largely free. ota.py now
+streams to flash in CHUNK-sized reads, and this file travelling over the air
+is the test that says so. Keep it that way: a controller in a ceiling that
+cannot replace its own main.py is a controller that needs a ladder.
+
 States:
     LEARN   first minute after boot, building a baseline
     IDLE    fan off, tracking the baseline

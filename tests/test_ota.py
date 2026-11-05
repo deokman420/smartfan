@@ -21,6 +21,7 @@ are about that decision rather than about the download.
 import os
 import sys
 import tempfile
+import io
 import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -38,9 +39,20 @@ def check(name, ok, detail=""):
 # -- a requests module that answers from a dict, and counts what was asked --
 
 class FakeResponse:
+    """A response that can only be STREAMED, never buffered whole.
+
+    `content` deliberately raises. Buffering the body is what capped an
+    update at around 60 kB -- it needs one contiguous allocation the size
+    of the file -- and main.py is 87 kB, so reintroducing it would quietly
+    put the fan back out of reach of its own updater. A test that merely
+    checked the bytes arrived would not notice; this makes it a failure.
+    """
+
     def __init__(self, body, status=200):
-        self._body = body
+        self._body = body if isinstance(body, bytes) else body.encode()
         self.status_code = status
+        self.raw = io.BytesIO(self._body)
+        self.closed = False
 
     def json(self):
         import json
@@ -48,10 +60,11 @@ class FakeResponse:
 
     @property
     def content(self):
-        return self._body if isinstance(self._body, bytes) else self._body.encode()
+        raise AssertionError(
+            "ota.py buffered a whole body again; stream r.raw instead")
 
     def close(self):
-        pass
+        self.closed = True
 
 
 class FakeRequests:
@@ -322,6 +335,106 @@ check("...and still rolls back once they are spent",
 
 ota.free_bytes = real_free
 os.chdir(ROOT)
+
+
+# -- downloading, which nothing tested ------------------------------------
+#
+# Found 2026-11-05 while asking whether the fan could still update itself
+# from a ceiling. Every test above either plans a batch and refuses it, or
+# stages .new files by hand and installs them. Not one went through the
+# download, so `data = r.content` could be put back with the whole suite
+# still green -- and that single line is what capped an update at roughly
+# 60 kB, because buffering a body needs one CONTIGUOUS allocation the size
+# of the file. main.py is 87 kB.
+#
+# FakeResponse.content now raises for that reason. These drive the real
+# download step so the raise can actually be reached.
+
+import hashlib as _hashlib
+
+os.chdir(tempfile.mkdtemp())
+ota.free_bytes = lambda: 10_000_000
+
+
+def published(bodies):
+    """A manifest plus bodies, served to a real Updater."""
+    files = {}
+    routes = {}
+    for name, body in bodies.items():
+        raw = body if isinstance(body, bytes) else body.encode()
+        files[name] = {"sha": _hashlib.sha256(raw).hexdigest(), "size": len(raw)}
+        routes[name] = raw
+    routes[ota.MANIFEST] = _json.dumps({"files": files})
+    return install_requests(routes)
+
+
+BODY = b"# a real module\nVALUE = 1\n" * 40
+
+req = published({"mod_a.py": BODY})
+up = ota.Updater("http://host:8000", log=lambda *a: None)
+drive(up)
+check("a published file is downloaded and staged",
+      os.path.exists("mod_a.py.new") or os.path.exists("mod_a.py"),
+      "staged=%s installed=%s" % (os.path.exists("mod_a.py.new"),
+                                  os.path.exists("mod_a.py")))
+landed = "mod_a.py" if os.path.exists("mod_a.py") else "mod_a.py.new"
+check("...with the bytes intact end to end",
+      io.open(landed, "rb").read() == BODY,
+      "%d bytes" % os.path.getsize(landed))
+check("...and the update reports success", up.done and up.ok,
+      "done=%s ok=%s" % (up.done, up.ok))
+
+# THE REGRESSION GUARD. 87 kB is main.py's real size and sits between the
+# largest body that ever installed (~62 kB) and the smallest that did not
+# (~98 kB). A streamed download does not care; a buffered one is exactly
+# where it used to stop.
+os.chdir(tempfile.mkdtemp())
+BIG = (b"# padding to make this bigger than the old ceiling\n" * 2400)
+check("the regression body really is past the old ceiling",
+      len(BIG) > 98_000, "%d bytes" % len(BIG))
+req = published({"big_mod.py": BIG})
+up = ota.Updater("http://host:8000", log=lambda *a: None)
+drive(up, limit=40)
+landed = "big_mod.py" if os.path.exists("big_mod.py") else "big_mod.py.new"
+check("a body far past the old 60 kB ceiling downloads whole",
+      os.path.exists(landed) and io.open(landed, "rb").read() == BIG,
+      "%d bytes" % (os.path.getsize(landed) if os.path.exists(landed) else -1))
+check("...in CHUNK-sized reads, never one allocation",
+      ota.CHUNK <= 4096, "CHUNK=%d" % ota.CHUNK)
+
+# A SHORT BODY must be named as short. It used to be impossible to tell
+# from a checksum mismatch, which says only "these bytes are not those
+# bytes" and sends you looking at the publisher.
+os.chdir(tempfile.mkdtemp())
+full = b"abcdefghij" * 50
+routes = {
+    "cut.py": full[:120],                      # the server lies about length
+    ota.MANIFEST: _json.dumps({"files": {
+        "cut.py": {"sha": _hashlib.sha256(full).hexdigest(), "size": len(full)},
+    }}),
+}
+install_requests(routes)
+up = ota.Updater("http://host:8000", log=lambda *a: None)
+said = []
+up._log = lambda *a: said.append(" ".join(str(x) for x in a))
+drive(up, limit=40)
+check("a truncated body is refused", up.done and not up.ok,
+      "done=%s ok=%s" % (up.done, up.ok))
+check("...and is called short, not a checksum mismatch",
+      any("short" in s for s in said), "; ".join(said)[-90:])
+check("...leaving nothing staged to be installed later",
+      not os.path.exists("cut.py"), "cut.py exists")
+
+# A 404 mid-batch must fail cleanly rather than stage a page of HTML.
+os.chdir(tempfile.mkdtemp())
+install_requests({ota.MANIFEST: _json.dumps({"files": {
+    "gone.py": {"sha": "0" * 64, "size": 10},
+}})})
+up = ota.Updater("http://host:8000", log=lambda *a: None)
+drive(up, limit=40)
+check("a missing file fails the batch", up.done and not up.ok,
+      "done=%s ok=%s" % (up.done, up.ok))
+check("...and installs nothing", not os.path.exists("gone.py"))
 
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))

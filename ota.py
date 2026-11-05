@@ -293,20 +293,55 @@ class Updater:
             self.status = "downloading %s" % name
             r = requests.get("%s/%s" % (self.base, name), timeout=15)
             if r.status_code != 200:
+                r.close()
                 return self._fail("%s http %d" % (name, r.status_code))
-            data = r.content
+
+            # STRAIGHT FROM THE SOCKET TO FLASH, CHUNK at a time.
+            #
+            # This used to be `data = r.content`, which buffers the entire
+            # body before a byte reaches the filesystem -- and that needs
+            # one CONTIGUOUS allocation the size of the file. It is what
+            # actually capped an update at somewhere around 60 kB while
+            # 596 kB of flash and 325 kB of heap sat free: ~47, ~48 and
+            # ~62 kB installed, ~98 and ~106 kB did not. The comment at
+            # MIN_FREE named fragmentation as the likeliest cause and left
+            # it open; this closes it by never asking for the run at all.
+            #
+            # It matters because main.py is 87 kB on its own, which sits in
+            # the untested gap between the largest success and the smallest
+            # failure. A controller that cannot replace its own main.py
+            # over the air is a controller that needs a ladder for every
+            # change, and this one lives in a bathroom ceiling.
+            #
+            # Bounded by the manifest's declared size rather than read to
+            # EOF, so a connection that stays open after the body does not
+            # hang the loop, and a body that arrives short is caught here
+            # rather than as a checksum mismatch that says nothing useful.
+            want = meta.get("size")
+            n = 0
+            try:
+                with open(name + ".new", "wb") as f:
+                    while want is None or n < want:
+                        b = r.raw.read(CHUNK)
+                        if not b:
+                            break
+                        f.write(b)
+                        n += len(b)
+            except Exception as e:
+                r.close()
+                return self._fail("%s download failed (%s)" % (name, e))
             r.close()
             gc.collect()
 
-            with open(name + ".new", "wb") as f:
-                f.write(data)
+            if want is not None and n != want:
+                return self._fail("%s short: %d of %d bytes" % (name, n, want))
             got = _sha(name + ".new")
             if got != meta["sha"]:
                 return self._fail("%s checksum mismatch" % name)
 
             self._staged.append(name)
             self._queue.pop(0)
-            self._log("ota: staged %s (%d bytes)" % (name, len(data)))
+            self._log("ota: staged %s (%d bytes)" % (name, n))
             return True
 
         # Everything verified. Swap in one pass so a reset mid-update cannot
