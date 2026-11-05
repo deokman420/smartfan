@@ -45,6 +45,9 @@ SPECS = {
     "LIGHT_ONLY_MAX_S": ("number", 60, 3600, 60, "s",      "Light-only run",     "mdi:timer-sand-complete"),
     "MIN_RUN_S":    ("number", 30, 900, 10, "s",      "Minimum run",            "mdi:timer-play"),
     "MAX_RUN_S":    ("number", 300, 7200, 60, "s",    "Maximum run",            "mdi:timer-alert"),
+    # 0 disables. The floor is 300 rather than 60 because anything near the
+    # 60 s backoff ceiling would reboot the device over an ordinary retry.
+    "NET_STALL_S":  ("number", 0, 3600, 60, "s",     "Reboot if offline for",  "mdi:wifi-alert"),
     "POST_LIGHT_S": ("number", 0, 900, 10, "s",       "Run after lights out",   "mdi:timer-sand"),
     "BOOST_S":      ("number", 60, 3600, 60, "s",     "Boost duration",         "mdi:fan-plus"),
     "MODE":         ("select", None, None, None, None, "Mode",                  "mdi:tune"),

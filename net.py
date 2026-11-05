@@ -56,8 +56,25 @@ _PUBLISH_BUDGET_MS = 4000                 # no new write after this long
 _CRUMB_ADDR = 0x400D800C                  # WATCHDOG_BASE + SCRATCH0
 _CRUMB_MAGIC = 0x0FA10000                 # small enough to stay a small int
 _STEPS = ("idle", "wifi", "ntp", "connect", "subscribe", "recv", "ping",
-          "publish", "close")
-_IDLE, _WIFI, _NTP, _CONNECT, _SUBSCRIBE, _RECV, _PING, _PUBLISH, _CLOSE = range(9)
+          "publish", "close", "netstall")
+(_IDLE, _WIFI, _NTP, _CONNECT, _SUBSCRIBE, _RECV, _PING, _PUBLISH, _CLOSE,
+ _NETSTALL) = range(10)
+
+
+
+def mark_netstall():
+    """Record that the reset about to happen was asked for, not suffered.
+
+    "netstall" is not a step the loop can be stuck in -- the loop was fine,
+    which is the whole point of the failure it records. It rides the same
+    watchdog-scratch crumb as a real stall so that it reaches the broker by
+    the same retained message on the next connection, and needs no second
+    mechanism and no flash write. A power cut clears it, which is correct:
+    the crumb answers "why did it reset", and a power cut is not a reset.
+
+    See Link.down_s and Controller._net_stall_check.
+    """
+    _mark(_NETSTALL)
 
 try:
     from machine import mem32 as _mem32
@@ -128,6 +145,12 @@ class Link:
         self.last_error = ""
         self._down_since = _now()         # offline until proven otherwise
         self.outage_s = 0                 # length of the most recent outage
+        # Last moment the link was USABLE, which is not the same as ONLINE:
+        # with no broker configured WIFI_ONLY is a healthy steady state, and
+        # anything keyed on `online` would call it a permanent outage.
+        # _down_since cannot serve here for exactly that reason -- it is
+        # cleared only on the MQTT path.
+        self._last_ok = _now()
 
         # Credentials to use INSTEAD of secrets.py, while wifi.py is trying a
         # new network. Held here rather than by mutating the secrets module
@@ -147,6 +170,27 @@ class Link:
     def online(self):
         """MQTT is up. Publishing is gated on this and nothing else."""
         return self.state == ONLINE
+
+    @property
+    def down_s(self):
+        """Seconds the link has been unusable, 0 while it is usable.
+
+        "Usable" means ONLINE, or WIFI_ONLY when no broker is configured --
+        both are states in which the device can be reached. Measured from
+        the last poll that found one of them, so it keeps counting through
+        every backoff, every association attempt and every retry.
+
+        This exists because a wedged network is invisible to every other
+        health signal the device has. The hardware watchdog guards the main
+        loop, and on 2026-11-04 the main loop was perfectly healthy: it read
+        sensors, ran the fan and wrote an unbroken 300 s history to flash for
+        23 minutes while MQTT and HTTP were both dead and nothing could reach
+        it. Nothing escalated, because `poll` retries forever with a 60 s
+        backoff cap and the one reset path in the firmware belongs to OTA.
+        """
+        if self.state in (ONLINE, WIFI_ONLY):
+            return 0
+        return _since(self._last_ok) // 1000
 
     @property
     def wifi_ok(self):
@@ -297,6 +341,8 @@ class Link:
         except Exception as e:                     # never propagate
             self._fail("poll: %s" % e)
         _mark(_IDLE)
+        if self.state in (ONLINE, WIFI_ONLY):
+            self._last_ok = _now()
         # The loop has just fed the watchdog, so this starts the pass's count.
         self._spent = _since(started)
         return self.online

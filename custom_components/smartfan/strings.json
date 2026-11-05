@@ -93,6 +93,9 @@
       "maximum_run": {
         "name": "Maximum run"
       },
+      "reboot_if_offline_for": {
+        "name": "Reboot if offline for"
+      },
       "run_after_lights_out": {
         "name": "Run after lights out"
       },

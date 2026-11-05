@@ -138,6 +138,19 @@ NUMBERS: tuple[SmartfanNumberDescription, ...] = (
         native_unit_of_measurement=UnitOfTime.SECONDS,
         mode=NumberMode.BOX,
     ),
+    # Diagnostic rather than a comfort control: nobody tunes this for the
+    # room, and 0 switches off the only recovery the device has for a
+    # network it cannot see is broken.
+    SmartfanNumberDescription(
+        key="reboot_if_offline_for",
+        setting="NET_STALL_S",
+        native_min_value=0,
+        native_max_value=3600,
+        native_step=60,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     SmartfanNumberDescription(
         key="run_after_lights_out",
         setting="POST_LIGHT_S",

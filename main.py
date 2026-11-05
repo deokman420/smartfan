@@ -35,6 +35,7 @@ from telemetry import Snapshot, Telemetry
 # WiFi drops fails silently in a room nobody watches.
 try:
     import secrets
+    import net
     from net import Link
     _NET = True
 except ImportError:
@@ -72,6 +73,12 @@ LEARN, IDLE, RUN, BOOST, FAULT = "LEARN", "IDLE", "RUN", "BOOST", "FAULT"
 
 def ms_since(t):
     return time.ticks_diff(time.ticks_ms(), t)
+
+
+# Shortest network outage that may trigger a self-reset, whatever the
+# setting says. Five times net.py's 60 s backoff ceiling, so no ordinary
+# retry sequence can reach it. See Controller._net_stall_check.
+NET_STALL_MIN_S = 300
 
 
 def _boot_reason():
@@ -1565,6 +1572,7 @@ class Controller:
                     print("net: %s" % e)
                 if was and not self.link.online and self.telem:
                     self.telem.on_disconnect()
+                self._net_stall_check()
 
             # After the link, so an attempt is judged on the association the
             # poll above just made rather than on the one before it. Wrapped
@@ -1584,6 +1592,69 @@ class Controller:
             self.web_step()
 
             time.sleep_ms(20)
+
+    def _net_stall_check(self):
+        """Reboot if the network has been unreachable for too long.
+
+        The one failure the rest of the system cannot see. The hardware
+        watchdog asks "is the loop running", and on 2026-11-04 the answer
+        was yes for the whole 23 minutes during which nothing could reach
+        the device: it sampled, controlled the fan, seeded a gas baseline
+        and wrote an unbroken history to flash, all while MQTT and HTTP
+        were dead. net.poll() retries forever behind a 60 s backoff cap and
+        never escalates, so the outage ended when a human pulled the plug.
+
+        A reset is a blunt instrument and that is the point -- it is the
+        only tool that reaches a wedged radio. The threshold must therefore
+        sit well above every outage that fixes itself: a router reboot, a
+        channel change, a few failed associations. 15 minutes is roughly
+        fifteen times the backoff ceiling.
+
+        The fan is left alone. A reset interrupts a run, so the check is
+        skipped while the fan is on and takes effect once it stops: a
+        stalled link is not a reason to stop extracting, and a few more
+        minutes offline costs nothing next to cutting a run short. For the
+        same reason it never fires during an OTA.
+
+        0 disables it, which is also what happens off-device where there is
+        no link to judge.
+        """
+        secs = getattr(self.st, "NET_STALL_S", 0)
+        if not secs or self.link is None:
+            return
+        # A floor enforced here and not only in the spec, because this is
+        # the one setting whose bad value is a reboot loop: at 5 s the
+        # device would reset every 5 s for as long as the outage lasted,
+        # and each reset costs the learned baselines. settings.json can be
+        # hand-edited and carried between builds, so the consumer refuses
+        # to act on a value it cannot defend rather than trusting that
+        # whatever wrote it was sane. 0 still means off; anything else is
+        # at least NET_STALL_MIN_S.
+        if secs < NET_STALL_MIN_S:
+            secs = NET_STALL_MIN_S
+        # self.fan.value(), not a cached flag: the pin is the authority on
+        # whether air is moving, and it is what telemetry derives "fan_on"
+        # from. An earlier draft read a self.fan_on that does not exist,
+        # which took the controller down on the first pass after boot.
+        if self.fan.value() or self.updater is not None or self._ota_pending:
+            return
+        try:
+            down = self.link.down_s
+        except Exception:
+            return
+        if down < secs:
+            return
+        print("net: unreachable for %d s, resetting" % down)
+        try:
+            net.mark_netstall()       # survives the reset; published retained
+        except Exception:
+            pass
+        try:
+            import machine
+            time.sleep_ms(50)
+            machine.reset()
+        except Exception as e:
+            print("net: reset failed (%s)" % e)
 
     def rssi(self):
         """WiFi signal, or None when offline. Cheap and never raises."""

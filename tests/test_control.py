@@ -1766,6 +1766,124 @@ check("clear resets the streak and keeps the total",
 # snapshot's keys. Asserting it a second time here would need telemetry
 # imported into a suite that deliberately does not have it.
 
+# -- the network stall watchdog -------------------------------------------
+#
+# The failure this exists for, measured 2026-11-04: the device was
+# unreachable for 23 minutes while the control loop stayed perfectly
+# healthy -- sensors read, fan driven, an unbroken 300 s history written to
+# flash. The hardware watchdog asks whether the loop is running, so it had
+# nothing to catch, and net.poll() retries forever behind a 60 s backoff
+# cap without ever escalating. A human pulled the plug.
+#
+# A reset is a blunt instrument, so what matters most below is the set of
+# cases that must NOT fire it.
+
+class FakeLink:
+    def __init__(self, down_s=0):
+        self.down_s = down_s
+        self.online = down_s == 0
+
+
+def stalled(down_s, secs=900, fan_on=False, link=True, ota=False):
+    """A controller offline for down_s, and whether it reset itself."""
+    c = build()
+    c.st.set("NET_STALL_S", secs)
+    c.link = FakeLink(down_s) if link else None
+    # set_fan, not an invented attribute. The first version of this helper
+    # assigned c.fan_on, which the Controller does not have -- so the test
+    # created the thing it was meant to be checking and passed while the
+    # firmware raised AttributeError on the first pass after boot. Drive
+    # the real API and the harness cannot fake the interface again.
+    c.set_fan(fan_on)
+    c._ota_pending = ota
+    hits = []
+    machine.reset = lambda: hits.append(1)
+    try:
+        c._net_stall_check()
+    finally:
+        machine.reset = lambda: None
+    return bool(hits)
+
+
+# The production path, with nothing poked. This is the check that was
+# missing: every assertion below drives the helper, and the helper can
+# only exercise attributes it has itself created. A pristine controller
+# running the real method is the only thing that proves the method talks
+# to the object that actually exists -- the first version read a
+# self.fan_on that does not, and took the controller down on the first
+# pass after boot while the suite stayed green.
+_virgin = build()
+_virgin.st.set("NET_STALL_S", 900)
+_virgin.link = FakeLink(10)
+try:
+    _virgin._net_stall_check()
+    _ok, _err = True, ""
+except Exception as e:
+    _ok, _err = False, "%s: %s" % (type(e).__name__, e)
+check("it runs against an untouched controller", _ok, _err)
+
+check("a brief outage is left alone", not stalled(60))
+check("one minute under the limit is left alone", not stalled(840))
+check("at the limit it resets", stalled(900))
+check("past the limit it resets", stalled(1800))
+
+# 0 is the off switch, and it has to be absolute: this is the one setting
+# that can reboot a working device.
+check("0 disables it entirely", not stalled(86400, secs=0))
+
+# A reset interrupts a run. A stalled link is not a reason to stop
+# extracting, so the check waits for the fan to stop.
+check("it never interrupts a running fan", not stalled(1800, fan_on=True))
+check("...and resets once the fan is off", stalled(1800, fan_on=False))
+
+# Mid-update the staged files and the trial boot are at stake, and ota.py
+# has its own reset path.
+check("it stands clear of an OTA", not stalled(1800, ota=True))
+
+# Off-device, and before the link exists at all.
+check("no link means nothing to judge", not stalled(1800, link=False))
+
+# Defensive: a link that raises must not take the fan down with it.
+_c = build()
+_c.st.set("NET_STALL_S", 900)
+
+
+class AngryLink:
+    @property
+    def down_s(self):
+        raise OSError("radio gone")
+
+
+_c.link = AngryLink()
+_c.fan_on = False
+_hits = []
+machine.reset = lambda: _hits.append(1)
+try:
+    _c._net_stall_check()
+    _survived = True
+except Exception:
+    _survived = False
+finally:
+    machine.reset = lambda: None
+check("a link that raises is survived, not obeyed", _survived and not _hits)
+
+# Clamped like every other setting, so a bad payload cannot arm a reboot
+# loop by asking for a five-second threshold.
+# The hazard is behavioural, so assert the behaviour: a 5 s setting must
+# not reboot the device 5 s into an outage. main.py floors it at
+# NET_STALL_MIN_S rather than trusting settings.json, which can be
+# hand-edited and carried between builds.
+check("a 5 s setting does not reboot 10 s into an outage",
+      not stalled(10, secs=5))
+check("...and still will not at 4 minutes", not stalled(240, secs=5))
+check("...but the floor itself is honoured", stalled(400, secs=5))
+check("the floor clears net.py's 60 s backoff ceiling by 5x",
+      main.NET_STALL_MIN_S >= 300, main.NET_STALL_MIN_S)
+_c = build()
+_c.st.set("NET_STALL_S", 999999)
+check("a huge value is clamped to the ceiling",
+      _c.st.NET_STALL_S <= 3600, _c.st.NET_STALL_S)
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)

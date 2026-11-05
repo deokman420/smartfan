@@ -274,6 +274,25 @@ VOC_MAX_FAILS   = 10     # consecutive I2C failures before the path stands down
 
 # --- Timing, seconds --------------------------------------------------
 SAMPLE_S     = 2     # DHT22 cannot be read faster than every 2 s
+# Seconds of unreachable network before the controller reboots itself.
+# 0 disables.
+#
+# Measured need, 2026-11-04: the device was unreachable for 23 minutes and
+# recovered only because somebody pulled the plug. Nothing was wrong with
+# it -- an unbroken 300 s history across the whole outage, the fan logic
+# running, the gas baseline seeding at minute 20 -- so the 8 s watchdog,
+# which asks only whether the loop is running, had nothing to catch. MQTT
+# and HTTP died together at 21:00 with the radio at its usual -59 dBm and
+# no fade beforehand, which puts the fault below both of them, in the link.
+# net.poll() retries forever behind a 60 s backoff cap and never escalates,
+# and the only machine.reset() in the firmware belongs to OTA.
+#
+# 900 is fifteen times that backoff ceiling, so every outage that fixes
+# itself -- a router reboot, a channel change, a handful of failed
+# associations -- finishes long before this does anything. A reset is the
+# only tool that reaches a wedged radio, which is the argument for having
+# it and the argument for setting it well out of the way.
+NET_STALL_S  = 900   # 15 min unreachable -> reboot; 0 = never
 MIN_RUN_S    = 300   # never short-cycle the fan
                      # Was 180. Raised to give a litter event the 5 minutes
                      # that keeps the disturbed material in the bathroom:
