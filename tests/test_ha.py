@@ -184,7 +184,7 @@ for kind in ("sensor.", "binary_sensor.", "button.", "number.", "select."):
 # so reads `unknown` in HA. That is the sensor reporting absence correctly,
 # not a broken entity, and a suite that fails on it fails on every board
 # without an SGP41. The binary sensor is the authority on whether one is
-# there, so the odour readings are only required to have values when it
+# there, so the odor readings are only required to have values when it
 # says yes.
 odor_fitted = states.get(eid("binary_sensor", "odour_sensor"), {})     .get("state") == "on"
 exempt = () if odor_fitted else ("odour", "excess_odour")
@@ -193,7 +193,7 @@ unavail = [k for k, v in mine.items()
            and not k.startswith("button.")
            and not any(w in k for w in exempt)]
 check("no unavailable entities", not unavail,
-      ", ".join(unavail[:3]) or ("odour exempt" if not odor_fitted else ""))
+      ", ".join(unavail[:3]) or ("odor exempt" if not odor_fitted else ""))
 
 # --- values are sane, not just present ------------------------------------
 def val(key, lo, hi):

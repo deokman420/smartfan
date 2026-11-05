@@ -368,7 +368,7 @@ NOx's gate (which works, at 31) meaningfully slacker for no reason.
 
 ### Nothing bounds the fan's off-time, only its on-time
 
-Same series. The real odour event decayed through the trigger band and
+Same series. The real odor event decayed through the trigger band and
 restarted the fan twice, with **0.6 and 1.1 minutes off** in between.
 `MIN_RUN_S` is 180 s and there is no counterpart; `VOC_REST_S` only applies
 after a `MAX_RUN_S` latch, which is a different situation.
@@ -376,7 +376,7 @@ after a `MAX_RUN_S` latch, which is a different situation.
 Raising `VOC_RISE_ON` to 200 widened the hysteresis gap to 130 ticks (3.7 sd of
 quiet noise, up from 1.4) and both restarts fall below the new line, so this is
 **masked rather than fixed**. A source that genuinely oscillates across 200
-would still cycle. The honest fix is a minimum off-time on the odour path.
+would still cycle. The honest fix is a minimum off-time on the odor path.
 
 ### Watchdog restarts every few hours — watching, cause not proven
 

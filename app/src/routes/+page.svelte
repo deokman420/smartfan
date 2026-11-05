@@ -163,7 +163,7 @@
         { field: F.amb, label: 'Ambient', color: 'var(--blue)', dash: true }
       ]
     },
-    ...(hasVoc ? ODOUR_CHARTS : []),
+    ...(hasVoc ? ODOR_CHARTS : []),
     {
       id: 'fan',
       title: 'Fan speed',
@@ -192,7 +192,7 @@
   // ones alongside them.
   let hasNox = $derived(t?.nox != null || $history.some((r) => r[F.nox] != null));
 
-  let ODOUR_CHARTS = $derived([
+  let ODOR_CHARTS = $derived([
     {
       // Raw ticks and the learned baseline, read exactly like the humidity
       // pair: the fan acts on the gap, never on the height of either line.
@@ -349,7 +349,7 @@
   // 2026-11-03). It used to be one reason, so startsWith was enough. It is
   // not any more: the firmware lists light, then humidity, then odor, so a
   // run held by all three began with "light on" and odor was never seen --
-  // and the fan got a humidity ETA for a run the odour path was holding
+  // and the fan got a humidity ETA for a run the odor path was holding
   // open. That is the same class of mistake `why` was added to end.
   let reasons = $derived(
     String(t?.why ?? '')
@@ -360,7 +360,7 @@
   );
   let odorRun = $derived(
     state === 'RUN' &&
-      reasons.some((r) => r.startsWith('odor') || r.startsWith('odour'))
+      reasons.some((r) => r.startsWith('odor') || r.startsWith('odor'))
   );
 
   let offIn = $derived(

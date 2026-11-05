@@ -79,7 +79,7 @@ export function stateBlurb(state, why) {
   const blurb = STATE_BLURB[state] ?? '';
   if (state !== 'RUN' || !why) return blurb;
   const w = String(why).toLowerCase();
-  if (w.startsWith('odor') || w.startsWith('odour')) return 'Clearing odor';
+  if (w.startsWith('odor') || w.startsWith('odor')) return 'Clearing odor';
   if (w.startsWith('humidity')) return 'Clearing humidity';
   if (w.startsWith('light')) return 'Running with the light';
   return blurb;

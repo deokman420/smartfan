@@ -1,6 +1,6 @@
 # Bathroom Smartfan — Pico 2 W
 
-A humidity-, odour- and occupancy-driven extractor fan controller. The room
+A humidity-, odor- and occupancy-driven extractor fan controller. The room
 light is the occupancy signal; humidity decides how long the fan keeps running
 after the room empties; a gas sensor catches the thing neither of those
 notices.
@@ -19,30 +19,30 @@ managed in this room is 51. So the light is found by the **step away from a
 learned ambient**, never by a level, and light alone stops holding the fan on
 after `LIGHT_ONLY_MAX_S`. Details and the measurements are in `config.py`.
 
-Absolute *odour* thresholds don't work either, and this one is the hardest of
+Absolute *odor* thresholds don't work either, and this one is the hardest of
 the three. The SGP41's two pixels report raw tick counts with no absolute
 meaning — the number depends on the element, its age, the room and how long it
 has been powered — so once again the fan acts on a **deviation from a learned
 baseline**, and note the sign: the signal **falls** as the air gets worse. Two
 measurements are worth carrying before trusting it. Both pixels track room
-humidity hard enough that **0.3 °C of overnight cooling moves the odour channel
+humidity hard enough that **0.3 °C of overnight cooling moves the odor channel
 by its entire trigger threshold**. And the element settles far more slowly than
 a timer suggests — about **30 minutes** for the VOC pixel and about **two
 hours** for NOx, measured over a 9.2 h overnight series — so a baseline is
 seeded only once that pixel's raw count has actually stopped moving, per pixel,
 never on a stopwatch.
 
-Nothing acts on the NOx pixel. It is recorded so that odour-with-NOx (a gas
-flame in the kitchen) can one day be told from odour alone (the bathroom), but
+Nothing acts on the NOx pixel. It is recorded so that odor-with-NOx (a gas
+flame in the kitchen) can one day be told from odor alone (the bathroom), but
 its quiet-room wander is larger than any threshold worth setting, so it drives
 nothing today.
 
-**Odour triggering ships off** — `VOC_RISE_ON = 0`. The sensor reads, records
+**Odor triggering ships off** — `VOC_RISE_ON = 0`. The sensor reads, records
 and publishes from the first boot; you set a threshold once you have watched
 your own room for a few days. Humidity and light work regardless.
 
 **Status:** running on hardware and commissioned. Three sensing paths —
-humidity, light and odour — plus fan switching, both status LEDs, the button
+humidity, light and odor — plus fan switching, both status LEDs, the button
 and the tachometer, all verified on the board. Over-the-air updates install and
 hold as of 2026-11-03. Parked work is in [`docs/TODO.md`](docs/TODO.md).
 
@@ -96,7 +96,7 @@ Parked items, each with what unblocks it: [`docs/TODO.md`](docs/TODO.md).
 | `boot.py` | Runs before `main.py`. The recovery path — never updated over the air. |
 | `light.py` | Is the room light on? The ambient tracker that tells the fixture from daylight. |
 | `sgp41.py` | The gas sensor driver. Owns conditioning, and the per-pixel settle gate. |
-| `voc.py` | The learned odour baseline and the deviation arithmetic, one per pixel. |
+| `voc.py` | The learned odor baseline and the deviation arithmetic, one per pixel. |
 | `settings.py` | Runtime overrides on flash, so a threshold survives a reboot. |
 | `wifi.py` | Changing the network from the app, with the old credentials as the rollback. |
 | `provision.py` | First-run setup: the captive portal and the join flow. |
@@ -121,9 +121,9 @@ Both HTML files are standalone — open them directly in a browser.
 
 | State | LEDs | |
 |---|---|---|
-| LEARN | green blinking | First 60 s, building the *humidity* baseline. The odour baselines seed later, when their pixels settle |
+| LEARN | green blinking | First 60 s, building the *humidity* baseline. The odor baselines seed later, when their pixels settle |
 | IDLE | green solid | Fan off, tracking the baseline |
-| RUN | red solid | Fan on — light, humidity and/or odour |
+| RUN | red solid | Fan on — light, humidity and/or odor |
 | BOOST | red blinking | 15-minute manual override |
 | FAULT | alternating | Sensor silent, or fan commanded on but not turning |
 | *button held 2 s* | both solid | Let go now and it relearns |
@@ -145,18 +145,18 @@ nothing.
 
 ## Control logic
 
-- Baselines update **only** while IDLE, dark, dry and with the odour path
+- Baselines update **only** while IDLE, dark, dry and with the odor path
   quiet, so neither a shower nor a smell can teach the controller that it is
-  normal. The odour baseline additionally waits for its own pixel to settle,
+  normal. The odor baseline additionally waits for its own pixel to settle,
   and a refusal to learn expires after `VOC_HOLD_MAX_S` — otherwise a baseline
   that is simply *wrong* could never correct itself.
 - Fan starts on light-on, at `RH_RISE_ON` (+8 %) above baseline, or at
-  `VOC_RISE_ON` ticks of odour deviation — the last of which is `0`, meaning
+  `VOC_RISE_ON` ticks of odor deviation — the last of which is `0`, meaning
   off, until you set it.
 - After the light goes out it keeps running until humidity falls within
-  `RH_FALL_OFF` (+3 %) of baseline and the odour has cleared to
+  `RH_FALL_OFF` (+3 %) of baseline and the odor has cleared to
   `VOC_FALL_OFF`.
-- A humid spell suppresses odour triggering for `VOC_RECOVER_S` afterwards:
+- A humid spell suppresses odor triggering for `VOC_RECOVER_S` afterwards:
   drying a wet room moves the gas signal on its own, and that is not a second
   reason to run.
 - Bounded by a 3-minute minimum, a 2-minute post-light minimum and a 45-minute
@@ -167,7 +167,7 @@ nothing.
   re-reads the same humidity, finds it still above the trigger, and starts
   another full run seconds later. The latch clears when the room actually
   dries, when the light comes back on, or on a boost or relearn — and, if
-  odour alone is holding it, after `VOC_REST_S`, because an odour source can
+  odor alone is holding it, after `VOC_REST_S`, because an odor source can
   stop at any moment and sitting out the event helps nobody.
 - `why` on the dashboard names every reason that currently applies and is
   recomputed each pass, not frozen at whatever started the run.

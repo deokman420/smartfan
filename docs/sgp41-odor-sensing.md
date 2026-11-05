@@ -1,4 +1,4 @@
-# Odour sensing with the SGP41
+# Odor sensing with the SGP41
 
 What this room's own data says about the gas sensor, what each threshold in
 `config.py` was measured from, and which ideas were tried and refuted. Written
@@ -30,7 +30,7 @@ separates the event *classes*.
 
 | event | VOC | NOx rise | ratio | dew point | what it is |
 |---|---|---|---|---|---|
-| bathroom odour | **+899** | +64 | **0.07** | -0.1 C | the real thing |
+| bathroom odor | **+899** | +64 | **0.07** | -0.1 C | the real thing |
 | gas hob, kitchen | +504 | **+1498** | **2.97** | +0.7 C | another room |
 | tidying used litter | -150 | +21 | **0.14** | +0.2 C | litter disturbed |
 | agitating **fresh** litter | -166 | +24 | **0.14** | +0.1 C | litter disturbed |
@@ -50,8 +50,8 @@ dew point at all.
 
 **The NOx pixel is the stronger sensor on the event it responds to**, by nine
 to one in signal-to-noise, and it led VOC by about 7 minutes on the cooking
-event. It is nonetheless *not* a general odour channel: it barely moves on
-bathroom odour or on litter, because those are reducing gases. It is a
+event. It is nonetheless *not* a general odor channel: it barely moves on
+bathroom odor or on litter, because those are reducing gases. It is a
 combustion channel, and it is used as a veto rather than as a trigger.
 
 ## The litter experiment, and what it ruled out
@@ -191,7 +191,7 @@ the decay, is what makes this work: under the old 180 this would have been a
 
 **The *path* attribution is unambiguous**, which is the part worth having on
 record. The device's own history row for the run reads `fan=1, lit=0,
-rh_exc=1.0` — light off, humidity at baseline — so the odour path is the only
+rh_exc=1.0` — light off, humidity at baseline — so the odor path is the only
 cause available, and no other reason could have started this run. Across the 11 minutes temperature moved 0.1 C, RH 1.7 % and dew
 point 0.4, confirming gas rather than moisture or the room cooling.
 
@@ -227,7 +227,7 @@ against.
 
 The sensor cannot settle this. The VOC pixel measures reducing gases and has
 no access to their origin; litter vapour and a human bathroom event differ in
-shape alone. **So record it as an odour event in the bathroom, source
+shape alone. **So record it as an odor event in the bathroom, source
 unknown** -- which costs nothing, because the fan's response is the same
 either way and that response was correct.
 
@@ -258,9 +258,9 @@ fire and `VOC_SETTLE_MAX_S` is always the exit. It did no harm — the ceiling
 seeded a baseline that the following six quiet hours agreed with — but it
 wants a per-pixel threshold. See `docs/TODO.md`.
 
-While a pixel is unsettled its baseline stays unseeded, which makes the odour
+While a pixel is unsettled its baseline stays unseeded, which makes the odor
 path **inert rather than wrong**: humidity and the light still run the fan. A
-power cut therefore costs about two hours of odour sensing, because the
+power cut therefore costs about two hours of odor sensing, because the
 baselines live in RAM.
 
 ## What each threshold was measured from
@@ -285,7 +285,7 @@ values come from `settings.json`.
 2. **Per-pixel flatness threshold**, so the VOC settle gate fires on flatness
    instead of timing out.
 3. **Latch the combustion veto.** NOx clears faster than VOC, so late in a
-   cooking event the veto releases while the odour excess is still high.
+   cooking event the veto releases while the odor excess is still high.
    `VOC_RECOVER_S` is the precedent.
 4. **Measure the cat's own event**, which needs a long watcher rather than a
    window somebody picked.
