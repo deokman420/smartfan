@@ -133,6 +133,14 @@ never in doubt.
 
 ## An OTA ceiling, found the hard way
 
+> **Withdrawn 2026-11-06.** Do not follow the rule this section ends on.
+> "Keep a push under about 60 kB" described two bugs that are fixed: `ota.py`
+> now streams each body to flash (an 88 kB `main.py` installed over the air
+> on 5 Nov), and a trial boot adopts the watchdog immediately in
+> `Controller._wdt_due` instead of spending three of its eight seconds
+> waiting. The table stays, because it is what the wrong explanations were
+> built on. `boot.py` and `ota.py` still need the cable, on purpose.
+
 Worth recording because it will bite again, and because the first diagnosis
 was wrong.
 
@@ -153,15 +161,19 @@ Measured on this device, in this order:
 | ~47 kB | **47.1 kB** | installed |
 
 The obvious first reading — that a single file over ~45 kB cannot be pulled
-into RAM, since `ota.py` does `data = r.content` — is **wrong**. The last row
-disproves it: a 47 kB file installed perfectly well on its own. What binds is
-the **batch total**, which makes sense, because every staged file is written as
-`name.new` while the original and any `name.bak` are still on flash. It is
-space, not RAM.
+into RAM, since `ota.py` did `data = r.content` — is **wrong**. The last row
+disproves it: a 47 kB file installed perfectly well on its own. The reading
+that replaced it, that the **batch total** is what binds because every staged
+file is written as `name.new` while the original and any `name.bak` are still
+on flash, did not survive the next measurement either. The board had the
+space. The failures were the trial boot and the buffered download, both
+since fixed. The table is what those readings were built on.
 
-So the rule is: keep a push under about 60 kB of changed files. That makes
-staged updates the normal case for any change touching several modules, and
-staging has its own trap, which this change walked straight into:
+The rule drawn at the time was: keep a push under about 60 kB of changed
+files. That made staged updates the normal case for any change touching
+several modules, and staging has its own trap, which this change walked
+straight into. The rule itself is withdrawn; see the note at the top of
+this section. The trap is not:
 
 - `config.py` keeps vestigial `LIGHT_ON` / `LIGHT_OFF` definitions so it can
   land a push *ahead* of the `main.py` that stops reading them. Without them an
@@ -174,10 +186,10 @@ staging has its own trap, which this change walked straight into:
   carried on correctly. It now reads both through `getattr`. **A module that
   can ship one push early must tolerate a Controller one push old.**
 
-The root cause of the size limit is in `ota.py`, which is excluded from OTA on
-purpose — it is the recovery path, and a recovery path you can break remotely
-is not one. So fixing it needs the cable; parked in
-[`TODO.md`](TODO.md).
+The size limit's causes were in `ota.py` (buffering each body whole) and in
+the trial boot (not feeding a watchdog `boot_check` had already armed). Both
+are fixed; `ota.py` still needs the cable when *it* changes, because it is
+the recovery path. [`TODO.md`](TODO.md) records both fixes.
 
 The failure mode is at least safe: every failed attempt left the device healthy
 on its old code, which is the design working as intended. It is just entirely

@@ -159,8 +159,8 @@ nothing.
 - A humid spell suppresses odor triggering for `VOC_RECOVER_S` afterwards:
   drying a wet room moves the gas signal on its own, and that is not a second
   reason to run.
-- Bounded by a 3-minute minimum, a 2-minute post-light minimum and a 45-minute
-  hard stop.
+- Bounded by a 5-minute minimum (`MIN_RUN_S`), a 2-minute post-light minimum
+  and a 45-minute hard stop.
 - A stall fault latches, counts to 3, and backs off 5 minutes between retries —
   it does not clear just because the humidity sensor is healthy.
 - Hitting `MAX_RUN_S` **latches**. Without that the cap protects nothing: idle
@@ -174,44 +174,42 @@ nothing.
 
 ## Getting it running
 
-```bash
-# MicroPython for Pico 2 W — the ARM build, not RISC-V
-# https://micropython.org/download/RPI_PICO2_W/
-# hold BOOTSEL, plug in, drag the .uf2 onto the RP2350 drive
+MicroPython for the Pico 2 W, the ARM build, not RISC-V:
+<https://micropython.org/download/RPI_PICO2_W/>. Hold BOOTSEL, plug in, and
+drag the `.uf2` onto the RP2350 drive.
 
-pip install mpremote
-mpremote connect COM5 fs cp config.py :config.py
-mpremote connect COM5 fs cp main.py :main.py
-mpremote connect COM5 fs cp calibrate.py :calibrate.py
-mpremote connect COM5 exec "import machine; machine.reset()"
-```
+Firmware updates go over the air with `python tools/ota_publish.py` (see
+[Updating over the air](#updating-over-the-air)). The app bundle goes over
+USB with `python tools/build_www.py --push COM5`. `boot.py` and `ota.py`
+are the recovery path and go over USB when they themselves change.
+`secrets.py` is per device and is copied on its own, further down.
 
-Watch it run with `mpremote connect COM5`. Ctrl-C gets a REPL while the loop
-is running.
+Copying `config.py`, `main.py` and `calibrate.py` and resetting, which is
+what this section used to say, is not an install. The controller imports a
+dozen other modules, and those three files are not a bootable set.
 
-### Calibration — required before install
+Watch a running board with `mpremote connect COM5`. Ctrl-C gets a REPL while
+the loop is running. `mpremote exec` soft-resets and stops `main.py`, so it
+is the wrong tool for a check you wanted the loop to survive.
 
-`LIGHT_ON` / `LIGHT_OFF` ship as placeholders. Run this **in the bathroom, in
-the final mounting position**, fixture on for half the window and off for the
-other half:
+### Calibration — the light, in the room
+
+Occupancy is a step, not a level. Daylight in this room gets brighter than
+the bulb, so no pair of absolute thresholds can separate them, and
+`LIGHT_ON` / `LIGHT_OFF` are vestigial names kept so an older `main.py`
+still imports if `config.py` lands a push ahead of it. The live thresholds
+are `LIGHT_STEP_ON`, `LIGHT_RISE_ON` and `LIGHT_RISE_OFF`.
+
+Run this in the bathroom, in the mounting position, and flick the fixture
+a few times during the minute:
 
 ```bash
 mpremote connect COM5 exec "import calibrate; calibrate.light()"
 ```
 
-It prints suggested thresholds. Put them in `config.py`.
-
-The values in `config.py` are now **measured in the bathroom**, in the
-mounting position: dark 4,800–6,225, lit 30,000–32,500, giving `LIGHT_OFF`
-14,000 and `LIGHT_ON` 22,000.
-
-The bench values they replaced (6,000 / 11,500) looked fine and were wrong in
-a way that only shows up in the room: a bathroom is never truly dark, and
-`LIGHT_OFF` at 6,000 sat *inside* the dark-state noise. The controller never
-reliably saw the light go out, so the fan ran indefinitely.
-
-**A threshold has to clear the quiet band, not sit in it.** Calibrate where it
-will live, with the fixture it will actually see.
+It prints suggested values for those three, from the biggest one-sample
+jump. The measurements and why a level cannot work are in `light.py` and
+[`docs/daylight-is-brighter-than-the-bulb.md`](docs/daylight-is-brighter-than-the-bulb.md).
 
 ## What a real shower looks like
 

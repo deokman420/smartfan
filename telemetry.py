@@ -72,10 +72,11 @@ def _flash_free():
 
     Published beside the update status so that "why did that push do
     nothing" can be answered from the network rather than from a serial
-    console. Note what it is NOT: measured on 2026-11-03 this board had
-    596 kB free, against an OTA ceiling of roughly 60 kB, so space is not
-    what stops a large batch. The number is here to rule itself out
-    quickly, which is worth one field. See ota.py.
+    console. Measured on 2026-11-03 this board had 596 kB free, which is
+    what ruled flash out. The failures that looked like a 60 kB ceiling
+    were a trial-boot watchdog race and whole-body buffering in ota.py.
+    Both are fixed. The number stays, because ruling space out is still
+    the first question. See ota.py.
     """
     try:
         import os

@@ -71,10 +71,10 @@ pronounced finished.
     long exponential satisfies in passing without having settled at all.
 
 So the gate asks the sensor rather than the clock: a pixel is settled once
-its raw count has stayed inside _FLAT_TICKS across _FLAT_BLOCKS consecutive
-blocks of _FLAT_BLOCK_MS. Per pixel, because the two differ by twenty-fold
-and one gate for both would hold the VOC baseline -- the one the fan acts on
--- hostage to the NOx pixel for two hours after every power cut.
+its raw count has stayed inside its own flatness limit across _FLAT_BLOCKS
+consecutive blocks of _FLAT_BLOCK_MS. Per pixel, because the two differ by
+twenty-fold and one gate for both would hold the VOC baseline -- the one the
+fan acts on -- hostage to the NOx pixel for two hours after every power cut.
 
 WHAT THIS CANNOT DO. The late ramp and the settled wander overlap. In that
 same overnight series the pixels drifted +-2.5 ticks/min for hours after
@@ -116,18 +116,28 @@ _CONDITION_MS = 10000
 # what makes a slow monotonic ramp fail. At 4 ticks/min a ramp looks calm
 # inside any one block (20 ticks) and is obvious across three (60).
 #
-# 45 ticks comes from the 2-3 Nov overnight series. Over 15-minute spans in
-# the settled region the NOx pixel moved a median of 23 ticks and a p90 of
-# 36, and the VOC pixel a median of 28; the ramp's second hour moved 57.
-# So the threshold sits between the wander and the ramp, which is the most
-# any single number can do here.
+# One number cannot sit between both pixels, which is why these are two.
+#
+# 45 is the NOx limit, from the 2-3 Nov overnight series. Over 15-minute
+# spans in the settled region that pixel moved a median of 23 ticks and a
+# p90 of 36, and the ramp's second hour moved 57. Its gate already fires,
+# on a 31-tick window, and a looser limit would only make that slack.
+#
+# 70 is the VOC limit, set 2026-11-06. On the 4 Nov bathroom boot the
+# flattest 15-minute window was 51 ticks, so 45 can never fire and that
+# pixel always left through the two-hour ceiling. 70 also clears a
+# 4 tick/min ramp, which is 60 ticks across this window and the slope the
+# VOC pixel still had at 30 minutes -- so it may now seed during the last
+# of the warm-up, about 35 minutes sooner, onto a count the ceiling was
+# already landing on. Taken with that ramp in view.
 #
 # Not cfg-tunable: these are properties of the element. The CEILING is a
 # preference -- how long you are willing to be deaf -- and lives in
 # config.py, passed in.
 _FLAT_BLOCK_MS = 300000
 _FLAT_BLOCKS   = 3
-_FLAT_TICKS    = 45
+_FLAT_TICKS_NOX = 45
+_FLAT_TICKS_VOC = 70
 _CEILING_MS    = 7200000        # 2 h, if the caller names none
 
 _SELF_TEST_PASS = 0xD400
@@ -147,7 +157,8 @@ class _Flat:
     60 s figure look right.
     """
 
-    def __init__(self):
+    def __init__(self, limit):
+        self.limit = limit
         self.reset()
 
     def reset(self):
@@ -184,7 +195,7 @@ class _Flat:
     @property
     def flat(self):
         span = self.span
-        return span is not None and span <= _FLAT_TICKS
+        return span is not None and span <= self.limit
 
 
 def crc8(data):
@@ -232,7 +243,7 @@ class SGP41:
         self._ceiling_ms = (_CEILING_MS if settle_ceiling_s is None
                             else int(settle_ceiling_s * 1000))
         # Per pixel, and latched. See _check_settled for why it latches.
-        self._flat = (_Flat(), _Flat())
+        self._flat = (_Flat(_FLAT_TICKS_VOC), _Flat(_FLAT_TICKS_NOX))
         self._settled = [False, False]
 
     # --- bus ---------------------------------------------------------

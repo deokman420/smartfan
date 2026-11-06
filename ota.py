@@ -41,15 +41,16 @@ COMMIT_S = 60          # healthy running time before an update is kept
 # THIS IS A GUARD, NOT THE EXPLANATION, and the difference was measured on
 # 2026-11-03 rather than assumed. docs/TODO.md recorded a ceiling around
 # 60 kB -- ~47, ~48 and ~62 kB installed; ~98 and ~106 kB did not -- and
-# attributed it to space. The board has **596 kB of flash free and 325 kB of
-# heap free while running**. Neither number is anywhere near a constraint at
-# 106 kB, so whatever stops a large batch, it is not room.
+# attributed it to space. The board has 596 kB of flash free and 325 kB of
+# heap free while running. Neither number is anywhere near a constraint at
+# 106 kB, so the failures were not room.
 #
 # The check stays because it costs one subtraction and turns the one failure
-# it does cover into a sentence instead of a silence. What the real ceiling
-# is remains open: the likeliest remaining candidate is allocator
-# FRAGMENTATION, since gc.mem_free() is a total and a 70 kB body buffered by
-# r.content needs a contiguous run of it.
+# it does cover -- a batch that would fill the filesystem -- into a sentence
+# instead of a silence. The ceiling itself is closed: it was r.content
+# asking for one contiguous allocation the size of the file, and the download
+# below streams in CHUNK reads so it never asks. An 88 kB main.py has been
+# installed over the air. Do not reopen this as a size limit.
 MIN_FREE = 24576       # 24 kB, room for history and a log to keep working
 
 

@@ -162,7 +162,8 @@ Three costs, all of them consequences of the baseline problem above:
   partly masks it, but the off-time is still unbounded (`docs/TODO.md`).
 - **`MIN_RUN_S` is global**, so every run now has a 5-minute floor, including
   a brief light-on with dry air. A per-reason minimum would be control-logic
-  work in `main.py`, and `main.py` cannot go over the air.
+  work in `main.py`. That file does go over the air now; what is missing is
+  the design of the per-reason floor, not a way to ship it.
 - **False starts become possible.** A genuinely quiet 3.5 h window (1204
   samples, fan off, excess -87..+117) crossed nothing at any threshold down
   to 120 — but 10 s sampling missed a peak the device itself triggered on at
@@ -252,11 +253,16 @@ The pixels warm at very different rates, measured on a clean boot on 4 Nov:
 | NOx | **75.6 min** | flatness, a 31-tick window |
 | VOC | **120.2 min** | **the ceiling** — the gate timed out |
 
-The shared 45-tick flatness threshold is *narrower than the VOC pixel's own
-flattest 15-minute window* (51 ticks), so for that pixel the gate can never
-fire and `VOC_SETTLE_MAX_S` is always the exit. It did no harm — the ceiling
-seeded a baseline that the following six quiet hours agreed with — but it
-wants a per-pixel threshold. See `docs/TODO.md`.
+The shared 45-tick flatness threshold was *narrower than the VOC pixel's own
+flattest 15-minute window* (51 ticks), so for that pixel the gate could never
+fire and `VOC_SETTLE_MAX_S` was always the exit. It did no harm — the ceiling
+seeded a baseline that the following six quiet hours agreed with.
+
+**Set 2026-11-06, per pixel.** VOC's limit is 70, so that 51-tick window can
+pass. NOx stays at 45. 70 also clears a 4 tick/min ramp (60 ticks across the
+same window), which is the slope VOC still had at 30 minutes, so the gate
+may now seed during the last of the warm-up rather than at the ceiling. See
+`docs/TODO.md`.
 
 While a pixel is unsettled its baseline stays unseeded, which makes the odor
 path **inert rather than wrong**: humidity and the light still run the fan. A

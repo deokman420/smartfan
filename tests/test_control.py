@@ -769,7 +769,7 @@ NOX_RAMP = [17442, 17363, 17295, 17226, 17167, 17126, 17078, 17048, 17021,
             16865, 16866, 16851, 16858, 16852, 16843, 16831, 16821, 16839,
             16823, 16811, 16812, 16811, 16808, 16811, 16811]
 
-f = sgp41._Flat()
+f = sgp41._Flat(sgp41._FLAT_TICKS_NOX)
 for v in NOX_RAMP:
     advance(20)
     f.feed(v, CLOCK[0])
@@ -780,7 +780,7 @@ check("a real warm-up ramp is never flat, however calm its last minutes",
 # quiet over two minutes and is nothing of the kind over fifteen.
 tail = NOX_RAMP[-6:]
 check("...and the quiet-looking tail is what the old test measured",
-      max(tail) - min(tail) <= 20 and f.span > sgp41._FLAT_TICKS,
+      max(tail) - min(tail) <= 20 and f.span > sgp41._FLAT_TICKS_NOX,
       "tail spread %d, window span %s" % (max(tail) - min(tail), f.span))
 
 # Twenty-five real quiet minutes from the overnight series, every 60 s,
@@ -789,16 +789,37 @@ NOX_QUIET = [16254, 16257, 16250, 16248, 16258, 16250, 16249, 16258, 16267,
              16260, 16269, 16254, 16262, 16260, 16260, 16262, 16262, 16272,
              16265, 16265, 16269, 16270, 16270, 16274]
 
-f = sgp41._Flat()
+f = sgp41._Flat(sgp41._FLAT_TICKS_NOX)
 for v in NOX_QUIET:
     advance(60)
     f.feed(v, CLOCK[0])
 check("a real settled stretch is flat", f.flat is True,
       "span %s ticks" % f.span)
 
+# The 4 Nov bathroom boot. VOC's flattest 15-minute window was 51 ticks,
+# which is why a shared 45 never fired for it, and 71 is past the 70 that
+# replaced it. Same samples, two limits: loosening NOx to match would be a
+# different change, and one nobody asked for.
+def _driven(limit, spread):
+    gate = sgp41._Flat(limit)
+    for v in (10000, 10000 + spread, 10000, 10000):
+        advance(300)
+        gate.feed(v, CLOCK[0])
+    return gate
+
+voc51 = _driven(sgp41._FLAT_TICKS_VOC, 51)
+nox51 = _driven(sgp41._FLAT_TICKS_NOX, 51)
+check("VOC settles on its 51-tick bathroom window",
+      voc51.flat is True and voc51.span == 51, "span %s" % voc51.span)
+check("NOx does not settle on that same window",
+      nox51.flat is False and nox51.span == 51, "span %s" % nox51.span)
+voc71 = _driven(sgp41._FLAT_TICKS_VOC, 71)
+check("71 ticks is still a ramp for VOC",
+      voc71.flat is False and voc71.span == 71, "span %s" % voc71.span)
+
 # No verdict at all until there is enough evidence for one. An empty
 # tracker reporting "flat" would settle every pixel on its first sample.
-f = sgp41._Flat()
+f = sgp41._Flat(sgp41._FLAT_TICKS_NOX)
 for _ in range(4):
     advance(60)
     f.feed(16260, CLOCK[0])

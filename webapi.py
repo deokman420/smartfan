@@ -288,18 +288,14 @@ class Api:
             "sample_s": self.cfg.SAMPLE_S,
             "publish_s": self.cfg.PUBLISH_INTERVAL_S,
             "history": self.history.stats() if self.history else None,
-            # Free flash. Measured at 596 kB on 2026-11-03, against an OTA
-            # ceiling around 60 kB -- so this rules space out rather than
-            # explaining anything, which is still worth one field when a
-            # push does nothing. See ota.py.
+            # Free flash and free heap, so a push that does nothing can be
+            # diagnosed from the network. Measured 2026-11-03 at 596 kB of
+            # flash and 325 kB of heap, which is what ruled both out as the
+            # cause. The causes were a trial-boot watchdog race and ota.py
+            # buffering each body whole; both are fixed. The numbers stay,
+            # because they are still the first things to rule out, and heap
+            # has to be read while the controller is running.
             "flash_free": self.snap.flash_free(),
-            # Free HEAP, beside free flash, because measuring the board on
-            # 2026-11-03 ruled the flash explanation out: 596 kB free with
-            # the ~60 kB OTA ceiling unexplained. An update buffers each
-            # whole body in RAM before writing it, so this is the number
-            # the ceiling is more likely to be about -- and it has to be
-            # read while the controller is actually running to mean
-            # anything, which a cable cannot do without stopping it.
             "mem_free": _mem_free(),
             "ota": getattr(self.c, "ota_state", None),
             "api": 1,

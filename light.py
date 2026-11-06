@@ -32,11 +32,12 @@ minute of it inside a window the history independently recorded as lit, and
 zero false triggers. Worst the sky ever came to the two conditions below:
 a 51-count jump against 10000, and a 5958-count rise against 8000.
 
-It lives in its own module because main.py is pushed to the device over the
-air, and ota.py pulls each file into RAM whole: a main.py much past 44 kB
-fails to install, with the error going only to a USB serial console nobody is
-holding. Keeping the detector and its reasoning here is what lets both stay
-small enough to ship.
+It lives in its own module because the rule is a detector with its own
+history, and main.py is already the file everything else piles into. An
+earlier draft of this paragraph said it was here so main.py would stay under
+an OTA size cap -- ota.py pulling each file into RAM whole, and failing past
+about 44 kB. That cap is gone. ota.py streams, and an 88 kB main.py has been
+installed over the air. Do not split a module to stay under it.
 """
 
 import time

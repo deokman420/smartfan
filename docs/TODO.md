@@ -302,11 +302,11 @@ What is known:
   line is a candidate and nothing more -- the two have never been correlated.
 * The preceding 8-hour run did not fault once, so this is not a steady rate.
 
-Worth catching rather than guessing at: `dht_fails` is not published, so a
-run of four failures looks identical to a run of none. Publishing it, or the
-time of the last successful read, would turn this from a story into a
-measurement the next time it happens. Until then it is one event, recovered,
-with the cause unknown -- and NOT, as first written here, explained.
+**The counters are published now.** `dht_fails` (consecutive, trips FAULT at
+5, zeroed by any good read) and `dht_bad` (every bad read since boot, never
+reset) are both in the snapshot, so a run of four no longer looks like a run
+of none, and one good read can no longer hide the episode. The cause of the
+4 Nov fault is still unknown. The next one is a measurement.
 
 ### `main.py` cannot be sent over the air — the downloader buffers whole files — **fixed 5 Nov**
 
@@ -357,7 +357,7 @@ What remains true: `boot.py` and `ota.py` are still excluded from `SHIP`
 deliberately, because a recovery path you can break remotely is not one. Those
 two still need the cable.
 
-### The VOC settle gate never fires on flatness — it times out
+### The VOC settle gate never fires on flatness — it times out — **VOC limit 70, 6 Nov**
 
 Measured 4 Nov on a clean boot (2085 samples, 6 h, the device in the bathroom):
 
@@ -366,20 +366,27 @@ Measured 4 Nov on a clean boot (2085 samples, 6 h, the device in the bathroom):
 | NOx | 31 ticks | fired honestly at **75.6 min** |
 | VOC | **51 ticks** | hit the **120 min ceiling** |
 
-`_FLAT_TICKS` is 45 and shared by both pixels, so VOC can never satisfy it —
-its own quiet-air noise over 15 minutes is wider than the threshold. The log
-line reads `VOC SETTLED at up_min=120.2`, which is `VOC_SETTLE_MAX_S` expiring,
-not the gate deciding anything. **For VOC the gate is currently a 2-hour timer.**
+`_FLAT_TICKS` was 45 and shared by both pixels, so VOC could never satisfy it —
+its own quiet-air noise over 15 minutes was wider than the threshold. The log
+line read `VOC SETTLED at up_min=120.2`, which was `VOC_SETTLE_MAX_S` expiring,
+not the gate deciding anything. **For VOC the gate was a 2-hour timer.**
 
-It is not doing harm: the ceiling seeded 30417 and the following six quiet
+It was not doing harm: the ceiling seeded 30417 and the following six quiet
 hours sat at a mean of +11 ticks, so the baseline was right. But the gate was
-written to notice flatness and for half the sensor it does not. VOC's flattest
+written to notice flatness and for half the sensor it did not. VOC's flattest
 patch was 70–85 min and the raw count there is within 5 ticks of where it
-settled, so a per-pixel threshold near 70 would fire genuinely and land on the
-same number 35 minutes sooner.
+settled, so a per-pixel threshold near 70 fires on that patch and lands on
+the same number 35 minutes sooner.
 
-Wants a per-pixel `_FLAT_TICKS` rather than a looser shared one: 70 would make
-NOx's gate (which works, at 31) meaningfully slacker for no reason.
+**Set 2026-11-06, per pixel.** VOC's limit is 70. NOx stays at 45, because
+its gate already fires on a 31-tick window and 70 would only make that slack.
+
+70 is also above a 4 tick/min ramp, which is 60 ticks across the same
+15-minute span and the slope the VOC pixel still had at 30 minutes. So the
+gate may now seed VOC during the last of the warm-up, about 35 minutes
+sooner, onto a count the two-hour ceiling was already landing on. That was
+the trade. A second bathroom boot is what says whether 70 fired on the flat
+or on the tail of the ramp.
 
 ### Nothing bounds the fan's off-time, only its on-time
 
@@ -407,14 +414,37 @@ that step is sent retained on `fan/<room>/last_stall`:
 
 * a network step name means the budget still has a hole;
 * `idle` means the stall was outside `net.py`, so look at the sensors, flash and
-  the web step, which will need `main.py` and may be too big to push over the air;
+  the web step in `main.py`. Size is not what makes that hard: `main.py` goes
+  over the air;
 * no message at all after a restart means the record itself does not work. It
   could not be tested on the board when it shipped, as there is no remote restart.
 
 Close this after a few quiet days. Note that the OTA trial commits on "no FAULT
 for 60 s" and does not check the network, so a bad `net.py` would be kept.
 
-### An OTA installs, then loses a race and is rolled back — needs USB
+### Eight parallel requests fail after a heavy page load — cause not proven
+
+Seen 2026-11-06, on the board, in `tests/test_device_http.py`. The
+"eight simultaneous requests are all served" check failed three runs out of
+four and passed the fourth. Every failure was a connection error, not an HTTP
+status. The same eight requests, run on their own with curl and with Python,
+passed every time. It shows up only after that suite's browser load and the
+history stream (1713 rows).
+
+The likely mechanism is sockets the Pico's TCP stack has not finished with —
+the browser's keep-alive connections plus the history response, which is
+closed rather than kept alive because its length is not known — set against
+a small connection table. `httpd.py` caps application connections at 4 and
+evicts an idle keep-alive to make room; that does not free a PCB still in
+TIME_WAIT. `httpd.py` was not touched by the commits under test, so this is
+not a regression from that push.
+
+Not "fixed" by closing harder. The last time a full socket was closed without
+a drain, the client saw a RST and lost the response, which is how the 503
+and the 413 used to arrive. Needs a capture of connection state on the board
+at the moment the ninth handshake fails, not another guess at the timeout.
+
+### An OTA installs, then loses a race and is rolled back — **fixed**
 
 > **Re-diagnosed 2026-11-03, and the old heading was wrong.** This was filed as
 > "a batch much past 60 kB does not install", attributed to flash space. It is
@@ -460,13 +490,13 @@ for 60 s" and does not check the network, so a bad `net.py` would be kept.
 > installed; ~98 and ~106 kB did not — but the explanation attached to them
 > did not survive being measured.
 >
-> **Proposed fix, not yet applied:** adopt the watchdog immediately when an
-> update is on trial, since `boot_check` has already armed one —
-> `elif cfg.WDT_TIMEOUT_MS and (self._ota_pending or ms_since(started) > 3000)`.
-> Untouched so far because it is the recovery path, which is the one thing a
-> bad change cannot fix remotely.
+> **Applied.** `Controller._wdt_due` is that condition:
+> `return self._ota_pending or elapsed_ms > 3000`. A trial boot takes the
+> watchdog on the first pass; an ordinary boot still waits 3 s; and
+> `WDT_TIMEOUT_MS = 0` still disables it. `tests/test_control.py` pins all
+> three. It is on the device as of the USB deploy through `4e6890b`.
 
-Two things to do, and the first matters more:
+Two things were left under this heading, and both are done:
 
 * ~~**Say something when it fails.**~~ **Done 2026-11-03.** `ota_state` is
   published as `ota`, beside `flash_free`, in the snapshot — so it reaches
@@ -479,12 +509,13 @@ Two things to do, and the first matters more:
   refused. `tests/test_ota.py` covers the planning step; the module had no
   test before, which was uncomfortable for the one file deliberately
   excluded from its own update mechanism.
-* **Stop needing the space.** Still owed, and still the real fix. Stream each
-  download to its `.new` file instead of buffering the body in `r.content`,
-  and stage/swap one file at a time so peak usage is one file rather than the
-  batch.
+* **Stop needing the space.** **Done 2026-11-05.** `ota.py` streams each body
+  to its `.new` file in `CHUNK` reads instead of `r.content`. An 88,284-byte
+  `main.py` installed over the air. The full write-up is the entry above,
+  "main.py cannot be sent over the air". The "keep a push under ~60 kB" rule
+  that used to end this section is withdrawn.
 
-  **The blocker on this is cleared.** Asking whether `boot_check`'s rollback
+  Asking whether `boot_check`'s rollback
   could cover a partial swap turned up a worse bug than the one being
   investigated, now fixed: the pending marker was written *after* the rename
   loop, so a power cut inside it left a half-swapped set and no marker at
@@ -502,12 +533,11 @@ Two things to do, and the first matters more:
   partway leaves a real missing file, and the rollback puts the whole set
   back.
 
-What unblocks it: `ota.py` is excluded from OTA on purpose, because it is the
-recovery path and a recovery path you can break remotely is not one. So this is
-a USB push, and it should go over the cable together with a test that pushes a
-deliberately oversized batch and watches it install.
-
-Until then, keep a push under ~60 kB, and remember that staging means a module
-can ship one push ahead of the `main.py` it depends on — see the `getattr` in
-`Snapshot.payload` and the vestigial `LIGHT_ON` in `config.py`. Written up in
-[`daylight-is-brighter-than-the-bulb.md`](daylight-is-brighter-than-the-bulb.md).
+What remains true, and is not a size limit: `boot.py` and `ota.py` are excluded
+from OTA on purpose, because a recovery path you can break remotely is not one.
+Those two still need the cable. Staging can still put a module one push ahead
+of the `main.py` it depends on — see the `getattr` in `Snapshot.payload` and
+the vestigial `LIGHT_ON` / `LIGHT_OFF` in `config.py`. The measurements this
+was diagnosed from are in
+[`daylight-is-brighter-than-the-bulb.md`](daylight-is-brighter-than-the-bulb.md),
+whose size rule is withdrawn at the top of that section.

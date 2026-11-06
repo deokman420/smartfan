@@ -84,14 +84,18 @@ LIGHT_MAX_ON_S = 1800
 # whatever its cause.
 LIGHT_ONLY_MAX_S = 600
 
-# Vestigial, and deliberately so. ota.py installs a whole batch or nothing,
-# and a batch much past 60 kB does not install at all (see docs/TODO.md), so
-# a change this wide has to go over in stages -- which means config.py can
-# land one push AHEAD of the main.py that stops reading these. Without them
-# the old main.py in the ceiling loses cfg.LIGHT_ON mid-flight, raises on its
-# next sample, and rides the watchdog down to a rollback. Nothing reads them
-# once the matching main.py is installed; they cost two lines, and staged
-# updates are the normal case here rather than the exception.
+# Vestigial, and deliberately so. These are the absolute levels the light
+# detector replaced: daylight in this room is brighter than the bulb, so no
+# pair of levels separates them (see light.py). They stay defined because
+# ota.py installs a whole batch or nothing, and a config.py push can land
+# one step AHEAD of a main.py that still reads the names. Without them that
+# main.py raises on its next sample and rides the watchdog down to a
+# rollback. Nothing in the current main.py reads them.
+#
+# The other reason this comment used to give -- a batch past 60 kB does not
+# install -- was measured and withdrawn. Those failures were a trial-boot
+# watchdog race and ota.py buffering each body whole. Both are fixed. An
+# 88 kB main.py has gone over the air. See docs/TODO.md.
 LIGHT_ON  = 22000
 LIGHT_OFF = 14000
 
@@ -391,8 +395,9 @@ MIN_RUN_S    = 300   # never short-cycle the fan
                      #
                      # This is global, so EVERY run now has a 5-minute
                      # floor -- a brief light-on with dry air included.
-                     # Accepted over a per-reason minimum, which would be
-                     # control-logic work in main.py and so a cable job.
+                     # Accepted over a per-reason minimum, which has not
+                     # been designed. main.py does go over the air; the
+                     # cable is not what is holding that change back.
 MAX_RUN_S    = 2700  # hard stop after 45 min no matter what
                      # Was 30. A real shower measured here peaked at +38.5 %RH
                      # and the room took longer than half an hour to come back
