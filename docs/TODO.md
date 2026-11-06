@@ -308,7 +308,7 @@ time of the last successful read, would turn this from a story into a
 measurement the next time it happens. Until then it is one event, recovered,
 with the cause unknown -- and NOT, as first written here, explained.
 
-### `main.py` cannot be sent over the air — the downloader buffers whole files
+### `main.py` cannot be sent over the air — the downloader buffers whole files — **fixed 5 Nov**
 
 **Measured 4 Nov, and it settles the open question about the size ceiling.** A
 106 kB batch (`main.py` 74073 B, `config.py`, `settings.py`) was published to
@@ -340,7 +340,22 @@ Two things follow:
   waved through and fails mid-download. It should refuse on the largest single
   file against `gc.mem_free()` and say so, the way it already does for flash.
 
-Until then: changes to `main.py` need USB, and the safemode dance.
+**Resolved 5 Nov 2026.** `ota.py` streams the body in `CHUNK` (512 B) reads
+straight to the staged `.new` file, so no contiguous buffer is needed at any
+size, and a short body is now named as short rather than surfacing as a
+checksum mismatch that sends you looking at the publisher.
+
+Proven the only way that counts: an **88,284-byte `main.py`** went over the
+air, `fw 043c589c` → `1dff8dc8`, with no leftovers. The first bullet above is
+done.
+
+The second bullet is now moot rather than done — with nothing buffered there
+is no RAM pre-flight to add, and `MIN_FREE`/`free_bytes()` against flash is
+the whole of the check that is needed.
+
+What remains true: `boot.py` and `ota.py` are still excluded from `SHIP`
+deliberately, because a recovery path you can break remotely is not one. Those
+two still need the cable.
 
 ### The VOC settle gate never fires on flatness — it times out
 
