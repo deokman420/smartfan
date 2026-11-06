@@ -920,7 +920,7 @@ check("...and the seed log says which pixel seeded",
 # -- the gates ------------------------------------------------------------
 
 
-def armed(rise=200, fall=50, base=29000.0, raw=28700):
+def armed(rise=200, fall=50, base=29000.0, raw=28700, nox_base=18000.0):
     """A controller in a dark, dry, settled room with a working sensor."""
     c = build()
     c.voc = FakeSGP41(raw)
@@ -929,6 +929,15 @@ def armed(rise=200, fall=50, base=29000.0, raw=28700):
     # this, excess_voc is 0 until read_voc() has run, and a test that pokes
     # the gates directly reads 0 and proves nothing.
     c.vocdet.raw = raw
+    # The NOx pixel is seeded too, because since _nox_ready() the odor path
+    # does not act until it is -- a fully warmed device has both, and that
+    # is what "armed" is meant to describe. Quiet by default: base equals
+    # raw, so excess_nox is 0 and no veto is in play. Pass nox_base=None for
+    # the tests that are specifically about the unseeded case.
+    if nox_base is not None:
+        c.noxdet.base = nox_base
+        c.noxdet.raw = c.voc.nox
+        c.voc_ready_since = _time.ticks_ms()
     # RISE first: _enforce_order pushes the other one out of the way of
     # whichever was written last.
     c.st.set("VOC_RISE_ON", rise)
@@ -964,11 +973,14 @@ check("and the first warm sample seeds it", cold.vocdet.base == 30094.0,
       "%s" % cold.vocdet.base)
 
 # The two pixels seed independently, which is the whole reason the gate is
-# per pixel. The NOx element takes about two hours against the VOC
-# element's minutes; one shared gate meant either seeding NOx inside its
-# ramp or leaving the pixel the fan ACTS on deaf for those two hours.
-# Nothing acts on NOx, so its wait is free -- but only if it can wait
-# alone.
+# per pixel: one shared gate would mean either seeding NOx inside its own
+# ramp or holding the VOC baseline back behind it.
+#
+# Seeding and ACTING are now different things, and this block is about
+# seeding only. The VOC baseline still learns on its own schedule and does
+# not wait for NOx -- that part is unchanged and is what these checks pin.
+# Whether the fan may act on it is _nox_ready()'s question, tested with the
+# gates further down.
 split = build()
 split.voc = FakeSGP41(30094)
 split.voc.set_settled(True, nox=False)
@@ -976,9 +988,12 @@ split.read_voc()
 check("the VOC baseline seeds while the NOx pixel is still warming",
       split.vocdet.base == 30094.0 and split.noxdet.base is None,
       "voc=%s nox=%s" % (split.vocdet.base, split.noxdet.base))
-check("...and the odor path is armed meanwhile, not held back by NOx",
+check("...reporting a VOC excess meanwhile, with NOx still silent",
       split.excess_voc == 0 and split.excess_nox is None,
       "voc=%s nox=%s" % (split.excess_voc, split.excess_nox))
+# The reading is live; acting on it is not. This is the gate that changed.
+check("...but the fan may not act on it until the veto is available",
+      split._voc_active() is False and split._nox_ready() is False)
 split.voc.set_settled(True)
 split.read_voc()
 check("...then NOx seeds on its own schedule",
@@ -1699,12 +1714,47 @@ check("just over the veto does not",
 check("veto 0 disables the veto",
       armed_with(COOK_VOC, COOK_NOX, veto=0)._voc_active() is True)
 
-# Absence must not suppress. An unsettled or missing NOx pixel has no
-# opinion, and no opinion is not a veto -- otherwise the first two hours of
-# every boot would silently disable odor sensing.
+# AN UNSEEDED NOx PIXEL NOW HOLDS THE ODOR PATH, and the two halves of
+# that have to be kept apart or the next reader will not be able to tell
+# which one is acting.
+#
+# Absence is still not a VETO: _combustion() has no opinion without a
+# baseline and must say so, because a veto fires on evidence and there is
+# none. What changed on 2026-11-05 is that the path now WAITS for the veto
+# to be available before it may move the fan at all. Previously every boot
+# opened a window where a cooking smell could start the fan with nothing
+# able to object, which is the false positive the NOx pixel was fitted to
+# reject. The comment that used to sit here justified that window on the
+# grounds that waiting would cost two hours; measured, it costs a median
+# of zero. See NOX_WAIT_MAX_S in config.py.
 c = armed_with(REAL_VOC, COOK_NOX)
 c.noxdet.base = None
-check("no NOx baseline does not veto", c._voc_active() is True)
+check("an unseeded NOx pixel is still not a veto",
+      c._combustion() is False)
+check("...but it does hold the odor path until the veto exists",
+      c._voc_active() is False)
+check("...and the gate naming it is the ready one, not the veto",
+      c._nox_ready() is False)
+
+# BOUNDED. A pixel that never seeds must not leave the fan deaf for good,
+# so the wait expires and the path goes live without a veto.
+c = armed_with(REAL_VOC, COOK_NOX)
+c.noxdet.base = None
+c.voc_ready_since = _time.ticks_ms()
+check("the wait has not expired a second early",
+      c._voc_active() is False)
+CLOCK[0] += int(cfg.NOX_WAIT_MAX_S * 1000)
+check("...and past NOX_WAIT_MAX_S the path goes live without a veto",
+      c._voc_active() is True, "waited %ds" % cfg.NOX_WAIT_MAX_S)
+
+# With the veto switched off there is nothing to wait for, so the gate must
+# not strand a device that deliberately runs without one.
+c = armed_with(REAL_VOC, COOK_NOX, veto=0)
+c.noxdet.base = None
+c.voc_ready_since = None
+check("veto 0 means there is nothing to wait for",
+      c._nox_ready() is True and c._voc_active() is True)
+
 c = armed_with(REAL_VOC, COOK_NOX)
 c.noxdet.raw = None
 check("no NOx reading does not veto", c._voc_active() is True)
@@ -2042,6 +2092,45 @@ trend(c, [400, 700, 1088, 930, 638])
 check("a decaying NOx rise is not combustion", c._combustion() is False)
 check("...so the odor path is live again during the clear-out",
       c._voc_armed() is True)
+
+# THE LATCH IS THE MECHANISM, and it is load-bearing in a way the original
+# note here got wrong. That note claimed two minutes of decay moves 150-200
+# counts, clearing NOX_TREND_EPS three or four times over. It does not: the
+# figures came from history rows 300 s apart and were read as if they were
+# 120 s apart. Checked against all eleven NOx episodes on flash, the MEDIAN
+# 120 s window during a decay moves 12 to 104 counts, and most are UNDER
+# NOX_TREND_EPS.
+#
+# What makes it work is that the decay is steepest just after the peak, so
+# that first window clears EPS and latches _nox_decaying True -- and the
+# long slow tail then cannot turn it back off, because only a genuine RISE
+# of EPS does that. This pins exactly that, so a future tightening of EPS
+# on the strength of a margin that does not exist fails here.
+c = armed_with(COOK_VOC, 400)
+trend(c, [400, 1206, 1100])        # the one fast window, straight off the peak
+check("the first fast window off the peak releases the veto",
+      c._combustion() is False)
+tail = [1100 - 15 * n for n in range(1, 13)]   # 15 counts per window, all < EPS
+check("...and every step of that tail really is under NOX_TREND_EPS",
+      all(abs(a - b) < cfg.NOX_TREND_EPS
+          for a, b in zip([1100] + tail, tail)),
+      "steps of %d, EPS=%d" % (15, cfg.NOX_TREND_EPS))
+trend(c, tail)
+check("...so the slow tail cannot re-arm it, though no window clears EPS",
+      c._combustion() is False, "rise still %+d" % -(c.excess_nox or 0))
+
+# ...and a second pan going on IS a rise that clears EPS, so the veto comes
+# straight back rather than being stuck open by the first event's latch.
+trend(c, [1000, 1300])
+check("a fresh climb re-arms the veto", c._combustion() is True)
+
+# The counterfactual, so the dependence is written down rather than implied:
+# a decay with NO window fast enough never releases at all.
+c = armed_with(COOK_VOC, 400)
+trend(c, [400, 1206] + [1206 - 15 * n for n in range(1, 13)])
+check("a decay with no window clearing EPS stays vetoed",
+      c._combustion() is True,
+      "this is why the peak's steepness matters")
 
 # The event that was missed, end to end: the morning's real numbers.
 c = armed_with(0, 283)

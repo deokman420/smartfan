@@ -52,9 +52,16 @@ def lines(path):
         return []
 
 
-def row(ts):
-    """A full-width row, the way _append expects one."""
-    return [ts] + [0] * (len(store.FIELDS) - 1)
+def row(ts, fill=0):
+    """A full-width row, the way _append expects one.
+
+    `fill` exists because every other field being 0 made a whole class of
+    mistake invisible: read() finishes with `out.sort(key=lambda r: r[0])`,
+    and sorting by any OTHER column is indistinguishable when every other
+    column is the same number. Pass a fill that runs opposite to the
+    timestamp and a wrong sort key reverses the result.
+    """
+    return [ts] + [fill] * (len(store.FIELDS) - 1)
 
 
 print("\nthe clock, which decides whether a row may be written at all\n")
@@ -234,8 +241,11 @@ try:
     # every chart drawn from it is nonsense in a way that still looks like
     # data.
     h = hist(tmp, per_file=4)
+    # Humidity DESCENDS as the timestamp ascends. With every field equal,
+    # `out.sort(key=lambda r: r[0])` could sort on any column and look
+    # right; against this data, sorting on rh returns the week backwards.
     for i in range(7):
-        h._append(row(1793880000 + i * 300))
+        h._append(row(1793880000 + i * 300, fill=70 - i))
     check("the rows landed in both files", h._target == store._FILES[1])
     got = h.read(0, 100)
     check("every row written is read back", len(got) == 7, "%d rows" % len(got))
@@ -244,6 +254,63 @@ try:
           "%s" % [r[0] - 1793880000 for r in got])
     check("...starting at the oldest and ending at the newest",
           got[0][0] == 1793880000 and got[-1][0] == 1793880000 + 6 * 300)
+    # The assertion that pins the sort KEY rather than just the sortedness.
+    check("...sorted on the timestamp, not on whatever column came first",
+          [r[1] for r in got] == [70 - i for i in range(7)],
+          "rh order %s" % [r[1] for r in got])
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+print("\nthe limit, across both files, which is where the order bites\n")
+
+tmp = tempfile.mkdtemp()
+try:
+    # read() chooses which file to open FIRST with
+    #     older = _FILES[1] if self._target == _FILES[0] else _FILES[0]
+    # and inverting that line survived every test in this repo. The reason
+    # is the `out.sort()` on its last line: whatever order the two halves
+    # are read in, the result comes back in time order anyway, so nothing
+    # about ORDER can catch it.
+    #
+    # What it does change is which rows the limit THROWS AWAY. The trim is
+    # `del out[0]` as rows arrive, so it discards whatever was read first.
+    # Read the newer file first and the trim eats the newest rows and keeps
+    # the oldest -- the opposite of what a capped read is for, and invisible
+    # to a test whose rows all sit in one file. The cap test above uses
+    # per_file=10_000 for its own reasons, so it never spanned the pair.
+    # This one does.
+    h = hist(tmp, per_file=4)
+    for i in range(7):
+        h._append(row(1793880000 + i * 300))
+    check("the rows really did land in both files",
+          h._target == store._FILES[1], h._target)
+    got = h.read(0, 3)
+    check("a capped read spanning both files returns 3 rows",
+          len(got) == 3, "%d rows" % len(got))
+    check("...and they are the NEWEST three, not the oldest",
+          [r[0] for r in got] == [1793880000 + i * 300 for i in (4, 5, 6)],
+          "%s" % [r[0] - 1793880000 for r in got])
+
+    # paths() carries the same line, and there it has no sort behind it to
+    # hide a mistake: webapi streams these two files back to back, a line at
+    # a time, exactly as given. Inverted, a week of history arrives with its
+    # halves swapped.
+    older, newer = h.paths()
+    check("paths() hands back the stale file first, for streaming",
+          older.endswith(store._FILES[0]) and newer.endswith(store._FILES[1]),
+          "%s then %s" % (os.path.basename(older), os.path.basename(newer)))
+
+    # ...and the other way round once it rotates, or the rule is only half
+    # written and merely happens to match the fresh-device case.
+    for i in range(4):
+        h._append(row(1793890000 + i * 300))
+    check("the pair rotated back to the first file",
+          h._target == store._FILES[0], h._target)
+    older, newer = h.paths()
+    check("...and paths() follows it round",
+          older.endswith(store._FILES[1]) and newer.endswith(store._FILES[0]),
+          "%s then %s" % (os.path.basename(older), os.path.basename(newer)))
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

@@ -268,6 +268,12 @@ class Controller:
         # sign cannot be assumed and why there is no threshold to go with it.
         self.noxdet = voc.Detector(self.st, log=print, name="nox")
         self._comb = False     # last logged state of the combustion veto
+        # When the VOC baseline seeded, which is the moment the odor path
+        # would otherwise have gone live. The wait for the NOx baseline is
+        # measured from here rather than from boot, because what is being
+        # bounded is how long the fan stays deaf AFTER it could have heard.
+        self.voc_ready_since = None
+        self._nox_ready_logged = None  # last logged state of that gate
         # The NOx trend, for _combustion(). _nox_decaying starts False so
         # that a controller with no trend history yet treats a high NOx
         # reading as combustion: arriving at a high level IS a rise, and
@@ -520,10 +526,17 @@ class Controller:
             # One ROOM verdict for both pixels, two ELEMENT verdicts. The
             # room half is genuinely shared -- they see one sample of one
             # room, and two gates that could disagree about it would be two
-            # baselines describing different places. Warm-up is not shared:
-            # the NOx pixel takes about two hours against the VOC pixel's
-            # minutes, and making the pixel the fan acts on wait for the
-            # pixel nothing acts on would be deaf for no benefit.
+            # baselines describing different places. Warm-up is not shared,
+            # so each pixel still seeds on its own evidence.
+            #
+            # This used to carry a second claim -- that the fan must not
+            # wait for "the pixel nothing acts on", which settles in two
+            # hours against the VOC pixel's minutes. Both halves are now
+            # wrong. The veto acts on NOx, and the measured medians are 88
+            # minutes against 110 with NOx first in four of seven reboots.
+            # _nox_ready() is where the fan waits; the seeding below is
+            # unchanged, because what may be LEARNED and what may ACT are
+            # different questions.
             learning = self._voc_learning()
             self.vocdet.update(got[0], learning and self.voc.settled_voc)
             # ...and the NOx pixel additionally refuses to learn while it is
@@ -535,7 +548,23 @@ class Controller:
             self.noxdet.update(got[1], learning and self.voc.settled_nox
                                and self._nox_settled())
 
+            if self.vocdet.base is not None and self.voc_ready_since is None:
+                self.voc_ready_since = time.ticks_ms()
+
             self._update_nox_trend()
+
+            ready = self._nox_ready()
+            if ready != self._nox_ready_logged:
+                self._nox_ready_logged = ready
+                if not ready:
+                    print("voc: odor path held until the NOx baseline seeds "
+                          "(up to %d s)" % cfg.NOX_WAIT_MAX_S)
+                elif self.noxdet.base is None:
+                    print("voc: NOx baseline never seeded -- odor path live "
+                          "WITHOUT a combustion veto")
+                else:
+                    print("voc: NOx baseline seeded -- odor path live, "
+                          "combustion veto armed")
 
             # Say when the veto takes the odor path away and when it gives
             # it back. A suppression nobody can see is the fault that cost
@@ -678,7 +707,9 @@ class Controller:
         False for ever: the fan held open to MAX_RUN_S, latched, and the
         latch unable to release -- a dead sensor cycling the fan for good.
         """
-        return self._voc_usable() and not self._combustion()
+        return (self._voc_usable()
+                and self._nox_ready()
+                and not self._combustion())
 
     def _voc_usable(self):
         """_voc_active without the veto: is there a signal here at all?
@@ -692,6 +723,35 @@ class Controller:
                 and self.voc.ok
                 and bool(self.st.VOC_RISE_ON)
                 and self.vocdet.base is not None)
+
+    def _nox_ready(self):
+        """Has the combustion veto got a baseline to work with yet?
+
+        The odor path waits for this before it may move the fan. Without
+        it, every boot opened a window in which a cooking smell could start
+        the fan with nothing able to object -- the exact false positive the
+        NOx pixel was fitted to reject.
+
+        The old reasoning for not waiting was that VOC settles in minutes
+        and NOx in two hours. Measured across the seven reboots on flash,
+        that is wrong: median 88 minutes against 110, and NOx arrived FIRST
+        in four of the seven. The wait usually costs nothing.
+
+        BOUNDED, because "usually" is not "always" and a pixel that never
+        seeds must not leave the fan deaf to odor for good. Past
+        NOX_WAIT_MAX_S the path goes live without a veto, which is worse
+        than having one and much better than having no odor path.
+
+        True when there is no veto to wait for, so VOC_NOX_VETO = 0 behaves
+        exactly as it did.
+        """
+        if not getattr(self.st, "VOC_NOX_VETO", 0):
+            return True
+        if self.noxdet.base is not None:
+            return True
+        if self.voc_ready_since is None:
+            return False
+        return ms_since(self.voc_ready_since) / 1000.0 >= cfg.NOX_WAIT_MAX_S
 
     def _voc_settled(self):
         """Is the VOC deviation small enough to learn a baseline from?

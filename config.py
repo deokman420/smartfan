@@ -224,12 +224,53 @@ VOC_NOX_VETO    = 300
 # The trend is read against a reference sample refreshed every NOX_TREND_S
 # rather than against the previous reading, because the loop samples far
 # faster than this signal moves and consecutive samples differ mostly by
-# noise. Two minutes of the measured decay is 150-200 counts, which clears
-# NOX_TREND_EPS by three to four times, so the direction is unambiguous
-# without being twitchy. A fresh climb re-arms the veto immediately, so a
-# second pan going on is caught like the first.
+# noise. A fresh climb re-arms the veto immediately, so a second pan going
+# on is caught like the first.
+#
+# VALIDATED 2026-11-05 against all ELEVEN NOx episodes on flash (29 Oct to
+# 5 Nov), not the single one these numbers were first set from. Measured
+# from each peak, the veto steps aside after 5 minutes in ten of the eleven
+# and 10 minutes in the worst. The level alone would have held it for 5 to
+# 60 minutes on the same events -- that gap is what the direction test buys,
+# and it is now eleven events wide rather than one.
+#
+# CORRECTING THE ARITHMETIC THAT FIRST SET THESE. The note here used to say
+# two minutes of decay moves 150-200 counts, clearing NOX_TREND_EPS three to
+# four times over. That was wrong: the figures it came from are history rows
+# at HISTORY_INTERVAL_S, which is 300 s, and they were read as if they were
+# two minutes apart. The true decay is far slower -- across the eleven
+# episodes the MEDIAN 120 s window moves only 12 to 104 counts, and most sit
+# under NOX_TREND_EPS.
+#
+# So the margin is not in the typical window; it is in the LATCH. The decay
+# is steepest right after the peak, that first window clears EPS, and
+# _nox_decaying then stays True through the whole slow tail because only a
+# genuine rise of EPS turns it back off. Anyone retuning these should know
+# that raising NOX_TREND_EPS on the strength of a "3-4x margin" would break
+# it: there is no such margin, and the mechanism is the latch.
 NOX_TREND_S     = 120    # how far back the trend reference sits
 NOX_TREND_EPS   = 50     # counts that count as a real move, not noise
+# How long the odor path will wait for the NOx baseline before going live
+# WITHOUT a combustion veto.
+#
+# Until 2026-11-05 it did not wait at all, on the stated grounds that the
+# VOC pixel settles in minutes and the NOx pixel in two hours, so gating one
+# on the other would be deaf for no benefit. Measuring it said otherwise.
+# Across the seven reboots on flash the VOC baseline seeded at a median of
+# 88 minutes and the NOx baseline at 110, and NOx came FIRST in four of the
+# seven. The real cost of waiting is a median of 0 minutes and a worst case
+# of about 70 -- not two hours.
+#
+# Against that: every boot used to open a window in which the fan could be
+# started by a cooking smell with no veto able to say so, which is the exact
+# false positive the NOx pixel was added to reject. A bounded wait buys the
+# veto for the cost of a window that is usually zero.
+#
+# Bounded, because a NOx pixel that never seeds must not leave the fan
+# permanently deaf to odor. 90 minutes covers the worst case measured with
+# margin; past it, odor triggering without a veto beats no odor triggering
+# at all, and the log says which it is running as.
+NOX_WAIT_MAX_S  = 5400
 VOC_BASELINE_A  = 0.0005 # slower than BASELINE_A: odor events are shorter
                          # than showers and must not be learned as normal
 # How long a pixel may refuse to settle before its baseline is seeded
