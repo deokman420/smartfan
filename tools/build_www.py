@@ -4,6 +4,10 @@
     python tools/build_www.py --push COM5      # ...and copy it to the device
     python tools/build_www.py --push COM5 --clean   # remove stale files first
 
+An empty app/build (what a failed `npm run build` leaves behind) is refused,
+the same as a missing one. --clean deletes the device's www/ only after
+there is something to copy.
+
 What it does, in order: runs `npm run build` in app/ unless told not to,
 gzips every file into www/ beside the repo, writes www/build.json, and
 optionally copies the tree to the board over USB.
@@ -70,17 +74,35 @@ def walk(base):
             yield full, os.path.relpath(full, base).replace(os.sep, "/")
 
 
-def build_tree(clean_out=True):
-    """Gzip app/build into www/. Returns (entries, raw_total, out_total)."""
+def require_source():
+    """Files in app/build, or exit before anything is deleted.
+
+    A directory that exists and holds nothing is what a failed `npm run
+    build` can leave behind: app/build is there, the files are not. The old
+    check only asked whether the directory existed, so this packed a 0-file
+    bundle. With --clean, the device's www/ was removed first and /api/info
+    reported app: null until the next real push. The same empty tree must
+    not wipe the local www/ staged from the last good build either. Both
+    deletes happen after this returns.
+    """
     if not os.path.isdir(SRC):
         sys.exit("no %s -- run the build first" % SRC)
+    found = list(walk(SRC))
+    if not found:
+        sys.exit("no files in %s -- run the build first" % SRC)
+    return found
+
+
+def build_tree(clean_out=True):
+    """Gzip app/build into www/. Returns (entries, raw_total, out_total)."""
+    files = require_source()
     if clean_out and os.path.isdir(OUT):
         shutil.rmtree(OUT)
     os.makedirs(OUT, exist_ok=True)
 
     entries = []
     raw_total = out_total = 0
-    for full, rel in sorted(walk(SRC), key=lambda t: t[1]):
+    for full, rel in sorted(files, key=lambda t: t[1]):
         data = io.open(full, "rb").read()
         raw_total += len(data)
         ext = os.path.splitext(rel)[1].lower()
@@ -182,7 +204,13 @@ def push(port, entries, clean):
     `fs cp -r` exists, but it is inconsistent about whether the destination
     directory has to be there already, and a half-copied bundle is a blank
     page that looks like a firmware fault.
+
+    An empty list is refused before safe mode, and before --clean. --clean
+    deletes the device's www/ with no copy to put back, which is a blank
+    page until someone pushes again.
     """
+    if not entries:
+        sys.exit("refusing to push an empty bundle")
     print("\npushing to %s ..." % port)
 
     # The board must not be running main.py: the watchdog resets it out from

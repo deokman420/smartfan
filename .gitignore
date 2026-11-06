@@ -39,6 +39,10 @@ www/
 hist.0
 hist.1
 
+# Written by settings.py on the device, and by the tests. Never the repo's.
+# OTA will not replace it (ota.py PROTECTED); the device keeps its own.
+settings.json
+
 # Plans for work that has not been decided yet. docs/ holds what the project
 # IS and what it has consciously deferred; logistics/ holds what it MIGHT
 # become -- hardware that is not bought, designs not committed to. Keeping
