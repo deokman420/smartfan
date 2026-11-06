@@ -25,7 +25,7 @@
   let vocVeto = $derived(Number(cfg.VOC_NOX_VETO) || 0);
 
   /* IDLE is --border-strong, not --text-dim. Both read as "quiet" on dark,
-     where --text-dim is a pale grey on a dark track, but this is a FILL:
+     where --text-dim is a pale gray on a dark track, but this is a FILL:
      on light the same token is a dark slate, so the idle stretches of the
      day came out heavier than the fan running. --border-strong is the
      neutral that stays one subtle step from the track in both schemes. */

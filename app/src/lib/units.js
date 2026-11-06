@@ -1,7 +1,7 @@
 /**
  * How readings are displayed: units of temperature, and of time.
  *
- * A viewer preference, like the colour scheme and unlike a threshold: the
+ * A viewer preference, like the color scheme and unlike a threshold: the
  * fan measures, stores and decides in Celsius whatever this says, and two
  * phones looking at the same fan can disagree about the units without either
  * of them being wrong. Nothing here is ever sent to the device.

@@ -640,7 +640,7 @@
       </span>
       <div>
         <p class="eyebrow">{$settings.room}</p>
-        <h1>Smartfan</h1>
+        <h1>Smartfan <span class="by">by Phbeks</span></h1>
       </div>
     </div>
     <div class="head-right">
@@ -1204,7 +1204,7 @@
             </div>
             <p class="sub">
               Puts every value on this page back to the firmware's own. The
-              connection, the units and the colour scheme are this browser's and
+              connection, the units and the color scheme are this browser's and
               are not touched.
             </p>
           </section>
@@ -1495,7 +1495,7 @@
       <!-- The grabber is the drag target as well as the promise of one. It
            carries data-sheet-handle, which is also what sheetDrag reads to
            decide whether it should be active at all: the handle is display
-           none above 560px, where this is a centred dialog rather than a
+           none above 560px, where this is a centered dialog rather than a
            bottom sheet. -->
       <div class="grabber" data-sheet-handle aria-hidden="true"></div>
       <h3>Connection</h3>
@@ -1594,8 +1594,8 @@
         {/each}
       </div>
 
-      <p class="setting-label">Colour scheme</p>
-      <div class="modes three" role="radiogroup" aria-label="Colour scheme">
+      <p class="setting-label">Color scheme</p>
+      <div class="modes three" role="radiogroup" aria-label="Color scheme">
         {#each THEMES as opt (opt.id)}
           <button
             class="mode"
@@ -1618,7 +1618,7 @@
 </div>
 
 <style>
-  /* The shell is the app. .wrap's old column is neutralised here so the
+  /* The shell is the app. .wrap's old column is neutralized here so the
      rail can own the left edge and the stage can use the rest. */
   .app.wrap {
     max-width: none;
@@ -1627,12 +1627,23 @@
     min-height: 100dvh;
   }
 
+  /* Top chrome, the mirror of .nav-slot at the other edge. Sticky rather
+     than part of the scroll, because this is the element that covers the
+     notch: body no longer pads the top inset, so whatever sits here must,
+     and it must still be there after a scroll. Same tint and blur as the
+     nav so content passes behind both the same way. */
   header {
+    position: sticky;
+    top: 0;
+    z-index: 9;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 16px 18px 6px;
+    padding: calc(16px + env(safe-area-inset-top)) 18px 6px;
+    background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
     max-width: 760px;
     margin: 0 auto;
   }
@@ -1686,6 +1697,18 @@
     margin: 0;
     letter-spacing: -0.03em;
     line-height: 1.1;
+  }
+
+  /* The maker's mark, not a second title: smaller, lighter and tracking
+     back to normal, so the brand line reads as one thing at a glance and
+     "Smartfan" still carries the weight. Sized in em so it follows the h1
+     wherever that is restyled. */
+  .by {
+    font-size: 0.62em;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--text-dim);
+    white-space: nowrap;
   }
 
   .head-right {
@@ -1759,8 +1782,10 @@
       align-items: stretch;
       justify-content: flex-start;
       gap: 18px;
-      padding: 26px 16px 8px;
+      position: static;
+      padding: calc(26px + env(safe-area-inset-top)) 16px 8px;
       background: var(--bg-card);
+      border-bottom: 0;
       border-right: 1px solid var(--border);
     }
     .head-right {
@@ -2701,7 +2726,7 @@
     justify-content: center;
     gap: 12px;
     flex-wrap: wrap;
-    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
     background: var(--accent-soft, var(--bg-card));
     border-bottom: 1px solid var(--border-strong);
     font-size: 0.88rem;
@@ -2736,7 +2761,7 @@
     z-index: 31;
     left: 50%;
     /* --sheet-dy is written by sheetDrag during a dismiss gesture and is
-       0 the rest of the time. It composes with the centring translate
+       0 the rest of the time. It composes with the centering translate
        rather than replacing it. */
     transform: translateX(-50%) translateY(var(--sheet-dy, 0px));
     transition: transform 180ms ease-out;
@@ -2832,7 +2857,7 @@
     text-transform: uppercase;
     color: var(--text-dim);
   }
-  /* One word each, centred: the connection modes need a sentence to choose
+  /* One word each, centered: the connection modes need a sentence to choose
      between them, System/Light/Dark do not, and three one-line blurbs at
      phone width wrapped to two lines on exactly one of them. */
   .modes.three .mode {

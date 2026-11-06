@@ -2,7 +2,7 @@
    Smartfan app — global stylesheet.
 
    Every token comes from ../../design-tokens/tokens.css, which is the one
-   canonical source for this repo. This file declares no colours of its
+   canonical source for this repo. This file declares no colors of its
    own; if you need one that is not a var(), add it there.
    ======================================================================== */
 
@@ -24,7 +24,7 @@
    fonts and quietly stopped looking like the design system.
 
    Licensed under the SIL Open Font License 1.1, redistributed with the
-   licence alongside them in static/fonts/LICENSE.txt.
+   license alongside them in static/fonts/LICENSE.txt.
    ------------------------------------------------------------------------ */
 
 @font-face {
@@ -69,14 +69,22 @@ body {
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-  /* Home-screen installs run under the notch. */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right)
-    env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* Home-screen installs run under the notch, but the top and bottom insets
+     are NOT padded here. Padding on a scrolling body scrolls away with it:
+     the strip under the status bar was clear at rest and full of sliced
+     content the moment you scrolled, which is what "the app cuts off the
+     top" was. The chrome that sits over each edge owns its own inset
+     instead -- header for the top, .nav-slot and .main-col for the bottom --
+     so the notch stays covered at every scroll position.
+
+     Left and right stay here: no fixed chrome owns the side edges, and
+     portrait-primary in the manifest keeps them 0 in practice anyway. */
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 
 /* The fan is running, set by lib/appicon.js alongside the theme-color it
    writes. An iOS home-screen install draws under a black-translucent status
-   bar, so that strip shows the page rather than taking a colour from us --
+   bar, so that strip shows the page rather than taking a color from us --
    the top of the backdrop IS the status bar there, and strengthening its teal
    stop is the only way to tint it. Costs nothing on the platforms where
    theme-color already works: the same gradient, slightly warmer. */
@@ -181,7 +189,7 @@ h2::after {
   border-color: var(--border-strong);
 }
 
-/* The site's card-icon pattern: a tinted chip that colour-codes the row at
+/* The site's card-icon pattern: a tinted chip that color-codes the row at
    a glance, so the grid is scannable without reading a single label. */
 .chip {
   width: 30px;
@@ -258,9 +266,9 @@ h2::after {
 
 /* --- tone ---------------------------------------------------------------- */
 
-/* Every tone takes the TEXT sense of its colour, never the fill sense.
+/* Every tone takes the TEXT sense of its color, never the fill sense.
    --bad already did; --good and --warn now do too, because on light the
-   fill values are vivid band colours that do not clear 7:1 as text. The
+   fill values are vivid band colors that do not clear 7:1 as text. The
    gauge bands and the legend dots are the other half of that split and
    keep using --good / --warn / --bad directly. */
 .tone-ok,

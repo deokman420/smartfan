@@ -45,7 +45,7 @@ export function rssiWord(dbm) {
   return 'Very weak';
 }
 
-/** The five controller states, with the colour each should read as. */
+/** The five controller states, with the color each should read as. */
 export const STATE_TONE = {
   LEARN: 'info',
   IDLE: 'calm',

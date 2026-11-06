@@ -34,7 +34,7 @@
  * The history is already here, the regression is free here, and the RP2350
  * has neither the heap nor the reason. More importantly the estimate must
  * never be able to affect the fan: the controller stops on a measured
- * reading crossing a threshold, and that is the behaviour worth having. A
+ * reading crossing a threshold, and that is the behavior worth having. A
  * prediction that is merely on screen can only ever be a wrong label. A
  * prediction that had a vote could stop a fan in a wet room.
  *

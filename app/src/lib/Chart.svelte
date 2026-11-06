@@ -670,7 +670,7 @@
     stroke-dasharray: 5 4;
   }
 
-  /* Thresholds. text-dim, not the brand muted grey: that one disappears
+  /* Thresholds. text-dim, not the brand muted gray: that one disappears
      on these cards, and this line is the thing the chart is here to show. */
   .ref {
     stroke: var(--text-dim);

@@ -210,7 +210,7 @@ if (typeof document !== 'undefined') {
  * triggered the request for it.
  *
  * So coverage, not bucket identity: a stored row is redundant only when live
- * samples actually span the window it summarises -- one in each half of it.
+ * samples actually span the window it summarizes -- one in each half of it.
  * Where the app was running, both halves are full and the mean is dropped
  * exactly as before, so nothing interleaves. Where a session stopped partway
  * through a bucket, or started partway through one, the following window is

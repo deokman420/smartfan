@@ -76,7 +76,7 @@ const CONTROLS = 'input, button, select, textarea, a, [role="radio"], [role="rad
  * further should move the sheet instead.
  *
  * The handle's computed display gates the whole thing, so the action is
- * inert at the width where the sheet is a centred dialog and the grabber is
+ * inert at the width where the sheet is a centered dialog and the grabber is
  * hidden. That keeps one source of truth -- the media query in the
  * stylesheet -- rather than repeating the breakpoint in JavaScript.
  *
@@ -145,7 +145,7 @@ export function sheetDrag(node, onDismiss) {
       try {
         node.setPointerCapture(id);
       } catch {
-        /* capture is an optimisation, not a requirement */
+        /* capture is an optimization, not a requirement */
       }
     }
     // Only once this is a real drag, so a tap that scrolls is left alone.

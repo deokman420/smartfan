@@ -5,7 +5,7 @@
  * LAN with no route out, and a webfont or sprite sheet that 404s leaves
  * empty boxes on every card. These are a few hundred bytes in the bundle.
  *
- * Stroke, size and colour all come from `.chip svg` in app.css, so each
+ * Stroke, size and color all come from `.chip svg` in app.css, so each
  * entry is geometry only.
  */
 export const ICONS = {

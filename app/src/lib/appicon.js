@@ -109,18 +109,18 @@ export function watchAppIcon(fanOn) {
   const root = document.documentElement;
 
   // Read back what the tag and the tokens already say rather than restating
-  // either. tokens.css is canonical for the colours; app.html is canonical
+  // either. tokens.css is canonical for the colors; app.html is canonical
   // for the icon's path, which is %sveltekit.assets%-relative and not
   // something this module should think it knows.
   const staticIcon = iconLink?.href ?? null;
   const shippedTheme = themeMeta?.content ?? null;
 
   // Read per paint, not once at startup. --bar and --bar-active are declared
-  // in both schemes, so caching them meant the status bar kept the colours of
+  // in both schemes, so caching them meant the status bar kept the colors of
   // whichever scheme happened to be up when the app booted -- an app opened
   // in the dark and still open at sunrise would tint the light theme's status
   // bar near-black. Two getPropertyValue calls on a state change is nothing.
-  const barColour = (name, fallback) =>
+  const barColor = (name, fallback) =>
     getComputedStyle(root).getPropertyValue(name).trim() || fallback;
 
   // Honoured rather than worked around: app.css already flattens every
@@ -135,8 +135,8 @@ export function watchAppIcon(fanOn) {
   let dead = false;
 
   const paintTheme = (on) => {
-    const bar = barColour('--bar', shippedTheme);
-    if (themeMeta) themeMeta.content = on ? barColour('--bar-active', bar) : bar;
+    const bar = barColor('--bar', shippedTheme);
+    if (themeMeta) themeMeta.content = on ? barColor('--bar-active', bar) : bar;
     // iOS standalone ignores theme-color under a black-translucent status
     // bar, where the page itself is what shows through. app.css keys the
     // backdrop off this so that install gets the signal too.
