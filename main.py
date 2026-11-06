@@ -266,7 +266,12 @@ class Controller:
         # published so the answer comes off a week of this room's own data,
         # which is how the VOC thresholds were set. voc.py carries why the
         # sign cannot be assumed and why there is no threshold to go with it.
-        self.noxdet = voc.Detector(self.st, log=print, name="nox")
+        # clean_is_high=False: the NOx count RISES as the air gets worse,
+        # the opposite of the VOC pixel. Only the asymmetric baseline reads
+        # this, and reading it backwards would have the baseline chase a
+        # cooking event instead of backing away from it.
+        self.noxdet = voc.Detector(self.st, log=print, name="nox",
+                                   clean_is_high=False)
         self._comb = False     # last logged state of the combustion veto
         # When the VOC baseline seeded, which is the moment the odor path
         # would otherwise have gone live. The wait for the NOx baseline is

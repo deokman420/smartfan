@@ -82,7 +82,8 @@ class Detector:
     the room is quiet, it returns a number. The tests drive it directly.
     """
 
-    def __init__(self, st, log=print, alpha=None, name="voc"):
+    def __init__(self, st, log=print, alpha=None, name="voc",
+                 clean_is_high=None):
         self.st = st
         self._log = log
         # Which pixel this instance is reading, for the seed log only. Two
@@ -96,6 +97,20 @@ class Detector:
         # rather than a second config key because a knob nobody has a
         # measurement for is a knob that gets turned on a hunch.
         self.alpha = alpha
+        # WHICH WAY IS CLEAN AIR, in raw ticks. The two pixels disagree and
+        # the asymmetric baseline below is the first thing here that cares.
+        # The VOC pixel answers reducing gases and its count FALLS as the air
+        # gets worse, so clean is the high side. The NOx pixel answers
+        # oxidising gases and its count RISES, so clean is the low side.
+        # Getting this backwards gives a baseline that sprints toward an
+        # event and crawls back, which is the exact failure the asymmetry
+        # exists to prevent, inverted.
+        #
+        # Defaulted FROM THE NAME rather than left to the caller, because
+        # the name is the pixel's identity and a Detector(name="nox") built
+        # with the VOC direction is a silent, plausible-looking wrong
+        # answer. Pass it explicitly to override.
+        self.clean_is_high = (name != "nox") if clean_is_high is None             else clean_is_high
         self.base = None     # learned baseline in raw ticks; None until seeded
         self.raw = None      # last raw reading, for the log and telemetry
 
@@ -143,6 +158,21 @@ class Detector:
                 self._log("%s: baseline seeded at %d ticks" % (self.name, raw))
             else:
                 a = cfg.VOC_BASELINE_A if self.alpha is None else self.alpha
+                # ASYMMETRIC. Moving toward clean air is not a risk -- the
+                # baseline is SUPPOSED to sit on the clean level, so there is
+                # nothing to be careful about in that direction. Moving
+                # toward worse air is how a baseline learns an event as
+                # normal, and that is what the slow weight is for.
+                #
+                # One symmetric weight had to serve both, and being set slow
+                # for the dangerous direction left it far too slow for the
+                # safe one. The cost was measured on 2026-11-06: after a
+                # restart the element's clean level climbed 249 counts in
+                # four hours, the baseline never caught up, and a real event
+                # read as cleaner than normal. See VOC_BASELINE_UP.
+                toward_clean = (raw > self.base) if self.clean_is_high                     else (raw < self.base)
+                if toward_clean:
+                    a = min(1.0, a * getattr(cfg, "VOC_BASELINE_UP", 1))
                 self.base = (1 - a) * self.base + a * raw
         return self.excess(raw)
 

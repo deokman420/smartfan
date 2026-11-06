@@ -273,6 +273,28 @@ NOX_TREND_EPS   = 50     # counts that count as a real move, not noise
 NOX_WAIT_MAX_S  = 5400
 VOC_BASELINE_A  = 0.0005 # slower than BASELINE_A: odor events are shorter
                          # than showers and must not be learned as normal
+# How much faster the baseline tracks the raw count UPWARD than downward.
+#
+# For the VOC pixel a RISING raw count means the air is getting cleaner, and
+# the baseline's whole job is to sit on the clean-air level -- so there is
+# nothing to be cautious about in that direction. A FALLING count might be an
+# event, and following it is how a baseline learns a smell as normal. One
+# symmetric weight has to serve both, and VOC_BASELINE_A is set slow for the
+# falling case, which leaves it far too slow for the rising one.
+#
+# That cost a real event on 2026-11-06. The device restarted at 01:14, the
+# element came up cold, and its clean-air level then climbed 249 counts over
+# four hours (30432 -> 30681). The baseline chased it and never arrived,
+# sitting 85-100 counts BELOW true clean air all night. At 07:10 a genuine
+# 54-count event therefore read -32: not a near miss, but a reading that
+# said the air was cleaner than normal.
+#
+# Replayed over that night, 8x cuts the mean lag from -94 to -40 and turns
+# that event from -32 into +45 against a true +54. Replayed over the whole
+# week it costs about one extra odor start a day at the thresholds in use.
+#
+# 1 disables it and restores the single symmetric weight exactly.
+VOC_BASELINE_UP = 8
 # How long a pixel may refuse to settle before its baseline is seeded
 # anyway. The gate asks the element whether it has stopped climbing, and a
 # gate with no ceiling is a sensor that can decline to work for ever -- a

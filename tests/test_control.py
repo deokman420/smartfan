@@ -912,6 +912,65 @@ fast = vocmod.Detector(settings.Settings(log=lambda *a: None),
                        name="nox")
 fast.update(1000, True)
 fast.update(2000, True)
+# THE ASYMMETRIC BASELINE, and the direction trap underneath it.
+#
+# Toward clean air the baseline may move fast -- sitting on the clean level
+# is its job. Toward worse air it must crawl, or an event teaches it to
+# ignore itself. One symmetric weight served both and was tuned for the
+# dangerous direction, which left it far too slow for the safe one: after
+# the 2026-11-06 restart the element's clean level climbed 249 counts in
+# four hours, the baseline never arrived, and a real 54-count event read -32.
+def det_named(name, alpha=0.1, **kw):
+    return vocmod.Detector(settings.Settings(log=lambda *a: None),
+                           log=lambda *a: None, alpha=alpha, name=name, **kw)
+
+UP = getattr(cfg, "VOC_BASELINE_UP", 1)
+check("the config carries an upward multiplier at all", UP > 1, "UP=%s" % UP)
+
+# VOC: clean air is the HIGH side, because the count falls as air worsens.
+d = det_named("voc")
+d.update(30000, True)
+d.update(30100, True)                       # air cleaning -- chase it
+fastmove = d.base - 30000.0
+d2 = det_named("voc")
+d2.update(30000, True)
+d2.update(29900, True)                      # air worsening -- hold back
+slowmove = 30000.0 - d2.base
+check("the VOC baseline moves faster toward clean air than toward bad",
+      fastmove > slowmove * 2,
+      "up %.1f vs down %.1f" % (fastmove, slowmove))
+check("...by the configured multiplier",
+      abs(fastmove / slowmove - UP) < 0.5,
+      "ratio %.2f, UP=%s" % (fastmove / slowmove, UP))
+
+# NOx: the SAME class, the OPPOSITE direction. Its count RISES as the air
+# gets worse, so clean is the low side. If this inherits the VOC direction,
+# the baseline sprints at a cooking event and crawls back from it -- it
+# would calibrate itself deaf to exactly the thing it is fitted to catch,
+# and nothing else in the suite would notice.
+n = det_named("nox")
+n.update(16000, True)
+n.update(15900, True)                       # falling = cleaning, for NOx
+nfast = 16000.0 - n.base
+n2 = det_named("nox")
+n2.update(16000, True)
+n2.update(16100, True)                      # rising = combustion, for NOx
+nslow = n2.base - 16000.0
+check("the NOx baseline treats a FALLING count as the clean direction",
+      nfast > nslow * 2, "down %.1f vs up %.1f" % (nfast, nslow))
+check("...so a rising NOx count is the one it refuses to chase",
+      nslow < fastmove, "nox up %.1f vs voc up %.1f" % (nslow, fastmove))
+
+# The direction must come from the pixel, not from whoever remembered to
+# pass a flag: Detector(name="nox") with the VOC direction is a silent and
+# entirely plausible-looking wrong answer.
+check("a detector named nox gets the NOx direction without being told",
+      det_named("nox").clean_is_high is False)
+check("...and the default pixel gets the VOC one",
+      det_named("voc").clean_is_high is True)
+check("...with an explicit flag still winning",
+      det_named("nox", clean_is_high=True).clean_is_high is True)
+
 check("an instance alpha overrides the config default", fast.base == 1500.0,
       "%s" % fast.base)
 check("...and the seed log says which pixel seeded",
