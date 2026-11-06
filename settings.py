@@ -23,7 +23,7 @@ FILE = "settings.json"
 
 # name -> (kind, lo, hi, step, unit, label, icon)
 # Ranges are what the hardware and the logic can actually honour, not what
-# seems reasonable -- they are the last line of defence.
+# seems reasonable -- they are the last line of defense.
 SPECS = {
     "RH_RISE_ON":   ("number", 3.0, 20.0, 0.5, "%",   "Humidity rise to start", "mdi:water-plus"),
     "RH_FALL_OFF":  ("number", 1.0, 10.0, 0.5, "%",   "Humidity fall to stop",  "mdi:water-minus"),

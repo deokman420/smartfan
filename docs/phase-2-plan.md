@@ -113,7 +113,7 @@ Each stage leaves the device in a working state. Stop after any of them.
 ### 2a — Telemetry only *(low risk)*
 
 WiFi connect, MQTT publish, HA discovery, LWT. **No inbound control.** The
-controller gains a reporting path and nothing can change its behaviour remotely.
+controller gains a reporting path and nothing can change its behavior remotely.
 
 Delivers: live entities in HA, automatic history and graphing, and a week of
 real data to tune thresholds against before anything can write to the device.

@@ -407,7 +407,7 @@ class Api:
         Behind the same button as the WiFi, and for a narrower but real
         reason: this cannot strand the device -- WiFi stays up and the app
         stays reachable whatever the answer -- but being on someone's network
-        is not a licence to point their fan at your broker, and these are the
+        is not a license to point their fan at your broker, and these are the
         credentials that reach Home Assistant.
         """
         prov = self._prov()

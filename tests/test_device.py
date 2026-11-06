@@ -301,7 +301,7 @@ while time.time() - began < UP_DEADLINE:
 check("controller restarted and answers over the network", state is not None,
       "after %ds" % int(time.time() - began))
 
-# What the reset actually risks is the SGP41 failing to re-initialise on the
+# What the reset actually risks is the SGP41 failing to re-initialize on the
 # bus. That is what is checked here.
 #
 # It used to wait for voc_base instead, with a 120 s deadline, and that was

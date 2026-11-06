@@ -161,7 +161,7 @@ and density; whether it clears **AAA contrast** against your active Home
 Assistant theme has not been measured. AAA wants 7:1 for body text.
 
 This needs your theme, since the dashboard inherits it rather than setting
-its own colours.
+its own colors.
 
 ---
 
@@ -254,7 +254,7 @@ the recovery path, and it should not be bolted on in passing.
 `GET/POST /api/broker`, behind the same button window as the WiFi. The
 argument is narrower than the WiFi's and still real: this cannot strand the
 fan — wifi stays up and the app stays reachable whatever the answer — but
-being on someone's network is not a licence to point their fan at your
+being on someone's network is not a license to point their fan at your
 broker, and these are the credentials that reach Home Assistant.
 
 Built the same way anyway. The fan connects before it saves, so a rejected
@@ -327,7 +327,7 @@ a per-batch one, and `main.py` is permanently over it.
 
 **The failure was clean**: no reboot (uptime unbroken), no fault, `fw` unchanged,
 flash unchanged, nothing staged, no rollback needed. It gave up before touching
-anything, which is the right behaviour.
+anything, which is the right behavior.
 
 Two things follow:
 

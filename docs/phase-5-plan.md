@@ -186,7 +186,7 @@ rounded mask, and pre-rounded for the manifest.
 **Three requests left the network on every load.** Inter and JetBrains Mono
 came from `fonts.googleapis.com`, in an app that says in its own settings
 sheet that nothing leaves the network. Both are now on the fan: 78 kB for the
-pair as variable latin subsets, OFL 1.1 with the licence beside them.
+pair as variable latin subsets, OFL 1.1 with the license beside them.
 `tests/test_device_app.py` now fails if anything at all is requested from
 another origin, because the next CDN link will look just as harmless.
 
@@ -203,7 +203,7 @@ worker entirely.
   to an iOS home screen from `http://fan.local/` and that worked, but the
   icon, the fonts and the update path were all fixed afterwards and have not
   been re-installed since.
-* **Long-run behaviour.** The store has written its first rows, but nothing
+* **Long-run behavior.** The store has written its first rows, but nothing
   here has watched a full seven-day window roll over and rotate.
 * **Sustained load.** Eight simultaneous requests are served, and eight
   minutes of polling every ten seconds left `up_min` climbing smoothly from

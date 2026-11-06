@@ -118,7 +118,7 @@ squeamishness — `+layout.svelte` starts a watcher of its own and two of them
 on one page fight over `<head>`, which is how the suite first failed.
 
 Half the checks are about stopping rather than starting: a backgrounded tab
-must drop the timer, and teardown must put the icon, the theme colour and
+must drop the timer, and teardown must put the icon, the theme color and
 `data-fan` back exactly as `app.html` shipped them. A favicon is decoration,
 and decoration that leaks a 13 fps repaint into a tab nobody is looking at is
 worse than no decoration.
@@ -297,7 +297,7 @@ until the rename is deliberate. Screenshots land in `tests/screenshots/`
 (gitignored) for eyeballing after a change.
 
 **`test_app.py` — 42 checks.** The app, served from `app/build` so it
-tests the artefact that would actually be deployed, against the live broker
+tests the artifact that would actually be deployed, against the live broker
 and the live fan.
 
 What it proves that a screenshot cannot: the values on screen are the ones

@@ -17,7 +17,7 @@ alone on I2C0 at 100 kHz, in still indoor air at 23.9 C / 46 %RH:
 Two things that look like broken wiring and are not:
 
 READING TOO EARLY. measure_raw NAKs until its 50 ms is up -- verified here at
-30 and 40 ms. The NAK is correct behaviour, not a fault, so a short delay
+30 and 40 ms. The NAK is correct behavior, not a fault, so a short delay
 reads as an I2C error rather than as bad data.
 
 TWO PARTS ON ONE BUS. The address 0x59 is fixed in silicon with no select

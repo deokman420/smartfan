@@ -67,7 +67,7 @@ class _Pin:
 
 
 class _Settings:
-    """Stands in for settings.Settings, with its clamping behaviour.
+    """Stands in for settings.Settings, with its clamping behavior.
 
     The point of the API tests is that a rejected write is reported as a
     rejection, so this has to be able to reject -- a stub that accepts
@@ -561,7 +561,7 @@ def test_server(tmp):
 
         # Start from a quiet server: a connection still draining from an
         # earlier request occupies a slot, and this test would then pass or
-        # fail on timing rather than on behaviour.
+        # fail on timing rather than on behavior.
         wait_for(lambda: not server.conns)
         held = []
         try:

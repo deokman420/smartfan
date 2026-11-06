@@ -92,7 +92,7 @@ SAVED = "() => localStorage.getItem('smartfan.theme')"
 BAR = "() => document.querySelector('meta[name=theme-color]').content"
 BG = "() => getComputedStyle(document.body).backgroundColor"
 
-# The two palettes' page colours, read off tokens.css rather than retyped, so
+# The two palettes' page colors, read off tokens.css rather than retyped, so
 # a change to either surface fails here as a mismatch rather than passing
 # against a stale literal.
 tokens = io.open(os.path.join(ROOT, "design-tokens", "tokens.css"), encoding="utf-8").read()

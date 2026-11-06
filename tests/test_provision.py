@@ -161,7 +161,7 @@ try:
     ns = {}
     exec(compile(io.open("secrets.py", encoding="utf-8").read(),
                  "secrets.py", "exec"), ns)
-    check("country is saved, normalised to upper case",
+    check("country is saved, normalized to upper case",
           ns.get("WIFI_COUNTRY") == "GB", ns.get("WIFI_COUNTRY"))
 
     # The property that matters is that nonsense never reaches the radio.

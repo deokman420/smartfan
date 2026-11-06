@@ -88,7 +88,7 @@ class FakeI2C:
     """An empty bus: nothing answers, every transfer raises.
 
     Deliberately empty rather than a working SGP41 stub. The odor path is
-    an enhancement, and the behaviour that matters most is that a missing
+    an enhancement, and the behavior that matters most is that a missing
     sensor leaves this controller identical to the one that predates it --
     so every test in this file runs with the path absent, and any state
     machine change that quietly depends on it fails here.
@@ -1695,7 +1695,7 @@ check("just over the veto does not",
       armed_with(REAL_VOC, 300)._voc_active() is False)
 
 # A veto of 0 is the documented off switch and must restore the old
-# behaviour exactly, or there is no way back from a bad threshold.
+# behavior exactly, or there is no way back from a bad threshold.
 check("veto 0 disables the veto",
       armed_with(COOK_VOC, COOK_NOX, veto=0)._voc_active() is True)
 
@@ -1870,7 +1870,7 @@ check("a link that raises is survived, not obeyed", _survived and not _hits)
 
 # Clamped like every other setting, so a bad payload cannot arm a reboot
 # loop by asking for a five-second threshold.
-# The hazard is behavioural, so assert the behaviour: a 5 s setting must
+# The hazard is behavioural, so assert the behavior: a 5 s setting must
 # not reboot the device 5 s into an outage. main.py floors it at
 # NET_STALL_MIN_S rather than trusting settings.json, which can be
 # hand-edited and carried between builds.
@@ -2159,7 +2159,7 @@ print("\nthings a mutant could break in silence\n")
 # Found by mutation testing on 2026-11-05: deliberately corrupt one decision
 # at a time and see whether the suite notices. 244 of 389 mutants survived.
 # Most were boundary nudges and log formatting, but the ones below change
-# real behaviour and nothing anywhere objected. None of them is a bug today.
+# real behavior and nothing anywhere objected. None of them is a bug today.
 # They are the places where tomorrow's edit would be.
 
 # THE OLDEST RULE IN THE CONTROLLER. The humidity baseline is what every

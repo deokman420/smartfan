@@ -22,7 +22,7 @@ That sign was an open question for two days — `voc.py` carried a section heade
 agreeing, not by reasoning. It had predicted its own source, too: "a gas hob
 next door is a better NO2 source than anything on the bench."
 
-## Four labelled events
+## Four labeled events
 
 All on one baseline, within hours of each other, device in the bathroom.
 `ratio` is NOx rise divided by VOC fall, and it is the only column that
@@ -130,7 +130,7 @@ blind to litter, while something near 120 sees litter and reintroduces the
 3 a.m. false start.
 
 **The unexplored fix is to compensate the baseline for temperature**, using
-the coefficients above and the nine hours of labelled quiet data already
+the coefficients above and the nine hours of labeled quiet data already
 recorded. If that cuts the noise floor several-fold, a low threshold becomes
 safe without the trade below, litter events trigger, and the NOx veto keeps
 cooking out. It has not been attempted.
@@ -234,7 +234,7 @@ either way and that response was correct.
 It does leave a marker worth having: if a ~60-second clear turns out to be
 repeatable for puffs and a multi-minute one for the tray, that is a
 discriminator, and it would come for free from the data already being stored.
-Two more labelled events of each kind would test it.
+Two more labeled events of each kind would test it.
 
 One further caveat: a launch error in the recorder cost the first minute, so
 **the true peak is unknown** — only that it exceeded 140, since the device had
@@ -291,8 +291,8 @@ values come from `settings.json`.
    window somebody picked.
 5. **Test decay time as a source discriminator.** The one live event cleared
    in 60 s where both bench litter events took 4-6 minutes, so a puff and the
-   tray may be separable by decay alone. Needs two more labelled events of
-   each kind; the data is already stored, so this costs only the labelling.
+   tray may be separable by decay alone. Needs two more labeled events of
+   each kind; the data is already stored, so this costs only the labeling.
 
 Related: `docs/TODO.md` for the open items with their evidence,
 `custom_components/smartfan/` for what Home Assistant sees, and `config.py`

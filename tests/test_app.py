@@ -2,7 +2,7 @@
 
     python tests/test_app.py [--headed]
 
-Serves app/build itself, so it tests the artefact that would actually be
+Serves app/build itself, so it tests the artifact that would actually be
 deployed rather than a dev server with different module resolution and
 different error handling.
 
@@ -78,7 +78,7 @@ CONTRAST_AUDIT = """() => {
     const large = px >= 24 || (px >= 18.66 && parseInt(cs.fontWeight) >= 700);
     out.push({ t: el.textContent.trim().slice(0,34), ratio: +ratio.toFixed(2),
                px: +px.toFixed(1),
-               // The two colours, so a failure says WHICH pair is wrong
+               // The two colors, so a failure says WHICH pair is wrong
                // rather than only how wrong it is. A ratio on its own sends
                // the reader hunting through the token file.
                fg: 'rgb(' + fg.slice(0,3).join(',') + ')',
@@ -380,7 +380,7 @@ with sync_playwright() as pw:
     # carry the same role and label, which put two identical controls in
     # the accessibility tree.
     closers = page.get_by_role("button", name="Close chart")
-    check("only one control is labelled Close chart", closers.count() == 1,
+    check("only one control is labeled Close chart", closers.count() == 1,
           "%d found" % closers.count())
     closers.click()
     page.wait_for_timeout(250)

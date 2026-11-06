@@ -132,7 +132,7 @@ with sync_playwright() as pw:
     btn = page.get_by_text("Boost 15", exact=False).first
     if check("boost tile is present", btn.count() > 0):
         # HA's sticky header overlays whatever scrolls under it, so a plain
-        # click gets intercepted. Centre the tile, then force past the
+        # click gets intercepted. Center the tile, then force past the
         # actionability check -- we already asserted it is visible.
         btn.scroll_into_view_if_needed()
         page.wait_for_timeout(600)

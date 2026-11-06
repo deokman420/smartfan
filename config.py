@@ -293,7 +293,7 @@ VOC_HOLD_MAX_S  = 7200
 #
 # Only the odor half rests. A humidity latch still waits for the room to
 # dry, or the fan would cycle for ever on a room it cannot win. 0 restores
-# the old give-up-for-good behaviour.
+# the old give-up-for-good behavior.
 VOC_REST_S      = 1200
 VOC_MAX_FAILS   = 10     # consecutive I2C failures before the path stands down
 

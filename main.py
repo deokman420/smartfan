@@ -669,7 +669,7 @@ class Controller:
         baseline exists. Keeping this one predicate in front of every use is
         what makes the observe-only week genuinely observe-only -- an
         ungated hold or latch release reading a live sensor against a 0
-        threshold would change the fan's behaviour on day one.
+        threshold would change the fan's behavior on day one.
 
         The `ok` term is not decoration. A stood-down sensor keeps its last
         reading, and read() returns None forever after, so without it the
@@ -1496,7 +1496,7 @@ class Controller:
         elif cmd == "cancel":
             if self.state == BOOST:
                 self.boost_until = None
-                self.set_state(IDLE, "boost cancelled via mqtt")
+                self.set_state(IDLE, "boost canceled via mqtt")
         elif cmd == "relearn":
             self.maxed = False
             self.baseline = self.rh
@@ -1548,7 +1548,7 @@ class Controller:
                 self.set_state(IDLE, "fault cleared by button")
             elif self.state == BOOST:
                 self.boost_until = None
-                self.set_state(IDLE, "boost cancelled")
+                self.set_state(IDLE, "boost canceled")
             else:
                 self.boost_until = time.ticks_add(time.ticks_ms(),
                                                   self.st.BOOST_S * 1000)

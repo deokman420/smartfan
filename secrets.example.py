@@ -8,7 +8,7 @@ credentials module, imported rather than parsed. Tuning parameters live in
 config.py and ARE versioned -- only secrets belong here.
 
 If secrets.py is absent the controller runs perfectly well offline. The
-network layer is additive; nothing about fan behaviour depends on it.
+network layer is additive; nothing about fan behavior depends on it.
 """
 
 # --- WiFi -------------------------------------------------------------------

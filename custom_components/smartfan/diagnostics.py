@@ -3,7 +3,7 @@
 The whole of /api/state and /api/info, because on this device almost every
 field is a diagnostic: the fault reason, the boot cause, the learned
 baselines, the reconnect count and the raw sensor ticks are exactly what any
-question about its behaviour turns on.
+question about its behavior turns on.
 
 Only the network identifiers are redacted. They say where the device and its
 broker live, which is nothing a stranger reading a GitHub issue needs.

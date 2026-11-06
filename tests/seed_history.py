@@ -1,6 +1,6 @@
 """A plausible six hours: quiet, an aerosol, a shower, the fan clearing it.
 
-Modelled on the numbers actually measured in this bathroom -- baseline
+Modeled on the numbers actually measured in this bathroom -- baseline
 62 %RH, a shower peaking near 91 %, the 40 mm fan pulling it back over
 about forty minutes. Used for screenshots and for the chart regression, so
 the charts are exercised against the shape they exist to show.

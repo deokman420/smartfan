@@ -14,7 +14,7 @@ what vite named the chunk it landed in.
 It runs against the built index.html with its <script> tags stripped, which
 is not squeamishness about the bundle: +layout.svelte starts a watcher of its
 own, and two of them on one page overwrite each other's <head>. The rest of
-the shell is the real artefact -- the same icon link, the same theme-color
+the shell is the real artifact -- the same icon link, the same theme-color
 tag, the same tokens.css -- so a change to any of those still fails here.
 
 What is worth asserting here

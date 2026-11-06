@@ -1,6 +1,6 @@
 # design-tokens
 
-`tokens.css` is the only place in this repository that may declare a colour,
+`tokens.css` is the only place in this repository that may declare a color,
 typeface, radius or shadow literal. Everything else uses `var(--token)`.
 
 ## Why it exists
@@ -9,7 +9,7 @@ The palette is phbeks.com's. It used to live in two copies — one inlined in
 `app/src/app.css`, one in the site's `blog/blog.css` — with nothing keeping
 them honest, which is how a design system quietly becomes two design
 systems. phbeks-site *names* a canonical `design-tokens/tokens.css` but does
-not ship one, so `blog/blog.css` is the live artefact and the values here
+not ship one, so `blog/blog.css` is the live artifact and the values here
 were transcribed from it.
 
 ## The three blocks
@@ -61,7 +61,7 @@ It exits non-zero on a failure. The surface list is per token, not global —
 `--bg-card-2` backs only the form fields and the chart range buttons, and
 `--bg-card-hover` only appears under a pointer on `.stat`. If you use a tone
 somewhere new, widen its list in the script and let it tell you whether the
-colour is allowed there.
+color is allowed there.
 
 It also reports when the light block *inherits* a token from dark rather
 than overriding it, and fails outright if a surface does — dark text on a
@@ -76,7 +76,7 @@ the 3:1 graphic floor. `--good-text` / `--warn-text` / `--bad-text` are the
 text sense at 7:1, and the `.tone-*` classes use only those.
 
 Dark got away with one value for years because a near-black page lets a
-vivid colour clear 7:1 by accident. Light cannot: walking all three to 7:1
+vivid color clear 7:1 by accident. Light cannot: walking all three to 7:1
 against white produced a muddy brown gauge band, and leaving them vivid
 made them unreadable as text. `--bad`/`--bad-text` already worked this way;
 the light scheme is what forced the other two to follow.

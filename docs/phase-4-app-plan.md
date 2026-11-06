@@ -43,7 +43,7 @@ The flow:
    discovery. The AP never returns unless provisioning is cleared.
 
 **Improv Serial** is worth adding alongside — the Nabu Casa standard that
-ESPHome uses, so Home Assistant owners already recognise it. It provisions
+ESPHome uses, so Home Assistant owners already recognize it. It provisions
 over USB from a browser using Web Serial, which makes it the right tool at
 flash time and the right recovery path when someone forgets which network a
 device is on. Small protocol, transport already present.
@@ -201,7 +201,7 @@ that silently failed should look like one, not like a success that reverts
 30 seconds later.
 
 `tests/test_app.py` — 16 checks against the live broker and the live fan,
-serving `app/build` so it tests the deployable artefact. Boost round-trip
+serving `app/build` so it tests the deployable artifact. Boost round-trip
 is confirmed by an independent subscriber rather than by the app's own
 screen.
 

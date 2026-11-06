@@ -402,13 +402,13 @@ if boosted:
 
     api("/api/services/button/press",
         {"entity_id": eid("button", "cancel_boost")})
-    cancelled = False
+    canceled = False
     for _ in range(8):
         time.sleep(2)
         if api("/api/states/" + S)["state"] != "BOOST":
-            cancelled = True
+            canceled = True
             break
-    check("cancel returns to automatic", cancelled)
+    check("cancel returns to automatic", canceled)
     # Cancel returns control to the automatic logic -- it does not mean
     # "stop". With the room light on, automatic correctly keeps running.
     # Asserting the fan stops here fails whenever the lights happen to be

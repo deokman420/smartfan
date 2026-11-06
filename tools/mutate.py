@@ -8,7 +8,7 @@ constrain -- which is where today's bugs were living.
 
 Prints every survivor with its location and the exact change, so each one
 can be judged by hand. Equivalent mutants (changes that cannot alter
-behaviour) are expected and are the reviewer's job to discard.
+behavior) are expected and are the reviewer's job to discard.
 """
 import ast
 import copy

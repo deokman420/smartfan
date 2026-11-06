@@ -35,7 +35,7 @@ shape `ota.py` already uses for firmware, for the same reason.
 Moving the fan to a new broker cannot strand it: WiFi stays up and the app
 is still reachable over HTTP whatever the answer. So the ladder argument
 does not apply -- but the button does, for the same reason it applies to the
-WiFi. Being on someone's network is not a licence to point their fan at your
+WiFi. Being on someone's network is not a license to point their fan at your
 broker, and the credentials in play are the ones that reach Home Assistant.
 
 It is built the same way anyway. A rejected broker leaves no trace and needs

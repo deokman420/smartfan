@@ -40,7 +40,7 @@ def hist(tmp, per_file=None):
     h = store.History(Cfg, log=lambda *a: None, where=tmp)
     if per_file is not None:
         # A real attribute, set small so a rotation costs five rows instead
-        # of a thousand. Rotation is the behaviour under test, not the size.
+        # of a thousand. Rotation is the behavior under test, not the size.
         h.per_file = per_file
     return h
 
