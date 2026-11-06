@@ -6,6 +6,14 @@ constrain -- which is where today's bugs were living.
 
     python mutate.py <target.py> <suite.py> [--limit N]
 
+IT REWRITES THE TARGET IN PLACE, one mutant at a time, and restores it at
+the end. So do not run it in the background and do not commit while it is
+running: `git add -A` mid-run stages a mutant, and killing the process
+leaves the file truncated at whatever mutant was in it. Both nearly
+happened on 5 Nov; the second one did, and was caught only by checking
+`git diff --stat` before committing. If it is ever interrupted, restore the
+target with `git checkout --` before anything else.
+
 Prints every survivor with its location and the exact change, so each one
 can be judged by hand. Equivalent mutants (changes that cannot alter
 behavior) are expected and are the reviewer's job to discard.
