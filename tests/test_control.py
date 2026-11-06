@@ -2541,13 +2541,26 @@ check("an unknown mode is refused", ok is False, repr(why))
 # PAIRED THRESHOLDS. Whichever was written wins and the other moves out of
 # its way, because refusing the write would tell the user no without saying
 # which other value blocked them.
+# Asserting only that the order still holds is NOT enough, and mutation
+# testing is what showed it: `if changed == hi_name` picks WHICH of the two
+# moves, and inverting it still leaves rise above fall -- by overriding the
+# number the user just typed instead of its partner. Both tests below passed
+# against that mutant. So each one now pins the written value as well.
 st = fresh_settings()
 st.set("RH_RISE_ON", 8.0)
 st.set("RH_FALL_OFF", 3.0)
-st.set("RH_FALL_OFF", 7.5)             # pushed up under the rise
+# 7.8, not 7.5: the gap is 0.5, so 7.5 under an 8.0 rise ALREADY satisfies
+# it and nothing is supposed to move. The original test passed on a pair it
+# never actually disturbed.
+st.set("RH_FALL_OFF", 7.8)             # pushed up under the rise
 check("writing the lower threshold pushes the upper one out of the way",
       st.RH_RISE_ON > st.RH_FALL_OFF,
       "rise=%s fall=%s" % (st.RH_RISE_ON, st.RH_FALL_OFF))
+check("...and the value just written is the one that is KEPT",
+      st.RH_FALL_OFF == 7.8,
+      "fall=%s, wanted 7.8" % st.RH_FALL_OFF)
+check("...while its partner is the one that moved",
+      st.RH_RISE_ON > 8.0, "rise=%s, was 8.0" % st.RH_RISE_ON)
 
 st = fresh_settings()
 st.set("RH_RISE_ON", 8.0)
@@ -2556,6 +2569,29 @@ st.set("RH_RISE_ON", 3.2)              # squeezed down onto the fall
 check("writing the upper threshold pushes the lower one down",
       st.RH_RISE_ON > st.RH_FALL_OFF,
       "rise=%s fall=%s" % (st.RH_RISE_ON, st.RH_FALL_OFF))
+check("...and here too the written value is the one that survives",
+      st.RH_RISE_ON == 3.2,
+      "rise=%s, wanted 3.2" % st.RH_RISE_ON)
+check("...with the partner pushed down below it",
+      st.RH_FALL_OFF < 3.0, "fall=%s, was 3.0" % st.RH_FALL_OFF)
+
+# EXACTLY the gap apart is already legal, so nothing may be moved.
+#
+# This one does NOT kill the `>=` -> `>` mutant on that line, and the
+# reason is worth writing down rather than leaving as a puzzle for whoever
+# reads the survivor list next. Taking the branch at the boundary sets
+# `lo = hi - gap`, which at exactly the gap is the value `lo` already
+# holds -- so the mutant does the work and changes nothing. Verified by
+# hand-mutating and re-running: rise=3.5 fall=3.0 either way. It is an
+# equivalent mutant, not a hole. The test is kept because the behaviour is
+# worth pinning on its own account.
+gap = dict((h, g) for h, l, g in settings.ORDERED)["RH_RISE_ON"]
+st = fresh_settings()
+st.set("RH_FALL_OFF", 3.0)
+st.set("RH_RISE_ON", 3.0 + gap)
+check("a pair exactly the minimum gap apart is left alone",
+      st.RH_RISE_ON == 3.0 + gap and st.RH_FALL_OFF == 3.0,
+      "rise=%s fall=%s gap=%s" % (st.RH_RISE_ON, st.RH_FALL_OFF, gap))
 
 # ...and the ordering survives a round trip through flash, or it is only
 # true until the next boot.
@@ -2564,6 +2600,24 @@ again = settings.Settings(log=lambda *a: None)
 check("the order still holds after reloading from flash",
       again.RH_RISE_ON > again.RH_FALL_OFF,
       "rise=%s fall=%s" % (again.RH_RISE_ON, again.RH_FALL_OFF))
+
+# A TRAP RATHER THAN A BUG, left by mutation testing. set() rounds with
+# `isinstance(getattr(cfg, name, 0), int) and step >= 1`, and turning that
+# `and` into an `or` kills nothing -- because today no float setting has a
+# step of 1 or more, so the two halves never disagree. The day someone adds
+# one, every write to it is silently rounded to a whole number and the
+# clamping tests above all still pass. This fails the moment that pairing
+# appears, which is the only moment it matters.
+floaty = []
+for _name, _spec in settings.SPECS.items():
+    if _spec[0] != "number":
+        continue
+    _step = _spec[3]
+    _cur = getattr(cfg, _name, None)
+    if isinstance(_cur, float) and _step >= 1:
+        floaty.append("%s (step %s, default %s)" % (_name, _step, _cur))
+check("no float setting has a whole-number step, which would round it away",
+      not floaty, "; ".join(floaty) or "none")
 
 # A zero upper bound is the documented off switch and must not be dragged
 # up by enforcing a gap against it -- that would arm odor triggering at a
