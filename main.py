@@ -1202,8 +1202,19 @@ class Controller:
 
         # state == RUN
         ran = self.fan_seconds()
-        if self.rpm >= cfg.MIN_RPM:
-            self.fan_faults = 0          # a healthy run resets the tally
+        # A healthy run resets the tally -- but only a run that has PROVED
+        # healthy, not one that has merely started. The first tach window
+        # after a retry is the spin-up, before check_fan_health may judge
+        # it, and a failing fan turns for those seconds and then dies. On
+        # 8 Nov this reset on that window every time: twelve stalls between
+        # 01:35 and 06:55, the tally never past 1/3, and a dying motor
+        # restarted all night by the very latch meant to stop that. The
+        # stall check runs on every sample past SPINUP_S, so a run that has
+        # reached FAN_HEALTHY_S has been above MIN_RPM the whole way.
+        # getattr: an OTA batch can land this main.py before its config.py.
+        if (ran >= getattr(cfg, "FAN_HEALTHY_S", 60)
+                and self.rpm >= cfg.MIN_RPM):
+            self.fan_faults = 0
         self._refresh_run_reason(ran)
         if ran >= self.st.MAX_RUN_S:
             # Latch. Without this the cap protects nothing: IDLE immediately

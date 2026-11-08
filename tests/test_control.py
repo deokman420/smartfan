@@ -2798,6 +2798,131 @@ check("a disabled upper bound is not armed by writing its partner",
       st.VOC_RISE_ON == 0, "%s" % st.VOC_RISE_ON)
 
 
+print("\nthe stall tally\n")
+
+# 8 Nov, 01:35-06:55: a fan that spins up and then dies, retried about
+# twelve times overnight without ever latching. The RUN branch cleared
+# the tally on the spin-up window -- the one tach reading
+# check_fan_health is not yet allowed to judge -- so each retry started
+# at zero again. This replays that shape: each retry turns for one sample
+# and is dead on the next.
+
+
+def spin_then_die(c):
+    """One retry of a dying fan. Leaves the controller wherever it fell."""
+    FAN_RPM[0] = 4200
+    step(c)                         # IDLE -> RUN, fan driven
+    advance(2)
+    step(c)                         # the spin-up window: it turns
+    FAN_RPM[0] = 0
+    advance(2)
+    step(c)                         # past SPINUP_S: it has died
+
+
+c = build()
+c.rh = c.baseline + cfg.RH_RISE_ON + 2      # a reason to run that persists
+for n in range(cfg.MAX_FAN_FAULTS):
+    if n:
+        advance(cfg.FAULT_RETRY_S + 1)
+        step(c)                     # FAULT -> IDLE, "retrying after stall"
+    spin_then_die(c)
+check("a fan that spins up then dies is counted every time",
+      c.fan_faults == cfg.MAX_FAN_FAULTS,
+      "%d/%d" % (c.fan_faults, cfg.MAX_FAN_FAULTS))
+check("...and latches at the limit",
+      c.state == main.FAULT and "LATCHED" in c.fault_reason,
+      c.fault_reason[:48])
+advance(cfg.FAULT_RETRY_S * 3)
+step(c, 3)
+check("...and a latched stall is not retried on a timer",
+      c.state == main.FAULT and c.fan.value() == 0,
+      "%s fan=%d" % (c.state, c.fan.value()))
+
+# The other half: a run that genuinely recovers must still clear the
+# tally, or two stalls a week apart would add up to a latch.
+c = build()
+c.rh = c.baseline + cfg.RH_RISE_ON + 2
+spin_then_die(c)
+check("one stall is counted", c.fan_faults == 1, "%d" % c.fan_faults)
+advance(cfg.FAULT_RETRY_S + 1)
+step(c)                             # retry
+FAN_RPM[0] = 4200
+step(c)                             # IDLE -> RUN
+advance(cfg.FAN_HEALTHY_S - 4)
+step(c)
+check("a run that is still young keeps the tally",
+      c.fan_faults == 1 and c.state == main.RUN,
+      "%d after %.0fs" % (c.fan_faults, c.fan_seconds()))
+advance(5)
+step(c)
+check("a run healthy past FAN_HEALTHY_S clears it",
+      c.fan_faults == 0 and c.state == main.RUN,
+      "%d after %.0fs" % (c.fan_faults, c.fan_seconds()))
+
+
+print("\nthe runtime day\n")
+
+# "Runtime today" rolled over at UTC midnight -- 19:00 in New York -- because
+# MicroPython's localtime() IS UTC. Checked here against the host's own tz
+# database, every hour for seven years, which covers both transitions of
+# every year and the hour either side of each.
+import telemetry                                     # noqa: E402
+from datetime import datetime, timezone              # noqa: E402
+try:
+    from zoneinfo import ZoneInfo                    # noqa: E402
+    _zones = [("America/New_York", -5, "us"), ("America/Los_Angeles", -8, "us"),
+              ("Europe/Berlin", 1, "eu"), ("Europe/London", 0, "eu"),
+              ("Asia/Kolkata", 5.5, "")]
+    for _ in _zones:
+        ZoneInfo(_[0])
+except Exception:                                    # no tz database here
+    _zones = []
+start = int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp())
+for name, std, rule in _zones:
+    zi = ZoneInfo(name)
+    bad = []
+    for unix in range(start, start + 7 * 366 * 86400, 3600):
+        want = int(datetime.fromtimestamp(unix, zi).utcoffset().total_seconds())
+        got = telemetry.utc_offset_s(unix, std, rule)
+        if got != want:
+            bad.append((unix, got, want))
+    check("the UTC offset matches the tz database: %s" % name, not bad,
+          str(bad[:1]))
+if not _zones:
+    check("the tz database is here to check against", False, "no zoneinfo")
+
+# 8 Nov 2026 (EST): 18:59 and 19:01 are the same local day -- the old code
+# put them a day apart. 23:59 and 00:01 are not.
+def _est(h, m, d=8):
+    return int(datetime(2026, 11, d, h, m, tzinfo=timezone.utc).timestamp()) + 5 * 3600
+
+
+ld = lambda u: telemetry.local_day(u, -5, "us")      # noqa: E731
+check("19:00 local is not a new day",
+      ld(_est(18, 59)) == ld(_est(19, 1)))
+check("local midnight is",
+      ld(_est(23, 59, 7)) + 1 == ld(_est(0, 1)))
+
+# And roll_day acts on it: the counter survives 19:00 and resets at 00:00.
+snap = telemetry.Snapshot(cfg)
+_real_time = telemetry.time.time
+_now = [_est(18, 0)]
+telemetry.time.time = lambda: _now[0] - telemetry._EPOCH_OFFSET
+try:
+    snap.roll_day()
+    snap._run_ms = 30 * 60000
+    _now[0] = _est(19, 30)
+    snap.roll_day()
+    check("the runtime counter survives 19:00",
+          snap.runtime_min() == 30.0, "%s min" % snap.runtime_min())
+    _now[0] = _est(0, 5, 9)
+    snap.roll_day()
+    check("...and resets after local midnight",
+          snap.runtime_min() == 0.0, "%s min" % snap.runtime_min())
+finally:
+    telemetry.time.time = _real_time
+
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)

@@ -436,6 +436,9 @@ STUCK_S = 12
 # healthy. Back off, retry a few times, then latch and wait for a human.
 FAULT_RETRY_S  = 300   # wait this long before retrying a stalled fan
 MAX_FAN_FAULTS = 3     # consecutive stalls before latching for good
+FAN_HEALTHY_S  = 60    # a run must last this long above MIN_RPM before it
+                       # clears the stall tally. Far past SPINUP_S, because
+                       # a failing fan spins up and THEN dies.
 
 # Power-on self-test. MIN_RPM above is the only thing that notices a fan
 # which has died in the ceiling, and it can only notice while the fan is
@@ -518,6 +521,14 @@ WWW_ROOT       = "www"  # the built app, gzipped, pushed by tools/build_www.py
 #
 # It is the DHCP hostname too, so the router's client list is readable.
 HOSTNAME = "fan"
+
+# --- Local time -------------------------------------------------------
+# The RTC runs on UTC after NTP, and MicroPython has no timezone support, so
+# anything that means "today" needs these. Today that is only the daily
+# runtime counter, which used to roll over at 19:00 here. Standard-time
+# offset in hours (fractions allowed), and "us", "eu" or "" for DST.
+UTC_OFFSET_H = -5
+DST_RULE     = "us"
 
 # --- Stored history ---------------------------------------------------
 # Without Home Assistant there is no recorder, and the app's own history is

@@ -49,6 +49,68 @@ except AttributeError:
     def _diff(a, b):
         return a - b
 
+# -- local time ---------------------------------------------------------------
+#
+# MicroPython has no timezone. After ntptime.settime() the RTC holds UTC, and
+# time.localtime() simply returns it -- so "today" used to end at UTC
+# midnight, which is 19:00 on the US east coast. Measured 8 Nov: "Runtime
+# today" read 265 min at 07:16, most of it from the previous evening.
+#
+# Pure arithmetic on Unix seconds rather than mktime, because CPython's mktime
+# applies the HOST's zone and the tests would then be testing the laptop.
+
+# Same correction store.py makes: some ports count from 2000, not 1970.
+_EPOCH_OFFSET = 946684800 if time.gmtime(0)[0] == 2000 else 0
+
+
+def _days(y, m, d):
+    """Days from 1970-01-01 to the given civil date (proleptic Gregorian)."""
+    y -= m <= 2
+    era = y // 400
+    yoe = y - era * 400
+    doy = (153 * (m + (-3 if m > 2 else 9)) + 2) // 5 + d - 1
+    doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+    return era * 146097 + doe - 719468
+
+
+def _sunday(y, m, nth):
+    """Day number of the nth Sunday of a month; nth=-1 is the last one."""
+    if nth > 0:
+        first = _days(y, m, 1)
+        return first + (3 - first) % 7 + 7 * (nth - 1)
+    last = _days(y + (m == 12), m % 12 + 1, 1) - 1
+    return last - (last + 4) % 7       # day 0 was a Thursday
+
+
+def utc_offset_s(unix, std_h, rule):
+    """Seconds to add to UTC at `unix` for this zone, DST included.
+
+    `rule` is "us" (second Sunday of March to first Sunday of November,
+    02:00 local), "eu" (last Sunday of March to last Sunday of October,
+    01:00 UTC), or anything else for no DST.
+    """
+    std = int(std_h * 3600)
+    if rule not in ("us", "eu"):
+        return std
+    z = unix // 86400
+    y = 1970 + z * 400 // 146097
+    while _days(y + 1, 1, 1) <= z:
+        y += 1
+    while _days(y, 1, 1) > z:
+        y -= 1
+    if rule == "us":
+        on = _sunday(y, 3, 2) * 86400 + 7200 - std            # 02:00 standard
+        off = _sunday(y, 11, 1) * 86400 + 7200 - std - 3600   # 02:00 daylight
+    else:
+        on = _sunday(y, 3, -1) * 86400 + 3600
+        off = _sunday(y, 10, -1) * 86400 + 3600
+    return std + (3600 if on <= unix < off else 0)
+
+
+def local_day(unix, std_h, rule):
+    """A day number that ticks over at LOCAL midnight."""
+    return (unix + utc_offset_s(unix, std_h, rule)) // 86400
+
 FW_VERSION = "2c.3"
 
 # Files whose content defines "what build is running". Hashed together into
@@ -246,14 +308,20 @@ class Snapshot:
     def roll_day(self):
         """Reset the daily counter at local midnight, once the clock is sane.
 
+        "Local" is config.UTC_OFFSET_H plus DST_RULE -- the RTC itself is
+        UTC, which is the bug this used to have. See local_day().
+
         Before NTP lands the RTC sits at its power-on default, so yearday is
         meaningless. Accumulate rather than reset until it looks real --
         a wrong reset loses data, a late one only delays it.
         """
-        t = time.localtime()
-        if t[0] < 2024:
+        if time.localtime()[0] < 2024:
             return
-        day = t[7]
+        # getattr, so a telemetry.py pushed over the air ahead of the
+        # config.py that names these keeps working, on UTC as before.
+        day = local_day(int(time.time()) + _EPOCH_OFFSET,
+                        getattr(self.cfg, "UTC_OFFSET_H", 0),
+                        getattr(self.cfg, "DST_RULE", ""))
         if self._run_day is None:
             self._run_day = day
         elif day != self._run_day:
