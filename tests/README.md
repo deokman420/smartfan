@@ -5,6 +5,7 @@ non-zero on failure, so any of them can gate a flash or a deploy.
 
 ```bash
 python tests/test_manifest.py        # host only, no board needed
+python tests/test_sht4x.py           # host only, the SHT4x driver and its CRC
 python tests/test_httpd.py           # host only, no board needed
 python tests/test_device_app.py      # host only, the app with no broker
 python tests/test_appicon.py         # host only, the tab icon and status bar

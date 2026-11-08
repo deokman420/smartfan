@@ -118,7 +118,7 @@ FW_VERSION = "2c.3"
 # network -- without it, the only way to know what an OTA actually put on a
 # device in a ceiling is to go and get it.
 TRACKED = ("main.py", "config.py", "settings.py", "telemetry.py",
-           "light.py", "sgp41.py", "voc.py", "net.py", "mqtt.py", "ringbuf.py",
+           "light.py", "sgp41.py", "sht4x.py", "voc.py", "net.py", "mqtt.py", "ringbuf.py",
            "calibrate.py", "provision.py", "improv.py", "httpd.py",
            "webapi.py", "store.py", "wifi.py")
 
@@ -258,6 +258,34 @@ def _boost_left_min(c):
     return max(0, int((ms + 59999) // 60000))      # round up: 1 s left reads 1
 
 
+def _settle_pair(c):
+    """(ready_s, left_s) for the VOC pixel, or (None, None).
+
+    Asked through getattr. telemetry.py can land in an OTA batch ahead of
+    the sgp41.py that grew settle_left(), and a missing method must not
+    take down the one snapshot every surface reads.
+    """
+    voc = getattr(c, "voc", None)
+    ask = getattr(voc, "settle_left", None) if voc is not None else None
+    if ask is None:
+        return None, None
+    try:
+        pair = ask(0)
+    except Exception:
+        return None, None
+    if not pair:
+        return None, None
+    return pair
+
+
+def _settle_ready(c):
+    return _settle_pair(c)[0]
+
+
+def _settle_left(c):
+    return _settle_pair(c)[1]
+
+
 class Snapshot:
     """What the controller is right now, in one dict. No network needed.
 
@@ -395,6 +423,15 @@ class Snapshot:
             "voc_exc":  (None if voc_exc is None else int(voc_exc)),
             "voc_ok":   (bool(getattr(c.voc, "ok", False))
                          if voc_present else None),
+            # How long the VOC pixel may still refuse a baseline. ready_s is
+            # when the flatness gate is first allowed to look; left_s is when
+            # the ceiling seeds one anyway. Both are None once the pixel has
+            # latched, so a page can tell "still settling" from "settled, but
+            # the room is not quiet enough to learn". Absent on older
+            # firmware; the page then estimates from uptime, which is the
+            # same clock to within the second or two start() takes.
+            "voc_ready_s": _settle_ready(c),
+            "voc_left_s": _settle_left(c),
             # The NOx triple, None-preserving for the same reasons as the
             # VOC one above. There is no nox_ok: both pixels come off one
             # part, so voc_ok already says whether either reading is live.

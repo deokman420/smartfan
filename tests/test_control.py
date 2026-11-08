@@ -878,6 +878,54 @@ check("a restart drops the latch and the evidence with it",
       s3.settled_voc is False and s3.settled_nox is False
       and s3._flat[0].span is None)
 
+# The page's countdown. ready_s is when the gate is allowed to look, and
+# left_s is when the ceiling seeds a baseline anyway. Only the second is a
+# promise: the first just says the window is not full yet.
+clock = sgp41.SGP41(EchoBus(), log=lambda *a: None)
+check("an unstarted sensor has no settle clock", clock.settle_left() is None)
+clock.start()
+ready, left = clock.settle_left()
+check("conditioning is part of the earliest settle, not free",
+      15 * 60 < ready <= 15 * 60 + 10 and left >= 119 * 60,
+      "ready %s left %s" % (ready, left))
+advance(11)
+clock.read(45.0, 22.0)
+ready, left = clock.settle_left()
+check("the fifteen minutes start at the first reading",
+      ready == 15 * 60, "ready %s left %s" % (ready, left))
+advance(5 * 60)
+clock.read(45.0, 22.0)
+ready, left = clock.settle_left()
+check("one finished block leaves ten minutes",
+      ready == 10 * 60, "ready %s" % ready)
+advance(5 * 60)
+clock.read(45.0, 22.0)
+ready, left = clock.settle_left()
+check("two finished blocks leave five minutes",
+      ready == 5 * 60 and clock.settled_voc is False, "ready %s" % ready)
+# A gap does not close more than the one block the next reading finishes.
+# The loop samples every couple of seconds, so this is the shape it sees.
+advance(5 * 60)
+clock.read(45.0, 22.0)
+check("a full quiet window settles, and the countdown stops",
+      clock.settled_voc is True and clock.settle_left() is None,
+      "settled %s" % clock.settled_voc)
+
+# And the snapshot actually carries it. The page cannot invent this from
+# "baseline is null": that is also a settled pixel waiting on a noisy room.
+shown = build()
+shown.voc = sgp41.SGP41(EchoBus(), log=lambda *a: None)
+shown.voc.start()
+got = shown.snap.payload(shown, 0)
+check("the settle clock is published while the pixel is waiting",
+      got.get("voc_ready_s") is not None and got.get("voc_left_s") is not None,
+      "ready %s left %s" % (got.get("voc_ready_s"), got.get("voc_left_s")))
+shown.voc._settled[0] = True
+got = shown.snap.payload(shown, 0)
+check("a settled pixel publishes no countdown",
+      got.get("voc_left_s") is None and got.get("voc_ready_s") is None,
+      "%s / %s" % (got.get("voc_left_s"), got.get("voc_ready_s")))
+
 # Compensation ticks, and the clamp that stops a nonsense reading biasing
 # every sample after it.
 check("ticks default to 50 %RH / 25 C when climate is absent",
@@ -1579,6 +1627,71 @@ c = build()
 c.prov = FakeProv(False)
 check("a closed window leaves the state's pattern alone",
       pattern(c) == SOLID_GREEN)
+
+# The VOC settle gate, after LEARN's minute. A solid green used to cover
+# both "the odor pixel has finished" and "it may still be warming", and
+# those are hours apart. The pulse is a shape, not a slower LEARN: one
+# flash, then a long dark. Sampled on its own grid, the way the WiFi
+# window is, because two samples 400 ms apart cannot see a 2.4 s cycle.
+
+
+class _Gate:
+    def __init__(self, settled, ok=True):
+        self.settled_voc = settled
+        self.ok = ok
+
+
+def pulse(c, slots=12, slot_ms=200):
+    c.button.held_s = lambda: 0.0
+    period = slots * slot_ms
+    CLOCK[0] += (period - CLOCK[0] % period) % period
+    out = []
+    reds = set()
+    for _ in range(slots):
+        c.drive_outputs()
+        out.append("1" if c.led_ok.value() else "0")
+        reds.add(c.led_run.value())
+        CLOCK[0] += slot_ms
+    return "".join(out), reds
+
+
+c = build()
+c.state = main.IDLE
+c.voc = _Gate(False)
+settling, reds = pulse(c)
+check("an unsettled VOC pixel flashes green once per cycle",
+      settling == "110000000000", settling)
+check("...and leaves the red led dark, so it is not a fault or a run",
+      reds == {0}, "red saw %s" % sorted(reds))
+
+c = build()
+c.state = main.LEARN
+c.voc = _Gate(False)
+learn_beat, _ = pulse(c)
+check("...LEARN's even blink is not that flash",
+      learn_beat != settling and learn_beat.count("1") != settling.count("1"),
+      learn_beat)
+
+c = build()
+c.state = main.IDLE
+c.voc = _Gate(True)
+check("a settled VOC pixel returns to solid green",
+      pattern(c) == SOLID_GREEN, says(pattern(c)))
+
+c = build()
+c.voc = _Gate(False, ok=False)
+check("a stood-down sensor does not pulse forever",
+      pattern(c) == SOLID_GREEN, says(pattern(c)))
+
+c = build()
+check("no odor sensor stays solid green",
+      pattern(c) == SOLID_GREEN, says(pattern(c)))
+
+c = build()
+c.state = main.RUN
+c.voc = _Gate(False)
+check("a run keeps the red led while the pixel is still settling",
+      pattern(c) == SOLID_RED, says(pattern(c)))
 
 # -- why the fan is running, while it is running ---------------------------
 #

@@ -344,6 +344,50 @@ class SGP41:
         """
         return self._settled[1]
 
+    def settle_left(self, index=0):
+        """Seconds until this pixel may settle, and until it will.
+
+        ``(ready_s, left_s)`` while the pixel is still waiting, or None once
+        it has latched, the sensor has stood down, or start() was never
+        called. ``ready_s`` is when three blocks will exist, so the flatness
+        gate is allowed to fire. It is 0 once that window is full. It is not
+        a promise the pixel will be flat then: a ramp fails the gate on
+        every full window until it actually stops. ``left_s`` is the ceiling.
+        That one is a promise. The baseline is seeded then whether or not
+        the reading ever went flat.
+        """
+        if index not in (0, 1) or not self.ok or self._ceiling_at is None:
+            return None
+        if self._settled[index]:
+            return None
+        now = time.ticks_ms()
+        left_ms = time.ticks_diff(self._ceiling_at, now)
+        if left_ms < 0:
+            left_ms = 0
+        flat = self._flat[index]
+        have = len(flat._blocks)
+        if have >= _FLAT_BLOCKS:
+            ready_ms = 0
+        elif flat._since is None:
+            # No sample yet. The window starts at the first reading, which
+            # is after conditioning. Counting only the blocks would tell
+            # the page the pixel can settle fifteen minutes from a heater
+            # that is still in its first ten seconds.
+            cond = 0
+            if self._until is not None:
+                cond = time.ticks_diff(self._until, now)
+                if cond < 0:
+                    cond = 0
+            ready_ms = cond + _FLAT_BLOCKS * _FLAT_BLOCK_MS
+        else:
+            age = time.ticks_diff(now, flat._since)
+            if age < 0:
+                age = 0
+            ready_ms = (_FLAT_BLOCKS - have) * _FLAT_BLOCK_MS - age
+            if ready_ms < 0:
+                ready_ms = 0
+        return (ready_ms // 1000, left_ms // 1000)
+
     def _check_settled(self, now):
         """Latch each pixel the first time it looks settled.
 

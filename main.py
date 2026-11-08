@@ -588,6 +588,20 @@ class Controller:
             # set_state(FAULT): see __init__.
             print("voc: read failed (%s)" % e)
 
+    def _voc_settling(self):
+        """Is the VOC settle gate still waiting on the element?
+
+        Distinct from _voc_learning(), which asks whether the room is quiet
+        enough to trust. This asks only whether the pixel has gone flat, or
+        the ceiling has given up and latched it. The latch is what makes the
+        pulse stop: an event must not bring it back, or IDLE would flash
+        every time the room smelled.
+        """
+        voc = self.voc
+        if voc is None or not getattr(voc, "ok", False):
+            return False
+        return not getattr(voc, "settled_voc", True)
+
     def _voc_learning(self):
         """Is the room quiet enough, and the sensor warm enough, to learn?
 
@@ -1498,8 +1512,8 @@ class Controller:
             # survive a glance from the doorway, and it does not survive an
             # edit to either period, which could silently merge "building a
             # baseline" with "waiting for a password" and leave both tests
-            # passing. A rhythm survives both. Nothing else here stutters
-            # the green LED, so green-in-twos means one thing only.
+            # passing. A rhythm survives both. The settle pulse below is one
+            # beat, not two, so green-in-twos still means one thing only.
             slot = (time.ticks_ms() // 150) % 8
             self.led_ok.value(1 if slot in (0, 2) else 0)
             self.led_run.value(0)
@@ -1516,6 +1530,20 @@ class Controller:
         elif self.state == RUN:
             self.led_ok.value(0)
             self.led_run.value(1)
+        elif self._voc_settling():
+            # The humidity minute is over and the state is IDLE, which is
+            # otherwise a solid green. The VOC settle gate may still be
+            # open for a long time after that, and a solid green would say
+            # the odor pixel had finished when it had not.
+            #
+            # One 400 ms flash, then two seconds dark. LEARN is an even
+            # blink and the WiFi window is two flashes close together; a
+            # single beat is neither. Rate alone was already tried as a
+            # way to tell two green patterns apart, and it does not survive
+            # a glance from the doorway.
+            self.led_run.value(0)
+            slot = (time.ticks_ms() // 200) % 12
+            self.led_ok.value(1 if slot < 2 else 0)
         else:
             self.led_ok.value(1)
             self.led_run.value(0)

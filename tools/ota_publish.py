@@ -34,7 +34,7 @@ ROOT = os.path.dirname(HERE)
 # the recovery path, and a recovery path you can break remotely is not one.
 # Push those over USB when they genuinely change.
 SHIP = ("main.py", "config.py", "settings.py", "telemetry.py", "light.py",
-        "sgp41.py", "voc.py", "net.py", "mqtt.py", "ringbuf.py", "calibrate.py",
+        "sgp41.py", "sht4x.py", "voc.py", "net.py", "mqtt.py", "ringbuf.py", "calibrate.py",
         "provision.py", "improv.py", "httpd.py", "webapi.py", "store.py",
         "wifi.py")
 
