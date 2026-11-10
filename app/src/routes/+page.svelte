@@ -34,7 +34,8 @@
     durMin,
     num,
     int,
-    rssiWord
+    rssiWord,
+    odorSettleLine
   } from '$lib/format.js';
   import { ICONS } from '$lib/icons.js';
   import Nav from '$lib/Nav.svelte';
@@ -185,6 +186,11 @@
   // 0 disables odor triggering, so this is a falsy number on purpose: every
   // reader of it wants "is it armed" and "what is the level" in one value.
   let vocRiseOn = $derived(Number(cfg?.VOC_RISE_ON) || 0);
+  // Null while there is nothing to count: no sensor, a baseline already
+  // learned, or firmware too old to time and no uptime to estimate from.
+  // The fact then stays on the word "Learning", which is what it said
+  // before this clock existed.
+  let odorWait = $derived(odorSettleLine(t));
   // Separate from hasVoc rather than folded into it. Both pixels come off
   // one part, so in a working fleet the two flags agree -- but a board
   // running firmware older than the NOx columns reports voc and not nox,
@@ -865,6 +871,9 @@
                     <span class="fact-v tone-bad">Sensor failed</span>
                   {:else if t.voc == null}
                     <span class="fact-v">No sensor</span>
+                  {:else if odorWait}
+                    <span class="fact-v">{odorWait.value}</span>
+                    <span class="sub">{odorWait.sub}</span>
                   {:else}
                     <span class="fact-v">Learning</span>
                   {/if}
@@ -1052,7 +1061,7 @@
                     <span class="v mono-v">{int(t.voc)}</span>
                     <span class="sub">
                       {t.voc_base == null
-                        ? 'learning baseline'
+                        ? (odorWait ? odorWait.line : 'learning baseline')
                         : `baseline ${int(t.voc_base)} — lower is worse air`}
                     </span>
                   </div>

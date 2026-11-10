@@ -172,7 +172,9 @@ td.n { color: var(--ink-mid); font-size: 13px; }
 .dot.g { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 6px rgba(95,179,122,.5); }
 .dot.r { background: var(--bad); border-color: var(--bad); box-shadow: 0 0 6px rgba(227,95,98,.5); }
 .dot.blink { animation: bl 1s steps(1,end) infinite; }
+.dot.slow { animation: slow 2.4s linear infinite; }
 @keyframes bl { 50% { opacity: .15; box-shadow: none; } }
+@keyframes slow { 0% { opacity: 1; } 17%, 100% { opacity: .15; box-shadow: none; } }
 
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap: 16px; }
 .tablewrap { overflow-x: auto; }
@@ -431,7 +433,7 @@ function verdictFor(d) {
 
   if (d.state === 'IDLE')
     return { cls:'ok', h:'Idle and healthy',
-      p:['Fan off, baseline tracking. Green solid. This is where it should sit most of the time.'] };
+      p:['Fan off, baseline tracking. Green is solid once the odor pixel has settled. A single slow flash instead means that pixel is still warming, and the controller is still in IDLE.'] };
 
   if (d.state === 'BOOST')
     return { cls:'ok', h:'Manual boost',
@@ -491,12 +493,13 @@ const LED = (g, r) => '<span class="leds"><span class="dot ' + g + '"></span><sp
 const TREE = {
   start: {
     q: 'What are the two status LEDs doing?',
-    sub: 'Green is GP19, red is GP20. Look for a second or two — blinking runs at about 1.2 Hz.',
+    sub: 'Green is GP19, red is GP20. The fast blink is about 1.2 Hz. A single flash every couple of seconds is a different thing — watch long enough to tell them apart.',
     opts: [
       { t: LED('g','') + 'Green solid, red off', to: 'idle' },
       { t: LED('','') + 'Any pattern — but the fan never stops', to: 'always' },
       { t: LED('','') + 'Inverted — on when it should be off', to: 'inverted' },
-      { t: LED('g blink','') + 'Green blinking, red off', to: 'learn' },
+      { t: LED('g blink','') + 'Green blinking fast, red off', to: 'learn' },
+      { t: LED('g slow','') + 'Green flashes once every couple of seconds', to: 'settling' },
       { t: LED('','r') + 'Red solid, green off', to: 'run' },
       { t: LED('','r blink') + 'Red blinking, green off', to: 'boost' },
       { t: LED('g blink','r blink') + 'Both alternating', to: 'fault' },
@@ -527,10 +530,16 @@ const TREE = {
     li: ['If the bathroom light is on and it still sits in IDLE, your <code>LIGHT_ON</code> threshold is too high. Decode a log line and look at the <code>light=</code> field.',
          'To prove the fan path without waiting for a shower, press the button for a 15-minute boost.'] },
   learn: { a: 'LEARN — first 60 seconds',
-    p: 'It is building the humidity baseline. This always follows a power-up or reset.',
-    li: ['Wait a minute. It should go solid green.',
-         'If it <b>never</b> leaves LEARN, the DHT22 has never returned a reading — there is nothing to set a baseline from. Jump to the sensor branch below.',
+    p: 'It is building the humidity baseline. This always follows a power-up or reset. The blink is fast and even, about 1.2 Hz.',
+    li: ['Wait a minute. The fast blink should stop.',
+         'What follows may be one slow flash every couple of seconds rather than a solid green. That is the odor pixel still warming, not LEARN continuing. It is normal.',
+         'If it <b>never</b> leaves the fast blink, the DHT22 has never returned a reading — there is nothing to set a baseline from. Jump to the sensor branch below.',
          'Note that any <code>mpremote</code> command that soft-resets the board restarts this.'] },
+  settling: { a: 'The odor pixel is still settling',
+    p: 'Humidity has finished. The VOC settle gate has not: the element is still warming, so the odor baseline is not seeded yet. Light and humidity run the fan exactly as they do when the pixel has finished.',
+    li: ['This is one short flash, then about two seconds dark. A fast even blink is LEARN, above, and means something else.',
+         'It goes solid green when the pixel goes flat, or when the two-hour ceiling gives up and seeds anyway. On a cold boot that is often the better part of an hour, not a fault.',
+         'A shower or the light still starts the fan. The red LED takes over while it runs, and the slow flash comes back afterwards if the pixel has not settled yet.'] },
   boost: { a: 'BOOST — manual override',
     p: 'The button was pressed. It will run 15 minutes, or until pressed again.',
     li: ['This is a good way to test the fan path on demand.',

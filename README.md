@@ -121,8 +121,9 @@ Both HTML files are standalone — open them directly in a browser.
 
 | State | LEDs | |
 |---|---|---|
-| LEARN | green blinking | First 60 s, building the *humidity* baseline. The odor baselines seed later, when their pixels settle |
-| IDLE | green solid | Fan off, tracking the baseline |
+| LEARN | green blinking | First 60 s, building the *humidity* baseline. Fast, even blink |
+| IDLE, VOC still settling | green, one slow flash | Humidity is done. The odor pixel has not gone flat yet: one 400 ms flash every 2.4 s. Light and humidity still run the fan |
+| IDLE | green solid | Fan off, and the odor pixel has settled — or there is no odor sensor |
 | RUN | red solid | Fan on — light, humidity and/or odor |
 | BOOST | red blinking | 15-minute manual override |
 | FAULT | alternating | Sensor silent, or fan commanded on but not turning |

@@ -444,7 +444,9 @@ td.m b { color: var(--accent); font-weight: 500; }
 .dot.g { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 7px rgba(95,179,122,.55); }
 .dot.r { background: var(--danger); border-color: var(--danger); box-shadow: 0 0 7px rgba(227,95,98,.5); }
 .dot.blink { animation: bl 1s steps(1, end) infinite; }
+.dot.slow { animation: slow 2.4s linear infinite; }
 @keyframes bl { 50% { opacity: .18; box-shadow: none; } }
+@keyframes slow { 0% { opacity: 1; } 17%, 100% { opacity: .18; box-shadow: none; } }
 .staterow b { font-family: var(--mono); font-size: 12px; color: var(--ink); }
 .staterow span { color: var(--ink-mid); }
 
@@ -786,11 +788,12 @@ footer {
 
 <div class="after">
   <h2>What the LEDs tell you</h2>
-  <p>Two LEDs carry five states, so you can read the controller from the doorway without a serial cable.</p>
+  <p>Two LEDs carry the states, so you can read the controller from the doorway without a serial cable. The slow green flash is not a sixth state: the controller is in IDLE, and the odor pixel has not settled yet.</p>
   <div class="panel" style="max-width:620px">
     <div class="states">
-      <div class="staterow"><span class="leds"><span class="dot g blink"></span><span class="dot"></span></span><div><b>LEARN</b> <span>&mdash; first 60 s, building the humidity baseline</span></div></div>
-      <div class="staterow"><span class="leds"><span class="dot g"></span><span class="dot"></span></span><div><b>IDLE</b> <span>&mdash; fan off, tracking the baseline</span></div></div>
+      <div class="staterow"><span class="leds"><span class="dot g blink"></span><span class="dot"></span></span><div><b>LEARN</b> <span>&mdash; first 60 s, building the humidity baseline. Fast, even blink</span></div></div>
+      <div class="staterow"><span class="leds"><span class="dot g slow"></span><span class="dot"></span></span><div><b>IDLE, settling</b> <span>&mdash; one short green flash every 2.4 s. The odor pixel has not gone flat yet</span></div></div>
+      <div class="staterow"><span class="leds"><span class="dot g"></span><span class="dot"></span></span><div><b>IDLE</b> <span>&mdash; fan off, odor pixel settled, or no odor sensor</span></div></div>
       <div class="staterow"><span class="leds"><span class="dot"></span><span class="dot r"></span></span><div><b>RUN</b> <span>&mdash; fan on, light and/or humidity</span></div></div>
       <div class="staterow"><span class="leds"><span class="dot"></span><span class="dot r blink"></span></span><div><b>BOOST</b> <span>&mdash; 15 min manual override from the button</span></div></div>
       <div class="staterow"><span class="leds"><span class="dot g blink"></span><span class="dot r blink"></span></span><div><b>FAULT</b> <span>&mdash; DHT22 silent, or fan commanded on but not turning</span></div></div>

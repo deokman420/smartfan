@@ -147,6 +147,56 @@ def note(text):
     return {"type": "markdown", "content": text}
 
 
+def odor_settle_card():
+    """When the odor baseline will exist, while it does not.
+
+    The heater starts at boot. The flatness gate cannot fire before three
+    five-minute blocks exist (sgp41._FLAT_BLOCKS), and VOC_SETTLE_MAX_S
+    seeds a baseline at two hours even if the reading never goes flat.
+    Only the second of those is an ETA. Uptime is that clock to within the
+    second or two the sensor takes to start, which is why this card does
+    not wait on a firmware field: the board can be in the ceiling and the
+    cable can be in another room.
+
+    Hidden once a baseline exists. The baseline tile is the answer then,
+    and a countdown beside a learned number would be a second opinion.
+    """
+    up = E["uptime"]
+    base = E["voc_base"]
+    content = (
+        "{%% set up_s = states('%s') %%}\n"
+        "{%% if up_s in ['unknown', 'unavailable', 'none', ''] %%}\n"
+        "Settle time unavailable.\n"
+        "{%% else %%}\n"
+        "{%% set latest = ((120 - (up_s | float)) * 60) | round(0) %%}\n"
+        "{%% set early = ((15 - (up_s | float)) * 60) | round(0) %%}\n"
+        "{%% if latest <= 0 %%}\n"
+        "Past the 2 hour limit. It seeds once the room is quiet.\n"
+        "{%% elif early > 0 %%}\n"
+        "Earliest **{{ (early / 60) | round(0) }} min**, "
+        "by **{{ (latest / 60) | round(0) }} min**.\n"
+        "{%% elif latest >= 5400 %%}\n"
+        "By **{{ latest // 3600 }} h {{ (latest %% 3600) // 60 }} m**. "
+        "Sooner if the reading goes flat.\n"
+        "{%% else %%}\n"
+        "By **{{ (latest / 60) | round(0) }} min**. "
+        "Sooner if the reading goes flat.\n"
+        "{%% endif %%}\n"
+        "{%% endif %%}"
+    ) % up
+    return {
+        "type": "markdown",
+        "content": content,
+        "visibility": [{
+            "condition": "template",
+            "value_template": (
+                "{{ states('%s') in ['unknown', 'unavailable', 'none', ''] }}"
+                % base
+            ),
+        }],
+    }
+
+
 def only_when(card, entity, state):
     card = dict(card)
     card["visibility"] = [{"condition": "state", "entity": entity,
@@ -287,6 +337,7 @@ CONFIG = {
                 tile(E["voc"], "Raw"),
                 tile(E["voc_base"], "Baseline"),
                 tile(E["voc_ok"], "Sensor", icon="mdi:scent"),
+                odor_settle_card(),
                 {
                     "type": "history-graph",
                     "title": "Odor against its baseline",
