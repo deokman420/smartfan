@@ -1,0 +1,2353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Prototype V2 build sheet: mains into a Mean Well IRM-10-12, high-side IRF9540 switching a Noctua NF-F12, a Recom buck into Pico VSYS, and the V1 sensor wiring unchanged.">
+<link rel="icon" href="data:,">
+<style>
+  html { color-scheme: dark; }
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>V2 Build Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: dark;
+
+  /* Same unlit-workbench ground as the V1 sheet, so the two read as a pair. */
+  --bg:        #0d1114;
+  --surface:   #141a1f;
+  --raised:    #1b2329;
+  --line:      #2a343c;
+  --line-soft: #202a31;
+
+  --ink:       #e4ebf0;
+  --ink-mid:   #9fb0bc;
+  --ink-dim:   #7c8d99;
+
+  --accent:    #d9bd96;
+  --accent-dk: #ae815b;
+
+  /* One token per net. On this build the net a wire belongs to is the whole
+     story, so the colors are data, not decoration. */
+  --w-ac:   #ef8a8c;
+  --w-12:   #e08a3c;
+  --w-5:    #e35f62;
+  --w-33:   #e8a33d;
+  --w-gnd:  #8d9ba6;
+  --w-sig:  #78b465;
+  --w-tach: #6fbf8a;
+  --w-pwm:  #6fb0e8;
+  --w-i2c:  #a98ee0;
+
+  --ok:     #5fb37a;
+  --warn:   #e0a33c;
+  --danger: #e35f62;
+
+  --pcb:      #1f4b3a;
+  --pcb-edge: #2f6b52;
+  --metal:    #263038;
+  --metal-ed: #46545f;
+
+  /* Chart series. Validated for the dark surface: lightness band, chroma floor,
+     CVD separation and contrast all pass. Do not "brighten" these by eye. */
+  --s-2000: #c0872c;
+  --s-3000: #4b93d4;
+  --s-ref:  #4f9b5e;
+
+  --r-sm: 3px;
+  --r-md: 7px;
+  --r-lg: 12px;
+
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+}
+
+body { background: var(--bg); color: var(--ink); font-family: var(--body); line-height: 1.5; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 30px 20px 70px; }
+h1, h2, h3 { font-family: var(--cond); line-height: 1.15; margin: 0; }
+code { font-family: var(--mono); font-size: .92em; color: var(--accent); }
+a { color: var(--accent); }
+
+/* ---------- header ---------- */
+header { border-bottom: 1px solid var(--line); padding-bottom: 22px; margin-bottom: 26px; }
+.eyebrow { font-family: var(--mono); font-size: 11.5px; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--ink-dim); margin: 0 0 10px; }
+.eyebrow b { color: var(--accent); font-weight: 600; }
+h1 { font-size: clamp(30px, 5vw, 46px); font-weight: 700; letter-spacing: -.01em; }
+.standfirst { max-width: 76ch; color: var(--ink-mid); font-size: 15.5px; margin: 12px 0 0; }
+.specs { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 0; }
+.specs > div { background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--r-md); padding: 8px 12px; min-width: 116px; }
+.specs dt { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-dim); }
+.specs dd { margin: 2px 0 0; font-family: var(--cond); font-size: 14.5px; font-weight: 600; }
+
+/* ---------- alerts ---------- */
+.alerts { display: grid; gap: 10px; margin-bottom: 30px; }
+.alert { display: flex; gap: 12px; background: var(--surface);
+  border: 1px solid var(--line); border-left: 3px solid var(--danger);
+  border-radius: var(--r-md); padding: 12px 15px; }
+.alert.warn { border-left-color: var(--warn); }
+.alert.info { border-left-color: var(--ink-dim); }
+.alert > i { flex: 0 0 auto; width: 15px; height: 15px; border-radius: 50%; margin-top: 3px;
+  background: var(--danger); position: relative; }
+.alert.warn > i { background: var(--warn); }
+.alert.info > i { background: var(--ink-dim); }
+.alert > i::after { content: "!"; position: absolute; inset: 0; color: #0d1114;
+  font: 700 11px/15px var(--cond); text-align: center; }
+.alert.info > i::after { content: "i"; }
+.alert h2 { font-size: 14.5px; font-weight: 700; }
+.alert p { margin: 4px 0 0; color: var(--ink-mid); font-size: 13.5px; }
+.alert strong { color: var(--ink); }
+
+/* ---------- sections ---------- */
+.sec { margin: 0 0 38px; }
+.sec-head { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-end;
+  justify-content: space-between; margin-bottom: 14px; }
+.sec-head h2 { font-size: 23px; font-weight: 700; }
+.sec-head p { margin: 6px 0 0; color: var(--ink-mid); font-size: 13.5px; max-width: 82ch; }
+.tag { font-family: var(--mono); font-size: 11px; color: var(--accent);
+  background: var(--raised); border: 1px solid var(--line); border-radius: 100px;
+  padding: 4px 11px; white-space: nowrap; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: 14px; }
+.scrollx { overflow-x: auto; }
+
+/* ---------- control strip ---------- */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  padding: 0 4px 12px; border-bottom: 1px solid var(--line-soft); margin-bottom: 12px; }
+.states { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 100px;
+  overflow: hidden; background: var(--bg); }
+.states button { appearance: none; border: 0; background: transparent; cursor: pointer;
+  font: 600 12px/1 var(--cond); letter-spacing: .02em; color: var(--ink-mid);
+  padding: 9px 14px; border-right: 1px solid var(--line); }
+.states button:last-child { border-right: 0; }
+.states button[aria-pressed="true"] { background: var(--accent); color: #0d1114; }
+.states button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ctl-label { font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-dim); }
+.toggles { display: flex; gap: 14px; flex-wrap: wrap; margin-left: auto; }
+.toggles label { display: inline-flex; gap: 6px; align-items: center;
+  font-size: 12.5px; color: var(--ink-mid); cursor: pointer; }
+.toggles input { accent-color: var(--accent-dk); }
+.statenote { font-size: 12.5px; color: var(--ink-mid); padding: 0 4px 12px;
+  margin: -4px 0 4px; max-width: 92ch; }
+.statenote b { color: var(--accent); font-family: var(--cond); }
+
+/* ---------- svg shared behaviour ---------- */
+svg.figure { display: block; width: 100%; height: auto; min-width: 820px; }
+svg.figure text { font-family: var(--mono); fill: var(--ink-mid); }
+.lbl { font-size: 10px; fill: var(--ink-mid); }
+.lbl-ink { font-size: 11px; fill: var(--ink); }
+.lbl-dim { font-size: 9.5px; fill: var(--ink-dim); }
+.lbl-val { font-size: 10px; }
+
+.part { cursor: pointer; }
+.part .hit { stroke: transparent; stroke-width: 16; fill: none; }
+.part .hitbox { fill: transparent; }
+.figure .halo { opacity: 0; }
+.part:hover .halo, .part:focus-visible .halo, .part.picked .halo { opacity: .3; }
+.part:focus { outline: none; }
+.part:focus-visible .halo { opacity: .45; }
+.part.picked .halo { opacity: .42; }
+
+/* Focus modes. Dimming is done on the group, so a wire keeps its own color
+   and only loses weight -- recoloring it would break the net legend. */
+svg.dimming .grp { opacity: .13; }
+svg.dimming .grp.on { opacity: 1; }
+svg.dimming .frame { opacity: .45; }
+.vlayer.off { display: none; }
+.vtag rect.plate { fill: var(--bg); opacity: .88; }
+.vtag text { font-size: 10px; }
+
+/* ---------- legend / key ---------- */
+.key { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center;
+  border-top: 1px solid var(--line-soft); margin-top: 12px; padding-top: 11px;
+  font-size: 12px; color: var(--ink-dim); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.legend button { appearance: none; cursor: pointer; display: inline-flex; gap: 6px;
+  align-items: center; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 100px; padding: 4px 10px 4px 7px;
+  font: 500 11.5px var(--body); color: var(--ink-mid); }
+.legend button b { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.legend button[aria-pressed="true"] { border-color: var(--accent); color: var(--ink); }
+.keynote { max-width: 72ch; }
+
+/* ---------- inspect panel ---------- */
+.inspect { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 13px;
+  min-height: 150px; }
+.hintline { color: var(--ink-dim); font-size: 13px; margin: 0; }
+.ihead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin-bottom: 11px; }
+.ihead h3 { font-size: 17.5px; font-weight: 700; }
+.isub { font-family: var(--mono); font-size: 11.5px; color: var(--ink-dim); }
+.iwhere { font-family: var(--mono); font-size: 10.5px; color: var(--accent-dk);
+  border: 1px solid var(--line); border-radius: 100px; padding: 2px 9px; }
+.ihaz { font-family: var(--cond); font-weight: 700; font-size: 10.5px; letter-spacing: .08em;
+  text-transform: uppercase; color: #0d1114; background: var(--danger);
+  border-radius: 100px; padding: 3px 9px; }
+.icols { display: grid; grid-template-columns: minmax(230px, 310px) 1fr; gap: 20px 28px; }
+dl.meter { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 0 14px;
+  align-content: start; font-size: 13px; }
+dl.meter dt { color: var(--ink-dim); padding: 4px 0; border-bottom: 1px solid var(--line-soft); }
+dl.meter dd { margin: 0; padding: 4px 0; text-align: right; font-family: var(--mono);
+  font-size: 12px; color: var(--ink); border-bottom: 1px solid var(--line-soft); }
+dl.meter dd.live { color: var(--accent); }
+.prose p { margin: 0 0 9px; font-size: 13.5px; color: var(--ink-mid); max-width: 70ch; }
+.prose p:last-child { margin-bottom: 0; }
+.prose .tag2 { display: block; font-family: var(--mono); font-size: 9.5px; letter-spacing: .11em;
+  text-transform: uppercase; color: var(--ink-dim); margin-bottom: 2px; }
+.prose .bad { color: #f0a5a7; }
+.prose .bad .tag2 { color: var(--danger); }
+.prose b, .prose strong { color: var(--ink); }
+.isteps { margin-top: 12px; font-size: 12.5px; color: var(--ink-dim); }
+.isteps button { appearance: none; cursor: pointer; background: var(--raised);
+  border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--accent);
+  font: 500 11.5px var(--mono); padding: 2px 8px; margin: 0 3px; }
+.isteps button:hover { border-color: var(--accent-dk); }
+
+/* ---------- build order ---------- */
+.work { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 26px; }
+.progress { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.progress #count { font-family: var(--mono); font-size: 12px; color: var(--ink-mid);
+  min-width: 62px; }
+.bar { flex: 1; height: 5px; background: var(--raised); border-radius: 100px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent);
+  transition: width .22s ease; }
+.ghost { appearance: none; cursor: pointer; background: transparent; color: var(--ink-dim);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  font: 500 11.5px var(--body); padding: 4px 10px; }
+.ghost:hover { color: var(--ink); border-color: var(--accent-dk); }
+.hint { font-size: 12.5px; color: var(--ink-dim); margin: 0 0 16px; }
+
+.group { margin-bottom: 20px; }
+.group > h3 { font-size: 16px; font-weight: 700; }
+.group .why { margin: 5px 0 10px; font-size: 13px; color: var(--ink-mid); max-width: 74ch; }
+.stage { display: flex; align-items: center; gap: 8px; font-family: var(--mono);
+  font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-dim);
+  margin: 0 0 8px; }
+.stage span { border: 1px solid var(--line); border-radius: 100px; padding: 2px 8px; }
+.stage span.live { border-color: var(--danger); color: #f0a5a7; }
+ol.steps { list-style: none; margin: 0; padding: 0; }
+li.step { display: grid; grid-template-columns: 26px 22px 1fr; gap: 9px; align-items: start;
+  padding: 8px 10px 8px 6px; border-radius: var(--r-md); border: 1px solid transparent;
+  cursor: pointer; }
+li.step + li.step { margin-top: 2px; }
+li.step:hover { background: var(--surface); }
+li.step.sel { background: var(--surface); border-color: var(--accent-dk); }
+li.step .num { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); padding-top: 3px; }
+li.step.sel .num { color: var(--accent); }
+.chk { width: 19px; height: 19px; margin-top: 1px; border: 1.5px solid var(--line);
+  border-radius: 5px; background: var(--bg); display: grid; place-items: center; }
+.chk svg { width: 12px; height: 12px; opacity: 0; }
+li.step.done .chk { background: var(--accent); border-color: var(--accent); }
+li.step.done .chk svg { opacity: 1; }
+li.step.done .main { color: var(--ink-dim); text-decoration: line-through;
+  text-decoration-color: var(--line); }
+.main { font-size: 13.5px; }
+.main b { color: var(--accent); font-weight: 600; }
+.note { margin: 3px 0 0; font-size: 12.5px; color: var(--ink-dim); max-width: 70ch; }
+.note.flag { color: #f0a5a7; }
+.note code { color: var(--accent-dk); }
+
+.panel { background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 15px 17px; }
+.panel h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.panel .lead { margin: 0 0 8px; font-size: 13px; color: var(--ink-mid); }
+.panel ul { margin: 0; padding-left: 17px; }
+.panel li { font-size: 13px; color: var(--ink-mid); margin-bottom: 7px; }
+.panel li:last-child { margin-bottom: 0; }
+.panel strong { color: var(--ink); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+
+/* ---------- tables ---------- */
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line-soft);
+  vertical-align: top; }
+th { font-family: var(--cond); font-size: 12px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--ink-dim); border-bottom-color: var(--line); }
+td.m { font-family: var(--mono); font-size: 12px; color: var(--ink-mid); }
+tr.danger td:first-child { color: #f0a5a7; }
+td b { color: var(--accent); }
+.swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  margin-right: 7px; vertical-align: baseline; }
+
+/* ---------- duty / chart ---------- */
+.duty { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 22px; }
+.slider { margin: 0 0 14px; }
+.slider label { display: block; font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-dim); margin-bottom: 7px; }
+.slider input { width: 100%; accent-color: var(--accent-dk); }
+.readout { display: grid; gap: 8px; }
+.readrow { display: grid; grid-template-columns: 12px 1fr auto; gap: 9px; align-items: baseline;
+  padding-bottom: 7px; border-bottom: 1px solid var(--line-soft); }
+.readrow b.sw { width: 10px; height: 10px; border-radius: 2px; }
+.readrow .nm { font-size: 13px; color: var(--ink-mid); }
+.readrow .vv { font-family: var(--mono); font-size: 14px; color: var(--ink); }
+.readrow .vv small { color: var(--ink-dim); font-size: 11px; }
+.verdict { font-size: 13px; color: var(--ink-mid); margin: 12px 0 0; }
+.verdict b { font-family: var(--cond); font-size: 14px; }
+.verdict.ok b { color: var(--ok); }
+.verdict.warn b { color: var(--warn); }
+.verdict.bad b { color: var(--danger); }
+
+.budget { margin-top: 16px; }
+.budget h3 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.bbar { display: flex; gap: 2px; height: 22px; margin: 10px 0 8px; }
+.bbar > span { display: block; border-radius: 2px; }
+.blegend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ink-dim); }
+.blegend span { display: inline-flex; gap: 6px; align-items: center; }
+.blegend b { width: 9px; height: 9px; border-radius: 2px; }
+
+footer { border-top: 1px solid var(--line); margin-top: 44px; padding-top: 18px;
+  font-size: 12.5px; color: var(--ink-dim); }
+footer p { margin: 0 0 9px; max-width: 100ch; }
+
+@media (max-width: 980px) {
+  .work, .duty, .icols { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Pico 2 W &middot; <b>Prototype V2</b> &middot; designed, nothing bought</p>
+  <h1>V2 Build Sheet</h1>
+  <p class="standfirst">120&nbsp;V AC stops at a module inside the metal box. A Mean Well IRM-10-12 makes 12&nbsp;V for a Noctua NF-F12, a Recom buck makes 5&nbsp;V for the Pico, and the S8050 off the V1 board stops switching the fan&rsquo;s ground and starts driving a high-side MOSFET instead. The button, both LEDs, the LDR and the SHT40 move onto the grille, on two cables. Humidity moves from the DHT22 to an SHT40 on I&sup2;C. <b>Pick a step to isolate its wire; pick a part for its readings; switch the operating state to see what a meter should say at that moment.</b></p>
+  <dl class="specs">
+    <div><dt>Mains</dt><dd>C8 inlet &middot; 2&nbsp;A time&#8209;lag</dd></div>
+    <div><dt>12 V</dt><dd>IRM&#8209;10&#8209;12 &middot; 0.85&nbsp;A</dd></div>
+    <div><dt>Fan</dt><dd>NF&#8209;F12 iPPC&#8209;2000 &middot; 0.1&nbsp;A</dd></div>
+    <div><dt>Switch</dt><dd>IRF9540 &middot; high&#8209;side</dd></div>
+    <div><dt>5 V</dt><dd>R&#8209;78E5.0 &rarr; VSYS 39</dd></div>
+    <div><dt>Humidity</dt><dd>SHT40 &middot; I&sup2;C 0x44</dd></div>
+    <div><dt>Firmware</dt><dd>V1 image + <code>sht4x.py</code></dd></div>
+    <div><dt>Enclosure</dt><dd>Hammond 1590BB</dd></div>
+  </dl>
+</header>
+
+<div class="alerts">
+  <div class="alert info"><i></i><div class="body">
+    <h2>Nothing here is bought yet</h2>
+    <p>This is the wiring half of <code>hardware/v2/prototype-v2.md</code>. Parts and prices are in <code>hardware/v2/shopping-list-v2.html</code>. The V1 breadboard stays as it is &mdash; it is the reference this build has to beat, not a donor to strip. The one part that changes role is the S8050, and so far only on paper.</p>
+    <p><strong>The board is drawn.</strong> <code>hardware/v2</code> is a two&#8209;layer PCB that carries every connection on this sheet as copper, so the steps below are the circuit to check, not wires to run. The wires you still make are on <code>hardware/v2/wiring-v2.html</code>. On 2026&#8209;11&#8209;08 the board changed four things this sheet now follows: mains lands in a screw terminal, <strong>J5</strong>; the fan plugs into a keyed header, <strong>J2</strong>; the LED resistors sit on the anode side; and the button has a 1&nbsp;k&Omega; series resistor, <strong>R9</strong>. Where this sheet and <code>hardware/v2/README.md</code> disagree, the README wins.</p>
+  </div></div>
+  <div class="alert"><i></i><div class="body">
+    <h2>Mains is in this box, and there is no earth pin to land</h2>
+    <p>The cord is a figure&#8209;8, NEMA 1&#8209;15P to IEC C7, into a C8 inlet. <strong>Unplug it before touching the AC end</strong>, and treat the fuse holder as live until the fuse is out. The fuse sits in the hot lead only. The supply is Class&nbsp;II: there is no protective earth, and running a wire from a mains contact to the aluminum box does not create one &mdash; it gives a fault a path into the case.</p>
+  </div></div>
+  <div class="alert"><i></i><div class="body">
+    <h2>This fan&rsquo;s colors are not the V1 colors</h2>
+    <p>On the NF&#8209;A4x10, yellow is tach and red is 5&nbsp;V. On this NF&#8209;F12, <strong>yellow is switched +12&nbsp;V</strong>, <strong>green is tach</strong>, <strong>blue is a 5&nbsp;V PWM input</strong>, and there is no red lead. Copying the V1 sheet onto this fan puts 12&nbsp;V on GP18, which is a destroyed pin.</p>
+  </div></div>
+  <div class="alert warn"><i></i><div class="body">
+    <h2>Two diodes, two bands, two different failures</h2>
+    <p>The <strong>1N5819</strong> band points at the Pico, into <strong>VSYS pin&nbsp;39</strong> &mdash; pin&nbsp;40 is VBUS, the corner by the USB socket, and the buck never lands there. The <strong>1N4148</strong> band sits on the yellow wire; reversed, it shorts 12&nbsp;V to 0&nbsp;V the moment the fan turns on. And the IRF9540&rsquo;s metal tab is the drain, not a heatsink you can screw down: insulate it from the box.</p>
+  </div></div>
+  <div class="alert warn"><i></i><div class="body">
+    <h2>The humidity sensor is the one piece of new firmware</h2>
+    <p>No DHT22 is soldered into this build. An <strong>SHT40 on I&sup2;C</strong> takes its place, which needs <code>sht4x.py</code> and the one function in <code>main.py</code> that reads climate. <strong>Ship that swap on the V1 breadboard first</strong> &mdash; it is one function with an unchanged contract, verifiable against the sensor-fault tests that already exist &mdash; then build V2 against an image that is already proven. Let the baseline re-learn for fifteen minutes afterwards: an SHT40 reads 1&ndash;3&nbsp;% away from where the DHT22 sat.</p>
+  </div></div>
+  <div class="alert warn"><i></i><div class="body">
+    <h2>Three config entries become lies, and one pin is freed</h2>
+    <p><code>GP17</code> high still means fan on, <code>TACH_PPR&nbsp;=&nbsp;2</code> still matches a Noctua, and <code>MIN_RPM&nbsp;=&nbsp;800</code> still sits under this fan&rsquo;s 2000&nbsp;rpm &mdash; the fan path is untouched. But <code>PIN_TACH</code> says the tach wire is yellow, and here it is green. <code>STUCK_S&nbsp;=&nbsp;12</code> was timed on a 40&nbsp;mm rotor, so time this one&rsquo;s coast before trusting it. And <code>PIN_DHT&nbsp;=&nbsp;22</code> is deleted outright: humidity moves to <code>PIN_SDA&nbsp;=&nbsp;0</code> and <code>PIN_SCL&nbsp;=&nbsp;1</code>. <strong>Keep <code>SAMPLE_S&nbsp;=&nbsp;2</code></strong> &mdash; it is no longer forced by the sensor, but <code>BASELINE_A</code>, <code>STUCK_S</code>, <code>SPINUP_S</code> and the tach window are all reasoned against that cadence.</p>
+  </div></div>
+</div>
+
+<section class="sec" id="schematic">
+  <div class="sec-head">
+    <div>
+      <h2>Schematic</h2>
+      <p>Everything above the rule changed. Below it, the light, button and LED circuit is still V1&rsquo;s and still on 3.3&nbsp;V, but those parts are on the grille. J3 is the six-wire sensor cable and J4 is the six-wire button and LED cable. The 10&nbsp;k&Omega;, both 330&nbsp;&Omega; and the button&rsquo;s 1&nbsp;k&Omega; stay on the board, the last three between the Pico and J4. Humidity is an SHT40 on I&sup2;C where a DHT22 used to sit on one pin. A filled dot is a junction; a hop means the wires cross and are not connected. Boxed numbers are what a meter should read <em>in the state selected below</em>, black probe on 0&nbsp;V.</p>
+    </div>
+    <div class="tag" id="focusNote">all connections</div>
+  </div>
+  <div class="card">
+    <div class="controls">
+      <span class="ctl-label">state</span>
+      <div class="states" id="stateSel" role="group" aria-label="Operating state">
+        <button type="button" data-state="usb" aria-pressed="false">USB only, cord out</button>
+        <button type="button" data-state="off" aria-pressed="true">Mains on, fan off</button>
+        <button type="button" data-state="on" aria-pressed="false">Mains on, fan on</button>
+      </div>
+      <div class="toggles">
+        <label><input type="checkbox" id="vtoggle" checked> readings</label>
+        <label><input type="checkbox" id="ntoggle"> net names</label>
+      </div>
+    </div>
+    <p class="statenote" id="stateNote"></p>
+    <div class="scrollx"><svg id="schem" class="figure" role="img" aria-label="Prototype V2 schematic: mains into an IRM-10-12, an IRF9540 high-side switch on the fan's 12 V lead, a Recom buck into Pico VSYS, and the V1 sensors on 3.3 V"></svg></div>
+    <div class="key">
+      <div class="legend" id="netLegend"></div>
+      <span class="keynote">Pick a net to trace it. The MOSFET arrow points out at the source, the P&#8209;channel convention. A diode&rsquo;s bar is its banded end.</span>
+    </div>
+    <div class="inspect" id="inspect" aria-live="polite">
+      <p class="hintline">Nothing selected. Click a part, a wire or a reading above &mdash; or press Tab, then Enter, to step through them.</p>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="layout">
+  <div class="sec-head">
+    <div>
+      <h2>Inside the box</h2>
+      <p>Hammond 1590BB, 119.5 &times; 94 &times; 34&nbsp;mm outside, drawn to scale looking down with the lid off, with the <code>hardware/v2</code> board on the floor. Every part on the board is where KiCad has it; the rectangles are the footprint courtyards. The red outline is the 120&nbsp;V copper and the 6.4&nbsp;mm kept clear around it, which the ground pour leaves out. The C8 inlet and the fuse holder are panel parts that hang above the board, so they are dashed, and <strong>their positions are a guess</strong>: they decide whether the Pico&rsquo;s USB end and J3 can be reached. <strong>Not measured against parts in hand</strong> &mdash; the box size is Hammond&rsquo;s drawing, not a caliper. Clicking a block here selects the same part in the schematic.</p>
+    </div>
+    <div class="tag">scale 1&thinsp;mm = 4.4&thinsp;px</div>
+  </div>
+  <div class="card">
+    <div class="scrollx"><svg id="boxplan" class="figure" style="min-width:620px;max-width:920px;margin:0 auto" role="img" aria-label="Top-down view of the V2 board inside the Hammond 1590BB enclosure: the IRM-10 and J5 at the mains end, the Pico, the buck and the fan switch toward the far end"></svg></div>
+    <div class="key">
+      <span class="keynote">The aluminum is not a circuit node: the MOSFET tab does not touch it, 0&nbsp;V is not screwed to it, and the board stands on nylon standoffs over an insulating sheet. The fan lead leaves for the air box from J2. Two more cables leave for the grille: J3 carries the SHT40 and the LDR, J4 carries the button and both LEDs. Those parts stay in room air, never in the duct.</span>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="iso3d">
+  <div class="sec-head">
+    <div>
+      <h2>In three dimensions</h2>
+      <p>The same enclosure the plan above describes, drawn isometrically &mdash; closed, open, and sitting in the ceiling it has to fit. No perspective, so anything measured along an axis is still measurable on the page, which is what makes these the drawings to work from. Parts stay clickable: picking one here selects it in the schematic too. For something to <em>show</em> rather than build from, <a href="model-v2.html">model-v2.html</a> is the same geometry in a real 3D view you can spin and zoom.</p>
+    </div>
+    <div class="tag"><a href="model-v2.html" style="color:var(--accent);text-decoration:none">open the 3D model &rarr;</a></div>
+  </div>
+  <div class="card">
+    <div class="controls">
+      <span class="ctl-label">view</span>
+      <div class="states" id="isoSel" role="group" aria-label="Which view">
+        <button type="button" data-view="outside" aria-pressed="true">The box, closed</button>
+        <button type="button" data-view="inside" aria-pressed="false">The box, lid off</button>
+        <button type="button" data-view="ceiling" aria-pressed="false">In the ceiling</button>
+      </div>
+    </div>
+    <p class="statenote" id="isoNote"></p>
+    <div class="scrollx"><svg id="iso" class="figure" style="min-width:640px;max-width:900px;margin:0 auto" role="img" aria-label="Isometric views of the electronics enclosure and of the ceiling envelope it installs into"></svg></div>
+    <div class="key">
+      <span class="keynote">The ceiling figures are the ones given for the site: <b>16 &times; 16 in of ceiling, 6 in deep, 4 in male spigot</b>. They have not been verified with a tape measure, and two of them are worth verifying before anything is modelled &mdash; see the notes in the third view. Everything in <code>hardware/v2/chassis-and-housing.md</code> still applies: the fan cartridge, the damper and the grille are that note&rsquo;s parts, not this sheet&rsquo;s.</span>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="order">
+  <div class="sec-head">
+    <div>
+      <h2>Build order</h2>
+      <p>Each block is powered and measured before the next one is attached, and the fan leads go on last &mdash; after the gate has been seen to move with the drain still open. Tap a step to isolate its wire on the schematic. Tick it off and both jump to the next step still to build.</p>
+    </div>
+    <div class="tag" id="stageTag">7 stages</div>
+  </div>
+  <div class="work">
+    <div>
+      <div class="progress">
+        <span id="count">0 / 0</span>
+        <div class="bar"><i id="barfill"></i></div>
+        <button class="ghost" id="reset" type="button">Reset</button>
+      </div>
+      <p class="hint">A note <span style="color:#f0a5a7">in red</span> marks a step where a mistake costs a part, a pin, or worse. A stage badged <span style="color:#f0a5a7">cord in</span> is done with mains live.</p>
+      <div id="stepsRoot"></div>
+    </div>
+    <div>
+      <div class="panel">
+        <h3>What the meter says, by state</h3>
+        <p class="lead">Follows the selector in the schematic. Black probe on 0&nbsp;V throughout.</p>
+        <div id="statePanel"></div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h3>Continuity, cord out, before first power</h3>
+        <ul>
+          <li><strong>+12 to 0&nbsp;V</strong> does not beep. Nor does <strong>buck pin&nbsp;3 to 0&nbsp;V</strong>, nor <strong>pin&nbsp;36 to pin&nbsp;38</strong>.</li>
+          <li><strong>Yellow to any GPIO</strong> does not beep. Yellow&rsquo;s only partners are the MOSFET drain and the banded end of the 1N4148.</li>
+          <li><strong>Gate to source</strong> reads 100&nbsp;k&Omega; &mdash; that is the pull-up, and it is the one resistor whose absence lets the fan start on its own. <strong>Gate to 0&nbsp;V</strong> must not be a short.</li>
+          <li><strong>Pin&nbsp;40</strong> has no soldered wire on it at all.</li>
+          <li><strong>SDA to SCL</strong> does not beep, and neither of them reaches 0&nbsp;V. Both idle high through the breakout&rsquo;s own pull-ups.</li>
+          <li><strong>0&nbsp;V to the box</strong> is open. So is <strong>the MOSFET tab to the box</strong>.</li>
+        </ul>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h3>S8050, before it is soldered</h3>
+        <ul>
+          <li>Diode mode, <strong>red probe on the middle leg</strong>: about 0.7 to both outer legs means NPN, which is what this circuit needs.</li>
+          <li><strong>Black on the middle reading 0.7</strong> means it is an S8550. That part turns on when the base goes low and does not belong here in any orientation.</li>
+          <li>With red still on the base, the <strong>emitter</strong> is the outer leg reading a few tens of millivolts higher. Emitter to 0&nbsp;V, collector to the 100&nbsp;&Omega;.</li>
+          <li>Backwards it has a gain near 3 instead of 200: the gate barely moves and the fan sits still. Nothing is damaged &mdash; swap the outer legs and go again.</li>
+        </ul>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h3>Not on this build</h3>
+        <ul>
+          <li><strong>PWM speed control.</strong> Blue is tied to 5&nbsp;V so the fan is full on whenever GP17 is on. A low blue pin stops this fan, so the tie is required, not optional.</li>
+          <li><strong>The SGP41</strong> odor path. Its bus is wired and its address is free; the sensor is a later purchase. Costed in <code>docs/sgp41-odor-sensing.md</code>.</li>
+          <li><strong>The DHT22.</strong> It stays on the V1 breadboard and is never soldered into this build.</li>
+          <li><strong>The 100&nbsp;&micro;F</strong> the V1 fan needed across USB. Holding the 12&nbsp;V rail up is the IRM&#8209;10&rsquo;s job. Recom shows an optional input capacitor on the buck; it is not on the shopping list.</li>
+          <li><strong>A printed tray, and the NF&#8209;A4x10.</strong> The small fan stays on the V1 breadboard. The washable filter and the grille-mounted sensors are in the housing brief, not on this sheet &mdash; see <code>hardware/v2/model-v2.html</code> and <code>chassis-and-housing.md</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="duty">
+  <div class="sec-head">
+    <div>
+      <h2>Will it actually move air</h2>
+      <p>A 120&nbsp;mm case fan has plenty of airflow and almost no pressure, and a duct is pressure. Drag the restriction to see what each fan has left. Free&#8209;air and maximum&#8209;pressure figures are Noctua&rsquo;s published numbers; the points between them are read off their curve, which is where HVI rates bath fans.</p>
+    </div>
+    <div class="tag" id="pTag">0.10 in w.g.</div>
+  </div>
+  <div class="card">
+    <div class="duty">
+      <div class="scrollx"><svg id="fanchart" class="figure" style="min-width:520px" role="img" aria-label="Airflow against static pressure for the NF-F12 iPPC-2000 and iPPC-3000, with a centrifugal bath fan for reference"></svg></div>
+      <div>
+        <div class="slider">
+          <label for="prange">Duct restriction &mdash; static pressure, in w.g.</label>
+          <input type="range" id="prange" min="0" max="30" step="1" value="10">
+        </div>
+        <div class="readout" id="readout"></div>
+        <p class="verdict" id="verdict"></p>
+        <div class="budget">
+          <h3>12 V budget</h3>
+          <p class="lead" id="budgetLead"></p>
+          <div class="bbar" id="bbar"></div>
+          <div class="blegend" id="blegend"></div>
+        </div>
+      </div>
+    </div>
+    <div class="key">
+      <span class="keynote">Noctua for the iPPC&#8209;2000 IP67: 72&nbsp;CFM free air, 3.94&nbsp;mm&nbsp;H&#8322;O maximum, 29.7&nbsp;dBA, 0.1&nbsp;A. The iPPC&#8209;3000 fits the same 120&nbsp;&times;&nbsp;25&nbsp;mm pocket and the same 105&nbsp;mm screw pitch: 110&nbsp;CFM, 7.63&nbsp;mm&nbsp;H&#8322;O, 43.5&nbsp;dBA. Swapping to it changes nothing in the electronics &mdash; still 12&nbsp;V, still inside the module&rsquo;s 0.85&nbsp;A. The Panasonic FV&#8209;08VQ5 is a centrifugal bath fan, drawn only for scale. 25.4&nbsp;mm&nbsp;H&#8322;O = 1&nbsp;in&nbsp;w.g.</span>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <div>
+      <h2>Fan lead, V1 against V2</h2>
+      <p>Four wires leave the electronics box for the air box. This is the table to read with a lead in your hand, because the sheet at the repo root describes a different fan.</p>
+    </div>
+  </div>
+  <div class="card tablewrap">
+    <table>
+      <thead><tr><th>Lead</th><th>V1 &middot; NF-A4x10</th><th>V2 &middot; NF-F12</th><th>Lands on</th><th>If it is wrong</th></tr></thead>
+      <tbody>
+        <tr><td><span class="swatch" style="background:#8d9ba6"></span>Black</td><td>Ground, switched by the S8050</td><td>Ground, <b>permanent</b></td><td class="m">0 V, with Pico pin 38 and IRM &minus;V</td><td>Switch it and the tach pin floats up toward 12 V</td></tr>
+        <tr class="danger"><td><span class="swatch" style="background:#e08a3c"></span>Yellow</td><td>Tach into GP18</td><td><b>Switched +12 V</b></td><td class="m">IRF9540 drain, and the 1N4148 band. Never a GPIO</td><td>On GP18 it destroys the pin. On raw +12 the fan never stops</td></tr>
+        <tr><td><span class="swatch" style="background:#6fbf8a"></span>Green</td><td>Not present</td><td>Tach, open collector, 2 pulses/rev</td><td class="m">GP18 pin 24, 10 k&Omega; to pin 36</td><td>Pulled to 5 V or 12 V it destroys the pin; no pull-up reads as 0 rpm</td></tr>
+        <tr><td><span class="swatch" style="background:#6fb0e8"></span>Blue</td><td>Not present</td><td>PWM input. A low level stops the fan</td><td class="m">Buck pin 3, +5 V. Never 12 V</td><td>Floating or low, the fan does not turn even with 12 V on yellow</td></tr>
+        <tr><td><span class="swatch" style="background:#e35f62"></span>Red</td><td>5 V from VBUS</td><td colspan="3">This fan has no red lead.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <div>
+      <h2>Pin map</h2>
+      <p>GPIO numbers are the ones in <code>config.py</code>, unchanged from V1. Physical pin 40 is the corner beside the USB socket; 39 is the next one down that edge.</p>
+    </div>
+  </div>
+  <div class="card tablewrap">
+    <table>
+      <thead><tr><th>Signal</th><th>GPIO</th><th>Pin</th><th>V2 net</th><th>Changed from V1</th></tr></thead>
+      <tbody>
+        <tr class="danger"><td>USB 5 V &mdash; do not wire the buck here</td><td class="m">&mdash;</td><td class="m"><b>40</b></td><td>VBUS, cable only</td><td>V1 fed the fan from this pin</td></tr>
+        <tr><td>Installed 5 V, through the 1N5819</td><td class="m">&mdash;</td><td class="m"><b>39</b></td><td>VSYS, banded end of the diode</td><td>new &mdash; V1 had nothing on this pin</td></tr>
+        <tr><td>Ground</td><td class="m">&mdash;</td><td class="m"><b>38</b></td><td>0 V, with IRM &minus;V and fan black</td><td>same pin, larger net</td></tr>
+        <tr><td>3.3 V out</td><td class="m">&mdash;</td><td class="m"><b>36</b></td><td>SHT40 VIN, LDR top, tach pull-up</td><td>unchanged</td></tr>
+        <tr><td>Light</td><td class="m">GP26 / ADC0</td><td class="m"><b>31</b></td><td>LDR divider node</td><td>unchanged</td></tr>
+        <tr><td>Humidity and temperature, data</td><td class="m">GP0 / SDA</td><td class="m"><b>1</b></td><td>SHT40 SDA</td><td><b>new</b> &mdash; replaces the DHT22</td></tr>
+        <tr><td>Humidity and temperature, clock</td><td class="m">GP1 / SCL</td><td class="m"><b>2</b></td><td>SHT40 SCL</td><td><b>new</b></td></tr>
+        <tr><td>&mdash;</td><td class="m">GP22</td><td class="m">29</td><td>nothing</td><td><b>freed</b> &mdash; <code>PIN_DHT</code> is deleted</td></tr>
+        <tr><td>Red LED</td><td class="m">GP20</td><td class="m"><b>26</b></td><td>R8, 330 &Omega;, to the anode on J4 pin 5</td><td>resistor moved to the anode side</td></tr>
+        <tr><td>Green LED</td><td class="m">GP19</td><td class="m"><b>25</b></td><td>R7, 330 &Omega;, to the anode on J4 pin 3</td><td>resistor moved to the anode side</td></tr>
+        <tr><td>Tach</td><td class="m">GP18</td><td class="m"><b>24</b></td><td>fan <b>green</b>, 10 k&Omega; to 3.3 V</td><td>same circuit, different wire color</td></tr>
+        <tr><td>Fan drive</td><td class="m">GP17</td><td class="m"><b>22</b></td><td>1 k&Omega; into the S8050 base</td><td>same pin; the S8050 now drives a gate</td></tr>
+        <tr><td>Button</td><td class="m">GP16</td><td class="m"><b>21</b></td><td>R9, 1 k&Omega;, to J4 pin 2; switch to 0 V, internal pull-up</td><td>1 k&Omega; in series, new</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <p>Companion to <code>hardware/v2/prototype-v2.md</code> and <code>hardware/v2/shopping-list-v2.html</code>. The hookup drawing, one wire at a time, is <a href="wiring-v2.html">wiring-v2.html</a>. All of these live in <code>hardware/v2/</code> beside the board. The board has not been fabricated yet, so treat this as a design to check, not a proven build. The V1 drawing it must not be confused with is <code>build-sheet.html</code> at the repo root, and that sheet describes a different fan.</p>
+  <p>12&nbsp;V &plusmn;2.5&nbsp;%, 0.85&nbsp;A, Class&nbsp;II and the 3&nbsp;kV isolation are from the Mean Well IRM&#8209;10 spec, which points at the installation manual for the fuse value and the clearances rather than printing them &mdash; so the 2&nbsp;A time&#8209;lag is the shopping&#8209;list choice, sized over the 0.25&nbsp;A run current at 115&nbsp;V and under the 20&nbsp;A cold inrush, and the clearance around the module is whatever that manual says. R&#8209;78E pin order is from the Recom datasheet. IRF9540 lead order &mdash; gate, drain, source, with the tab on the drain &mdash; is from the Infineon TO&#8209;220 drawing. Fan figures are Noctua&rsquo;s published specification. Pico pins match <code>config.py</code>. Enclosure footprints are datasheet outlines drawn to scale, and nothing here has been measured against a part in hand.</p>
+</footer>
+
+</div>
+
+<script>
+/* ============================================================
+   V2 build sheet.
+
+   One rule: the drawing is generated from the step list, so a step
+   and its wire cannot drift apart. Add a wire by adding a step.
+
+   Coordinates are absolute in a 1240 x 1010 viewBox. Horizontal
+   buses, vertical drops, and every crossing found and hopped
+   automatically at the end -- so routing can be changed without
+   hand-maintaining a list of which wires cross which.
+   ============================================================ */
+
+const NS = 'http://www.w3.org/2000/svg';
+const el = (t, a = {}) => {
+  const e = document.createElementNS(NS, t);
+  for (const k in a) e.setAttribute(k, a[k]);
+  return e;
+};
+const txt = (g, x, y, s, cls = 'lbl', anchor = 'start', fill) => {
+  const t = el('text', { x, y, class: cls, 'text-anchor': anchor });
+  if (fill) t.setAttribute('fill', fill);
+  t.textContent = s;
+  g.appendChild(t);
+  return t;
+};
+
+/* Nets. The color is the information, so it lives in one place and
+   the legend, the wires and the lead table all read from it. */
+const NETS = {
+  ac:   { n: 'mains 120 V', c: 'var(--w-ac)' },
+  v12:  { n: '+12 V',       c: 'var(--w-12)' },
+  v5:   { n: '+5 V',        c: 'var(--w-5)' },
+  v33:  { n: '+3.3 V',      c: 'var(--w-33)' },
+  gnd:  { n: '0 V',         c: 'var(--w-gnd)' },
+  sig:  { n: 'GPIO',        c: 'var(--w-sig)' },
+  tach: { n: 'tach lead',   c: 'var(--w-tach)' },
+  pwm:  { n: 'PWM lead',    c: 'var(--w-pwm)' },
+  i2c:  { n: 'I²C bus',     c: 'var(--w-i2c)' },
+  part: { n: 'part lead',   c: '#b9c7d1' }
+};
+const NC = k => NETS[k] ? NETS[k].c : NETS.part.c;
+
+/* Resistor color bands, so a part can be checked before it goes in. */
+const BANDS = {
+  '100':  ['#7a4a1e', '#15191c', '#15191c', '#15191c', '#7a4a1e'],
+  '330':  ['#e0802b', '#e0802b', '#15191c', '#15191c', '#7a4a1e'],
+  '1k':   ['#7a4a1e', '#15191c', '#15191c', '#7a4a1e', '#7a4a1e'],
+  '10k':  ['#7a4a1e', '#15191c', '#15191c', '#d13a3a', '#7a4a1e'],
+  '100k': ['#7a4a1e', '#15191c', '#15191c', '#e0802b', '#7a4a1e']
+};
+
+/* ---------- geometry ---------- */
+const SW = 1240, SH = 1010;
+const B12 = 40, B0 = 610, R33 = 700, R0 = 950, SEP = 655;
+
+/* ============================================================
+   Primitive drawing. Every object may carry i: 'infoKey' to become
+   clickable, and net: 'v12' to join a traceable net.
+   ============================================================ */
+const SEGS = [], DOTS = [];
+
+function sdraw(o, g) {
+  const col = o.col || NC(o.net);
+
+  if (o.k === 'w') {
+    const d = 'M' + o.p.map(p => p.join(',')).join(' L');
+    g.appendChild(el('path', { d, class: 'halo', stroke: 'var(--accent)', 'stroke-width': 9,
+      fill: 'none', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    g.appendChild(el('path', { d, stroke: col, 'stroke-width': o.w || 2, fill: 'none',
+      'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    for (let i = 1; i < o.p.length; i++) SEGS.push({ a: o.p[i - 1], b: o.p[i], col, w: o.w || 2 });
+  }
+
+  if (o.k === 'dot') {
+    g.appendChild(el('circle', { cx: o.x, cy: o.y, r: 3.6, fill: col }));
+    DOTS.push([o.x, o.y]);
+  }
+
+  if (o.k === 'open') {   /* a pin deliberately left unwired */
+    g.appendChild(el('circle', { cx: o.x, cy: o.y, r: 4, fill: 'var(--bg)',
+      stroke: 'var(--ink-dim)', 'stroke-width': 1.6 }));
+  }
+
+  if (o.k === 'r') {
+    const v = o.dir === 'v', len = o.len || 48, n = 6, amp = 5;
+    const pts = [];
+    pts.push(v ? [o.x, o.y - len / 2] : [o.x - len / 2, o.y]);
+    for (let i = 0; i < n; i++) {
+      const t = -len / 2 + len * (i + .5) / n, off = i % 2 ? -amp : amp;
+      pts.push(v ? [o.x + off, o.y + t] : [o.x + t, o.y + off]);
+    }
+    pts.push(v ? [o.x, o.y + len / 2] : [o.x + len / 2, o.y]);
+    const d = 'M' + pts.map(p => p.join(',')).join(' L');
+    g.appendChild(el('path', { d, class: 'halo', stroke: 'var(--accent)', 'stroke-width': 11,
+      fill: 'none', 'stroke-linejoin': 'round' }));
+    g.appendChild(el('path', { d, stroke: col, 'stroke-width': 2, fill: 'none',
+      'stroke-linejoin': 'round' }));
+    /* the physical part beside the symbol: five bands, in order */
+    if (BANDS[o.v] && o.bands !== false) {
+      const bx = v ? o.x + 15 : o.x - 13, by = v ? o.y - 13 : o.y + 13;
+      const bg = el('g', { transform: `translate(${bx},${by})` });
+      bg.appendChild(el('rect', { x: 0, y: 0, width: 26, height: 8, rx: 2.5, fill: '#41708f' }));
+      BANDS[o.v].forEach((c, i) => bg.appendChild(el('rect',
+        { x: 3.5 + i * 4, y: 0, width: 1.8, height: 8, fill: c })));
+      g.appendChild(bg);
+      txt(g, v ? o.x + 15 : o.x, v ? o.y + 3 : o.y - 15, o.v + 'Ω',
+        'lbl', v ? 'start' : 'middle', 'var(--accent)');
+    } else {
+      txt(g, v ? o.x + 15 : o.x, v ? o.y + 3 : o.y - 13, o.v + (o.ohm === false ? '' : 'Ω'),
+        'lbl', v ? 'start' : 'middle', 'var(--accent)');
+    }
+  }
+
+  if (o.k === 'dio') {
+    /* vertical diode. band:'up' puts the cathode bar at the top, which is
+       also the direction current is allowed to flow. */
+    const up = o.band !== 'down', y1 = o.y, y2 = o.y + 26;
+    const bar = up ? y1 : y2, apex = up ? y1 : y2, base = up ? y2 : y1;
+    g.appendChild(el('path', { d: `M${o.x - 13},${bar} L${o.x + 13},${bar}`,
+      class: 'halo', stroke: 'var(--accent)', 'stroke-width': 11 }));
+    g.appendChild(el('line', { x1: o.x - 13, y1: bar, x2: o.x + 13, y2: bar,
+      stroke: '#e8e2d4', 'stroke-width': 3 }));
+    g.appendChild(el('polygon', { points: `${o.x},${apex} ${o.x - 12},${base} ${o.x + 12},${base}`,
+      fill: 'none', stroke: col, 'stroke-width': 1.8 }));
+    if (o.t) txt(g, o.x - 18, (y1 + y2) / 2 + 3, o.t, 'lbl', 'end', 'var(--accent)');
+    if (o.t2) txt(g, o.x - 18, (y1 + y2) / 2 + 15, o.t2, 'lbl-dim', 'end');
+  }
+
+  if (o.k === 'diohz') {
+    /* horizontal diode, band on the right: current flows left to right. */
+    const x1 = o.x, x2 = o.x + 30;
+    g.appendChild(el('path', { d: `M${x2},${o.y - 13} L${x2},${o.y + 13}`,
+      class: 'halo', stroke: 'var(--accent)', 'stroke-width': 11 }));
+    g.appendChild(el('polygon', { points: `${x2},${o.y} ${x1},${o.y - 12} ${x1},${o.y + 12}`,
+      fill: 'none', stroke: col, 'stroke-width': 1.8 }));
+    g.appendChild(el('line', { x1: x2, y1: o.y - 13, x2: x2, y2: o.y + 13,
+      stroke: '#e8e2d4', 'stroke-width': 3 }));
+    if (o.t) txt(g, x1 - 8, o.y + 22, o.t, 'lbl', 'end', 'var(--accent)');
+    if (o.t2) txt(g, (x1 + x2) / 2, o.y + 30, o.t2, 'lbl-dim', 'middle');
+  }
+
+  if (o.k === 'npn') {
+    /* base bar at o.x, collector up-right, emitter down-right */
+    const X = o.x, Y = o.y, cx = X + 24;
+    const add = (t, a) => g.appendChild(el(t, a));
+    add('path', { d: `M${X},${Y - 22} L${X},${Y + 22}`, class: 'halo',
+      stroke: 'var(--accent)', 'stroke-width': 13 });
+    add('circle', { cx: X + 13, cy: Y, r: 27, fill: 'none', stroke: col, 'stroke-width': 1.3,
+      opacity: .55 });
+    add('line', { x1: X, y1: Y - 22, x2: X, y2: Y + 22, stroke: col, 'stroke-width': 3 });
+    add('path', { d: `M${X},${Y - 9} L${cx},${Y - 30}`, stroke: col, 'stroke-width': 2, fill: 'none' });
+    add('path', { d: `M${X},${Y + 9} L${cx},${Y + 30}`, stroke: col, 'stroke-width': 2, fill: 'none' });
+    add('polygon', { points: `${cx - 4},${Y + 15} ${cx},${Y + 26} ${cx - 12},${Y + 22}`, fill: col });
+    txt(g, X + 54, Y - 10, 'S8050', 'lbl-ink');
+    txt(g, X + 54, Y + 4, 'NPN — was the fan switch', 'lbl-dim');
+    txt(g, cx + 5, Y - 30, 'C', 'lbl-dim');
+    txt(g, X - 8, Y + 4, 'B', 'lbl-dim', 'end');
+    txt(g, cx + 5, Y + 34, 'E', 'lbl-dim');
+  }
+
+  if (o.k === 'pmos') {
+    /* P-channel, source at the top on +12, drain at the bottom on yellow.
+       Arrow points out at the source -- the P-channel convention. */
+    const X = o.x, Y = o.y;            /* Y is the top of the channel */
+    const add = (t, a) => g.appendChild(el(t, a));
+    add('path', { d: `M${X},${Y} L${X},${Y + 70}`, class: 'halo',
+      stroke: 'var(--accent)', 'stroke-width': 14 });
+    add('line', { x1: X, y1: Y, x2: X, y2: Y + 70, stroke: col, 'stroke-width': 3 });
+    add('line', { x1: X - 20, y1: Y + 12, x2: X - 20, y2: Y + 58, stroke: col, 'stroke-width': 2.4 });
+    add('polygon', { points: `${X},${Y + 6} ${X - 9},${Y + 18} ${X + 9},${Y + 18}`, fill: 'var(--ink)' });
+    txt(g, X + 10, Y - 2, 'S', 'lbl-dim');
+    txt(g, X + 10, Y + 76, 'D', 'lbl-dim');
+    txt(g, X - 26, Y + 8, 'G', 'lbl-dim', 'end');
+    txt(g, X + 22, Y - 34, 'IRF9540  P-ch', 'lbl-ink');
+    txt(g, X + 22, Y - 20, 'tab = drain · insulate it', 'lbl-dim');
+  }
+
+  if (o.k === 'ldr') {
+    const add = (t, a) => g.appendChild(el(t, a));
+    add('circle', { cx: o.x, cy: o.y, r: 24, class: 'halo', fill: 'none',
+      stroke: 'var(--accent)', 'stroke-width': 9 });
+    add('circle', { cx: o.x, cy: o.y, r: 24, fill: 'none', stroke: col, 'stroke-width': 1.5 });
+    sdraw({ k: 'r', x: o.x, y: o.y, dir: 'v', len: 32, v: '', bands: false, ohm: false, col }, g);
+    txt(g, o.x + 32, o.y + 3, 'LDR', 'lbl', 'start', 'var(--accent)');
+    [-9, 5].forEach(k => add('path', {
+      d: `M${o.x - 52},${o.y - 6 + k} l13,8 m0,0 l-5,-4 m5,4 l-5,4`,
+      stroke: 'var(--w-33)', 'stroke-width': 1.5, fill: 'none' }));
+  }
+
+  if (o.k === 'sw') {
+    const add = (t, a) => g.appendChild(el(t, a));
+    add('path', { d: `M${o.x},${o.y} L${o.x},${o.y + 46}`, class: 'halo',
+      stroke: 'var(--accent)', 'stroke-width': 12 });
+    add('circle', { cx: o.x, cy: o.y + 4, r: 3.4, fill: col });
+    add('line', { x1: o.x, y1: o.y + 4, x2: o.x + 19, y2: o.y + 28, stroke: col, 'stroke-width': 2.4 });
+    add('circle', { cx: o.x, cy: o.y + 42, r: 3.4, fill: col });
+    txt(g, o.x - 10, o.y + 26, 'SW1', 'lbl', 'end', 'var(--accent)');
+  }
+
+  if (o.k === 'led') {
+    const add = (t, a) => g.appendChild(el(t, a));
+    const y = o.y;
+    add('path', { d: `M${o.x},${y} L${o.x},${y + 30}`, class: 'halo',
+      stroke: 'var(--accent)', 'stroke-width': 12 });
+    add('polygon', { points: `${o.x - 12},${y} ${o.x + 12},${y} ${o.x},${y + 22}`, fill: o.c });
+    add('line', { x1: o.x - 13, y1: y + 22, x2: o.x + 13, y2: y + 22, stroke: o.c, 'stroke-width': 3 });
+    [0, 7].forEach(k => add('path', {
+      d: `M${o.x + 15 + k},${y + 2 + k} l9,-9 m0,0 l-5,1 m5,-1 l-1,5`,
+      stroke: o.c, 'stroke-width': 1.4, fill: 'none' }));
+    txt(g, o.x - 17, y + 14, o.t, 'lbl', 'end', 'var(--accent)');
+    txt(g, o.x - 17, y + 26, 'flat = cathode', 'lbl-dim', 'end');
+  }
+
+  if (o.k === 'fuse') {
+    const add = (t, a) => g.appendChild(el(t, a));
+    add('rect', { x: o.x, y: o.y - 13, width: 58, height: 26, rx: 3, class: 'halo',
+      fill: 'var(--accent)' });
+    add('rect', { x: o.x, y: o.y - 13, width: 58, height: 26, rx: 3, fill: 'var(--bg)',
+      stroke: col, 'stroke-width': 1.5 });
+    add('path', { d: `M${o.x + 4},${o.y} Q${o.x + 18},${o.y - 9} ${o.x + 29},${o.y} T${o.x + 54},${o.y}`,
+      stroke: col, 'stroke-width': 1.5, fill: 'none' });
+    txt(g, o.x + 29, o.y - 19, '2 A  time-lag', 'lbl', 'middle', 'var(--w-ac)');
+    txt(g, o.x + 29, o.y + 26, 'hot lead only', 'lbl-dim', 'middle');
+  }
+
+  if (o.k === 'flag') {
+    /* A named tag. Two flags with the same name are the same wire. */
+    const w = o.t.length * 6.1 + 22, left = o.dir === 'left';
+    const x = left ? o.x - w : o.x;
+    const pts = left
+      ? `${x},${o.y - 9} ${x + w - 9},${o.y - 9} ${x + w},${o.y} ${x + w - 9},${o.y + 9} ${x},${o.y + 9}`
+      : `${x + w},${o.y - 9} ${x + 9},${o.y - 9} ${x},${o.y} ${x + 9},${o.y + 9} ${x + w},${o.y + 9}`;
+    g.appendChild(el('polygon', { points: pts, fill: 'var(--raised)', stroke: col, 'stroke-width': 1.3 }));
+    txt(g, left ? x + 6 : x + 13, o.y + 3.4, o.t, 'lbl', 'start', col);
+  }
+
+  if (o.k === 'blk') {
+    const add = (t, a) => g.appendChild(el(t, a));
+    add('rect', { x: o.x, y: o.y, width: o.w, height: o.h, rx: 8, class: 'halo',
+      fill: 'var(--accent)' });
+    add('rect', { x: o.x, y: o.y, width: o.w, height: o.h, rx: 8,
+      fill: o.fill || 'var(--raised)', stroke: o.stroke || '#3b4750', 'stroke-width': 1.5 });
+    txt(g, o.x + o.w / 2, o.y + 22, o.t, 'lbl-ink', 'middle');
+    if (o.t2) txt(g, o.x + o.w / 2, o.y + 38, o.t2, 'lbl-dim', 'middle');
+    (o.lines || []).forEach((l, i) => txt(g, o.x + 14, o.y + (o.ly || 60) + i * 15, l, 'lbl'));
+    (o.pins || []).forEach(p => {
+      txt(g, p.a === 'end' ? o.x + o.w - 12 : o.x + 12, p.y + 4, p.t, 'lbl', p.a || 'start');
+    });
+  }
+
+  if (o.k === 'zone') {
+    g.appendChild(el('rect', { x: o.x, y: o.y, width: o.w, height: o.h, rx: 8, fill: o.fill || 'none',
+      stroke: o.stroke || 'var(--w-ac)', 'stroke-width': 1.2, 'stroke-dasharray': '8 6', opacity: .75 }));
+  }
+
+  if (o.k === 't') txt(g, o.x, o.y, o.t, o.cls || 'lbl', o.a || 'start', o.fill);
+
+  if (o.k === 'gsym') {
+    const add = (t, a) => g.appendChild(el(t, a));
+    [[14, 0], [10, 5], [6, 10]].forEach(([hw, dy]) => add('line', {
+      x1: o.x - hw, y1: o.y + dy, x2: o.x + hw, y2: o.y + dy, stroke: NC('gnd'), 'stroke-width': 1.6 }));
+  }
+}
+
+/* ============================================================
+   The static frame: blocks, buses that are not steps, and labels.
+   ============================================================ */
+const FRAME = [
+  { k: 'zone', x: 16, y: 62, w: 370, h: 232 },
+  { k: 't', x: 24, y: 80, t: '120 V AC · this side of the barrier only · cord out before touching it',
+    cls: 'lbl', fill: 'var(--w-ac)' },
+  { k: 'blk', x: 32, y: 96, w: 118, h: 104, t: 'IEC C8', t2: 'figure-8 inlet', i: 'c8',
+    pins: [{ y: 132, t: 'L' }, { y: 172, t: 'N' }] },
+  { k: 't', x: 91, y: 190, t: 'no earth pin', cls: 'lbl-dim', a: 'middle' },
+  { k: 'blk', x: 300, y: 80, w: 170, h: 164, t: 'IRM-10-12', t2: '85–305 V AC → 12 V', i: 'irm',
+    pins: [{ y: 132, t: 'AC/L' }, { y: 172, t: 'AC/N' },
+           { y: 112, t: '+V', a: 'end' }, { y: 212, t: '−V', a: 'end' }] },
+  { k: 't', x: 385, y: 262, t: '3 kV isolation, inside the module', cls: 'lbl-dim', a: 'middle' },
+  { k: 't', x: 272, y: 124, t: 'J5·2', cls: 'lbl', a: 'middle' },
+  { k: 't', x: 272, y: 164, t: 'J5·1', cls: 'lbl', a: 'middle' },
+  { k: 't', x: 228, y: 198, t: 'J5 screw terminal on the board', cls: 'lbl-dim', a: 'middle' },
+  { k: 'blk', x: 300, y: 330, w: 170, h: 110, t: 'R-78E5.0-1.0', t2: '12 V → 5.0 V, 1 A', i: 'buck',
+    pins: [{ y: 392, t: 'pin 1  +Vin', a: 'end' }, { y: 424, t: 'pin 3  +5 V', a: 'end' }] },
+  { k: 't', x: 316, y: 432, t: 'pin 2 GND', cls: 'lbl' },
+  { k: 't', x: 336, y: 486, t: 'marked face: 1 +Vin, 2 GND, 3 +Vout', cls: 'lbl-dim' },
+  { k: 'blk', x: 620, y: 330, w: 200, h: 180, t: 'PICO 2 W', t2: 'RP2350 · the V1 image', i: 'pico',
+    fill: 'var(--pcb)', stroke: 'var(--pcb-edge)' },
+  { k: 'blk', x: 1040, y: 150, w: 160, h: 220, t: 'NF-F12', t2: 'iPPC-2000 IP67 PWM', i: 'fan',
+    pins: [{ y: 196, t: '2  yellow · +12 switched' }, { y: 231, t: '3  green · tach' },
+           { y: 276, t: '4  blue · PWM 5 V' }, { y: 321, t: '1  black · 0 V' }] },
+  { k: 'blk', x: 330, y: 720, w: 190, h: 156, t: 'SHT40 breakout', t2: 'Adafruit 4885 · I²C 0x44',
+    i: 'sht', pins: [{ y: 766, t: 'VIN' }, { y: 796, t: 'GND' },
+                     { y: 826, t: 'SDA', a: 'end' }, { y: 856, t: 'SCL', a: 'end' }] },
+
+  /* Pico pin stubs. Both names, because the code uses one and your finger
+     uses the other. */
+  { k: 't', x: 630, y: 384, t: 'VBUS 40', cls: 'lbl' },
+  { k: 't', x: 630, y: 428, t: 'VSYS 39', cls: 'lbl' },
+  { k: 't', x: 810, y: 360, t: '36  3V3', cls: 'lbl', a: 'end' },
+  { k: 't', x: 810, y: 450, t: '24  GP18', cls: 'lbl', a: 'end' },
+  { k: 't', x: 810, y: 484, t: '22  GP17', cls: 'lbl', a: 'end' },
+  { k: 't', x: 656, y: 528, t: 'GND 38', cls: 'lbl', a: 'end' },
+  { k: 't', x: 100, y: 540, t: 'Pico pins not drawn above — GP0 1 · GP1 2 · GP26 31 · GP16 21 · GP19 25 · GP20 26 — appear by name below the rule. GP22 is now free.', cls: 'lbl-dim' },
+
+  /* section rule */
+  { k: 'w', p: [[16, SEP], [1224, SEP]], col: 'var(--line)', w: 1 },
+  { k: 't', x: 16, y: SEP + 20, t: 'Below this line the circuit is still V1 on 3.3 V. The parts are on the grille: J3 sensors, J4 button and LEDs. The divider, LED and button resistors stay on the board.',
+    cls: 'lbl-dim' },
+  { k: 't', x: 24, y: 22, t: 'mains in, 12 V out', cls: 'lbl-dim' },
+  { k: 't', x: 700, y: 22, t: '12 V switched onto the yellow lead', cls: 'lbl-dim' },
+  { k: 't', x: 170, y: 976, t: 'LDR divider', cls: 'lbl-ink', a: 'middle' },
+  { k: 't', x: 170, y: 990, t: 'bright reads high', cls: 'lbl-dim', a: 'middle' },
+  { k: 't', x: 670, y: 976, t: 'button', cls: 'lbl-ink', a: 'middle' },
+  { k: 't', x: 670, y: 990, t: 'tap boost · 2 s relearn · 8 s Wi-Fi', cls: 'lbl-dim', a: 'middle' },
+  { k: 't', x: 425, y: 900, t: 'humidity and temperature', cls: 'lbl-ink', a: 'middle' },
+  { k: 't', x: 425, y: 914, t: 'on the grille, through J3. No second socket on the board', cls: 'lbl-dim', a: 'middle' },
+  { k: 't', x: 870, y: 976, t: 'status LEDs', cls: 'lbl-ink', a: 'middle' },
+  { k: 't', x: 960, y: 990, t: 'green idle · red running · both blinking is a fault', cls: 'lbl-dim', a: 'middle' }
+];
+
+/* ============================================================
+   The build. Stages, steps, and the drawing each step owns.
+   live:true means that stage is done with the cord in.
+   ============================================================ */
+const STAGES = [
+{ name: 'Mains, cord unplugged', live: false,
+  why: 'The fuse is in the hot lead because a two-prong plug can be inserted either way round, so fusing the hot lead is the only way to guarantee the fuse is upstream of the fault. Neutral goes straight to J5 pin 1 and on to AC/N, unfused. J5 is a screw terminal on the board; the board carries both leads to the module, so nothing is soldered to the module’s pins by hand.',
+  steps: [
+  { t: 'Cord <b>unplugged</b>, and the fuse out of its holder.', c: 'Both stay that way until a step says otherwise. Treat the holder as live until the fuse is in your hand.', flag: true, d: [] },
+  { t: 'C8 <b>neutral</b> tab to <b>J5 pin 1</b>, beside the silk <code>C8</code>.', c: 'No fuse in the neutral. The board joins J5 pin 1 to the module’s AC/N. Strip 6 mm, no tinning, tighten, then tug.',
+    d: [{ k: 'w', p: [[150, 172], [300, 172]], net: 'ac', i: 'c8' }] },
+  { t: 'C8 <b>line</b> tab to the fuse holder, and the holder’s other side to <b>J5 pin 2</b>, beside the silk <code>FUSE</code>.', c: 'Hot lead only. The board joins J5 pin 2 to the module’s AC/L. The C8 is not polarized, so hot is whichever lead the fuse is in.', flag: true,
+    d: [{ k: 'w', p: [[150, 132], [186, 132]], net: 'ac', i: 'fuse' },
+        { k: 'fuse', x: 186, y: 132, net: 'ac', i: 'fuse' },
+        { k: 'w', p: [[244, 132], [300, 132]], net: 'ac', i: 'fuse' }] },
+  { t: 'Leave the inlet with <b>two wires</b>.', c: 'There is no earth terminal and none should be invented. A wire from a mains contact to the aluminum is not a protective earth — it is a fault path into the case.', flag: true, d: [] },
+  { t: 'Fit the <b>2 A time-lag</b> fuse, <code>0215002.MXP</code>.', c: 'A fast-blow of the same current opens on the module’s cold inrush, which is about 20 A at 115 V.', flag: true, d: [] }
+]},
+{ name: 'Prove 12 V before anything shares it', live: true,
+  why: 'The module is marked AC/L, AC/N, −V and +V beside the pins. Follow the marks. The output is isolated from the mains, so a backwards output reads −12 V and does not hurt the module — it hurts the buck, the Pico and the fan, in that order.',
+  steps: [
+  { t: '<code>+V</code> to the 12 V node. <code>&minus;V</code> to 0 V.', c: 'Nothing else on either node yet.',
+    d: [{ k: 'w', p: [[470, 112], [470, B12]], net: 'v12', i: 'rail12' },
+        { k: 'w', p: [[470, B12], [1080, B12]], net: 'v12', i: 'rail12' },
+        { k: 'dot', x: 470, y: B12, net: 'v12' },
+        { k: 't', x: 1088, y: B12 + 4, t: '+12 V', cls: 'lbl-ink' },
+        { k: 'w', p: [[470, 212], [490, 212], [490, B0]], net: 'gnd', i: 'gnd' },
+        { k: 'w', p: [[60, B0], [1100, B0]], net: 'gnd', i: 'gnd' },
+        { k: 'dot', x: 490, y: B0, net: 'gnd' },
+        { k: 't', x: 1108, y: B0 + 4, t: '0 V', cls: 'lbl-ink' }] },
+  { t: 'Cord in. <code>+V</code> to <code>&minus;V</code> reads <b>11.7 to 12.3 V</b>. Then unplug.', c: 'A negative reading means the two output pins are swapped. A silent module, a hot module, or a smell means stop and read the installation manual again.', flag: true, d: [] }
+]},
+{ name: '5 V into the Pico', live: true,
+  why: 'Pin 1 of the R-78E is +Vin, pin 2 is GND, pin 3 is +5 V, in that order on the marked face with the leads down. The diode is what lets a USB cable and the buck both be present without feeding each other.',
+  steps: [
+  { t: 'Buck <b>pin 1</b> to +12, <b>pin 2</b> to 0 V.', c: 'Confirm the three pins against the datasheet drawing before soldering. Backwards, the part is destroyed on first power.', flag: true,
+    d: [{ k: 'w', p: [[520, B12], [520, 392], [470, 392]], net: 'v12', i: 'buck' },
+        { k: 'dot', x: 520, y: B12, net: 'v12' },
+        { k: 'w', p: [[310, 440], [310, B0]], net: 'gnd', i: 'buck' },
+        { k: 'dot', x: 310, y: B0, net: 'gnd' }] },
+  { t: 'Plug in. <b>Pin 3</b> to 0 V reads 4.75 to 5.25 V. Unplug.', c: '',
+    d: [{ k: 'w', p: [[470, 424], [560, 424]], net: 'v5', i: 'buck5' },
+        { k: 'dot', x: 500, y: 424, net: 'v5' }] },
+  { t: '<b>1N5819</b> unbanded end on pin 3. <b>Banded end to VSYS, pin 39.</b>', c: 'Pin 40 is VBUS, the corner beside the USB socket, and it gets no wire at all. Landing the buck there back-feeds the computer.', flag: true,
+    d: [{ k: 'diohz', x: 560, y: 424, net: 'v5', i: 'd5819', t: '1N5819  band → pin 39' },
+        { k: 'w', p: [[590, 424], [620, 424]], net: 'v5', i: 'd5819' }] },
+  { t: 'Pico <b>pin 38</b> to 0 V.', c: 'One net: the module’s −V, the buck ground, the S8050 emitter, both diode anodes, the fan black, and this pin.',
+    d: [{ k: 'w', p: [[660, 510], [660, B0]], net: 'gnd', i: 'gnd' },
+        { k: 'dot', x: 660, y: B0, net: 'gnd' }] },
+  { t: 'Cord in, USB out. The Pico boots. <b>Pin 39</b> reads about 4.5 to 4.8 V.', c: '0 V here means the diode is backwards, or it is on the wrong pin.', d: [] },
+  { t: 'Now plug USB in as well.', c: 'Pin 39 stays in that range and the computer keeps the port. A port that drops means the diode is backwards, or pin 3 landed on VBUS.', flag: true,
+    d: [{ k: 'w', p: [[596, 380], [620, 380]], net: 'v5', i: 'vbus' },
+        { k: 'open', x: 592, y: 380 },
+        { k: 't', x: 584, y: 368, t: 'no wire, ever', cls: 'lbl-dim', a: 'end' }] }
+]},
+{ name: 'Gate driver, with the drain still open', live: true,
+  why: 'GP17 high turns the S8050 on, which pulls the gate about 12 V below the source, and the MOSFET connects +12 to the drain. At boot GP17 is high-impedance: the 100 kΩ on the base holds the transistor off and the 100 kΩ from gate to source holds the fan off. Two resistors, two different moments.',
+  steps: [
+  { t: '<b>Diode-test the S8050</b> before it is soldered.', c: 'Red probe on the middle leg reads about 0.7 to both outer legs. If black-on-middle reads 0.7 instead it is an S8550, which turns on when the base goes low and cannot work here in any orientation.', flag: true, d: [] },
+  { t: 'Emitter to 0 V. <b>1 k&Omega;</b> from GP17 to the base. <b>100 k&Omega;</b> from the base to 0 V.', c: 'Swapped, the 100 kΩ in series against a 1 kΩ pulldown never lifts the base to 0.7 V and nothing ever turns on.',
+    d: [{ k: 'npn', x: 906, y: 480, net: 'part', i: 's8050' },
+        { k: 'w', p: [[930, 510], [930, B0]], net: 'gnd', i: 's8050' },
+        { k: 'dot', x: 930, y: B0, net: 'gnd' },
+        { k: 'w', p: [[820, 480], [852, 480]], net: 'sig', i: 'base' },
+        { k: 'r', x: 876, y: 480, dir: 'h', v: '1k', net: 'sig', i: 'base' },
+        { k: 'w', p: [[900, 480], [906, 480]], net: 'sig', i: 'base' },
+        { k: 'dot', x: 890, y: 480, net: 'sig' },
+        { k: 'w', p: [[890, 480], [890, 516]], net: 'gnd', i: 'base' },
+        { k: 'r', x: 890, y: 540, dir: 'v', v: '100k', net: 'gnd', i: 'base' },
+        { k: 'w', p: [[890, 564], [890, B0]], net: 'gnd', i: 'base' },
+        { k: 'dot', x: 890, y: B0, net: 'gnd' }] },
+  { t: 'IRF9540 <b>source to +12</b>. <b>100 k&Omega;</b> gate to source. <b>100 &Omega;</b> collector to gate.', c: 'Part number toward you, leads down: gate, drain, source. The drain stays empty for now.', flag: true,
+    d: [{ k: 'pmos', x: 860, y: 120, net: 'part', i: 'fet' },
+        { k: 'w', p: [[860, B12], [860, 120]], net: 'v12', i: 'fet' },
+        { k: 'dot', x: 860, y: B12, net: 'v12' },
+        { k: 'w', p: [[795, 155], [840, 155]], net: 'part', i: 'fet' },
+        { k: 'w', p: [[795, 155], [795, 66]], net: 'v12', i: 'rgs' },
+        { k: 'r', x: 795, y: 90, dir: 'v', v: '100k', net: 'v12', i: 'rgs' },
+        { k: 'w', p: [[795, 66], [795, B12]], net: 'v12', i: 'rgs' },
+        { k: 'dot', x: 795, y: B12, net: 'v12' },
+        { k: 'dot', x: 795, y: 155, net: 'part' },
+        { k: 'w', p: [[795, 155], [795, 216]], net: 'part', i: 'rg' },
+        { k: 'r', x: 795, y: 240, dir: 'v', v: '100', net: 'part', i: 'rg' },
+        { k: 'w', p: [[795, 264], [795, 300], [930, 300], [930, 450]], net: 'part', i: 'rg' }] },
+  { t: '<b>Insulate the tab from the box.</b>', c: 'The tab is the drain, the same node as the yellow lead. Flat against an insulator, not against the aluminum, and not screwed to anything that is also on 0 V.', flag: true, d: [] },
+  { t: 'Cord in. <b>Gate to 0 V is about 12 V</b> with the fan commanded off, and about <b>0.1 V</b> commanded on.', c: 'Nothing spins either way, because the drain is still open. That is the point of doing it in this order. Unplug.', d: [] }
+]},
+{ name: 'Fan leads', live: false,
+  why: 'Four conductors leave for the air box: yellow, black, green, blue. The SHT40, the LDR, the button and both LEDs are on the grille, on J3 and J4, not in this cable and not in the duct.',
+  steps: [
+  { t: 'Fan <b>black</b> to 0 V: J2 pin 1.', c: 'J2 is a keyed fan header, so the fan’s own plug sets all four leads at once and only goes on one way. Same node as pin 38 and IRM −V. This lead is not switched — on V1 it was, and here the ground has to stay tied to the Pico or the tach pin floats up toward 12 V.', flag: true,
+    d: [{ k: 'w', p: [[1040, 325], [940, 325], [940, B0]], net: 'gnd', i: 'black' },
+        { k: 'dot', x: 940, y: B0, net: 'gnd' }] },
+  { t: 'Fan <b>yellow</b> to the <b>drain</b>, and nowhere else.', c: 'Never a GPIO. This is the lead the V1 sheet calls tach. On raw +12 instead of the drain, the fan runs forever and the stuck-on check is the only thing that notices.', flag: true,
+    d: [{ k: 'w', p: [[860, 190], [1040, 190]], net: 'v12', i: 'drain' }] },
+  { t: '<b>1N4148</b> band on the yellow side, other end on fan ground.', c: 'Reversed, it is a short from 12 V to 0 V the moment the MOSFET turns on. The fan’s own electronics make this diode precautionary rather than essential, and it costs nothing to keep.', flag: true,
+    d: [{ k: 'dot', x: 975, y: 190, net: 'v12' },
+        { k: 'w', p: [[975, 190], [975, 208]], net: 'v12', i: 'd4148' },
+        { k: 'dio', x: 975, y: 208, band: 'up', net: 'part', i: 'd4148', t: '1N4148', t2: 'band up' },
+        { k: 'w', p: [[975, 234], [975, 325]], net: 'gnd', i: 'd4148' },
+        { k: 'dot', x: 975, y: 325, net: 'gnd' }] },
+  { t: 'Fan <b>green</b> to GP18, and <b>10 k&Omega;</b> from that node to pin 36.', c: 'Open collector inside the fan: it only pulls low, so the pull-up is what makes a high. To 3.3 V. Not to 5 V, not to 12 V — GP18 is not 5 V tolerant.', flag: true,
+    d: [{ k: 'w', p: [[1040, 235], [1015, 235], [1015, 446], [820, 446]], net: 'tach', i: 'green' },
+        { k: 'w', p: [[820, 356], [878, 356], [878, 410]], net: 'v33', i: 'rtach' },
+        { k: 'r', x: 878, y: 428, dir: 'v', len: 36, v: '10k', net: 'v33', i: 'rtach' },
+        { k: 'w', p: [[878, 446], [878, 446]], net: 'v33', i: 'rtach' },
+        { k: 'dot', x: 878, y: 446, net: 'tach' },
+        { k: 'dot', x: 850, y: 356, net: 'v33' },
+        { k: 'flag', x: 836, y: 318, t: '3V3 → sensors', net: 'v33', i: 'p33' },
+        { k: 'w', p: [[850, 356], [850, 327]], net: 'v33', i: 'p33' }] },
+  { t: 'Fan <b>blue</b> to buck <b>pin 3</b>.', c: 'The +5 V node, on the unbanded side of the 1N5819. A low PWM pin stops this fan even with 12 V on yellow, so the tie is required, not optional. Never 12 V.', flag: true,
+    d: [{ k: 'w', p: [[500, 424], [500, 578], [1028, 578], [1028, 280], [1040, 280]], net: 'pwm', i: 'blue' }] }
+]},
+{ name: 'Sensors', live: false,
+  why: 'All of this runs from pin 36. The button, both LEDs, the LDR and the SHT40 are on the grille. J3 is GND, 3V3, SDA, SCL, LDR, and a second 3V3 for the LDR. J4 is GND, button, green anode, green cathode, red anode, red cathode. The 10 kΩ, both 330 Ω and the button’s 1 kΩ stay on the board. Humidity is an SHT40 on I²C instead of a DHT22 on GP22, which is why <code>sht4x.py</code> wants to be written and proven on the V1 bench before this stage is built.',
+  steps: [
+  { t: 'Carry <b>3.3 V and 0 V</b> into the sensor half.', c: 'Two rails, one net each. The 0 V rail below is the same net as the one above — joined once, at the module.',
+    d: [{ k: 'w', p: [[100, R33], [1140, R33]], net: 'v33', i: 'p33' },
+        { k: 'flag', x: 100, y: R33, t: '3V3 · pin 36', net: 'v33', dir: 'left', i: 'p33' },
+        { k: 'w', p: [[60, R0], [1140, R0]], net: 'gnd', i: 'gnd' },
+        { k: 'w', p: [[60, B0], [60, R0]], net: 'gnd', i: 'gnd' },
+        { k: 'dot', x: 60, y: B0, net: 'gnd' },
+        { k: 'dot', x: 60, y: R0, net: 'gnd' },
+        { k: 't', x: 1148, y: R33 + 4, t: '3.3 V', cls: 'lbl-ink' },
+        { k: 't', x: 1148, y: R0 + 4, t: '0 V', cls: 'lbl-ink' }] },
+  { t: '<b>SHT40</b>: VIN to pin 36, GND to 0 V.', c: 'The breakout carries its own regulator and level shifting, so 3.3 V on VIN is right. Land it on <b>VIN</b>, never on the 3V pad — that pad is the regulator’s output.', flag: true,
+    d: [{ k: 'w', p: [[330, 766], [300, 766], [300, R33]], net: 'v33', i: 'sht' },
+        { k: 'dot', x: 300, y: R33, net: 'v33' },
+        { k: 'w', p: [[330, 796], [288, 796], [288, R0]], net: 'gnd', i: 'sht' },
+        { k: 'dot', x: 288, y: R0, net: 'gnd' }] },
+  { t: '<b>SDA to GP0</b>, <b>SCL to GP1</b>.', c: 'Physical pins 1 and 2, the two nearest the USB socket. Both were free — <code>config.py</code> used 22, 26, 16, 17, 18, 19, 20 and nothing else. The breakout carries the bus pull-ups, so add none.', flag: true,
+    d: [{ k: 'w', p: [[520, 826], [534, 826]], net: 'i2c', i: 'i2c' },
+        { k: 'flag', x: 534, y: 826, t: 'GP0 · SDA · 1', net: 'i2c', i: 'i2c' },
+        { k: 'w', p: [[520, 856], [534, 856]], net: 'i2c', i: 'i2c' },
+        { k: 'flag', x: 534, y: 856, t: 'GP1 · SCL · 2', net: 'i2c', i: 'i2c' }] },
+  { t: '<b>LDR divider</b>: pin 36, LDR, node, 10 k&Omega;, 0 V. Node to GP26.', c: 'LDR on top, so bright reads high. No polarity. It stays in room air — in the duct it reads the inside of a pipe.',
+    d: [{ k: 'w', p: [[170, R33], [170, 738]], net: 'v33', i: 'ldr' },
+        { k: 'dot', x: 170, y: R33, net: 'v33' },
+        { k: 'ldr', x: 170, y: 762, net: 'part', i: 'ldr' },
+        { k: 'w', p: [[170, 786], [170, 812]], net: 'sig', i: 'ldr' },
+        { k: 'dot', x: 170, y: 812, net: 'sig' },
+        { k: 'w', p: [[170, 812], [108, 812]], net: 'sig', i: 'adc' },
+        { k: 'flag', x: 108, y: 812, t: 'GP26 · 31', net: 'sig', dir: 'left', i: 'adc' },
+        { k: 'w', p: [[170, 812], [170, 838]], net: 'sig', i: 'rldr' },
+        { k: 'r', x: 170, y: 862, dir: 'v', v: '10k', net: 'sig', i: 'rldr' },
+        { k: 'w', p: [[170, 886], [170, R0]], net: 'gnd', i: 'rldr' },
+        { k: 'dot', x: 170, y: R0, net: 'gnd' }] },
+  { t: '<b>Button</b> from GP16 through <b>1 k&Omega;</b> to 0 V.', c: 'R9, on the board between the Pico and J4. The internal pull-up still sets the high; the 1 kΩ only means a pinched cable or a static spark at the grille meets a resistor before the pin. Pressed still reads about 0.06 V. If it is a tactile switch, use diagonally opposite corners — two pins on the same side are permanently joined inside the part.',
+    d: [{ k: 'flag', x: 640, y: 744, t: 'GP16 · 21', net: 'sig', i: 'btn' },
+        { k: 'w', p: [[670, 753], [670, 758]], net: 'sig', i: 'btn' },
+        { k: 'r', x: 670, y: 782, dir: 'v', v: '1k', net: 'sig', i: 'btn' },
+        { k: 'w', p: [[670, 806], [670, 816]], net: 'sig', i: 'btn' },
+        { k: 'sw', x: 670, y: 816, net: 'part', i: 'btn' },
+        { k: 'w', p: [[670, 858], [670, R0]], net: 'gnd', i: 'btn' },
+        { k: 'dot', x: 670, y: R0, net: 'gnd' }] },
+  { t: '<b>Green LED</b>: GP19 through <b>330 &Omega;</b> to the anode, cathode to 0 V.', c: 'Flat on the rim, and the short leg, is the cathode. Anything from 220 Ω to 1 kΩ works; higher is dimmer, which is kinder at 3am.',
+    d: [{ k: 'flag', x: 770, y: 744, t: 'GP19 · 25', net: 'sig', i: 'leds' },
+        { k: 'w', p: [[800, 753], [800, 766]], net: 'sig', i: 'leds' },
+        { k: 'r', x: 800, y: 790, dir: 'v', v: '330', net: 'sig', i: 'leds' },
+        { k: 'w', p: [[800, 814], [800, 840]], net: 'part', i: 'leds' },
+        { k: 'led', x: 800, y: 840, c: '#5fb37a', t: 'D2 green', i: 'leds' },
+        { k: 'w', p: [[800, 862], [800, R0]], net: 'gnd', i: 'leds' },
+        { k: 'dot', x: 800, y: R0, net: 'gnd' }] },
+  { t: '<b>Red LED</b>: GP20 through <b>330 &Omega;</b> to the anode, cathode to 0 V.', c: 'Same orientation rule. Red needs a little less forward voltage than green, so slightly more current flows through the same resistor.',
+    d: [{ k: 'flag', x: 910, y: 744, t: 'GP20 · 26', net: 'sig', i: 'leds' },
+        { k: 'w', p: [[940, 753], [940, 766]], net: 'sig', i: 'leds' },
+        { k: 'r', x: 940, y: 790, dir: 'v', v: '330', net: 'sig', i: 'leds' },
+        { k: 'w', p: [[940, 814], [940, 840]], net: 'part', i: 'leds' },
+        { k: 'led', x: 940, y: 840, c: '#e2565a', t: 'D3 red', i: 'leds' },
+        { k: 'w', p: [[940, 862], [940, R0]], net: 'gnd', i: 'leds' },
+        { k: 'dot', x: 940, y: R0, net: 'gnd' }] }
+]},
+{ name: 'First power with the fan on', live: true,
+  why: 'The image on the Pico is the V1 image. <code>calibrate.fan()</code> still drives GP17 and prints rpm. A healthy NF-F12 at full PWM is about 2000 rpm, so <code>MIN_RPM = 800</code> still sits under it.',
+  steps: [
+  { t: 'Cord in, fan connected. <b>The fan stays still.</b>', c: 'A spin at plug-in means the 100 kΩ gate-to-source is missing, the S8050 is in backwards, or yellow is on raw +12 instead of the drain.', flag: true, d: [] },
+  { t: 'Scan the bus. <b>0x44 answers.</b>', c: 'One address, one device. Read the serial number too — it proves CRC handling before any control logic depends on it. RH 1–3 % away from where the DHT22 sat is expected; the baseline re-learns within about fifteen minutes.', d: [] },
+  { t: 'Command it on. <b>Yellow reads about 12 V</b> and rpm is near 2000.', c: 'Yellow at 12 V but no rotation means blue is not at 5 V. Rotation but 0 rpm means the tach pull-up, or the green lead, is not landing on GP18.', d: [] },
+  { t: '<b>Time the coast.</b>', c: '<code>STUCK_S = 12</code> was measured on a 40 mm rotor that coasts 2–3 s. A 120 mm rotor takes longer, and until that number is remeasured a normal shutdown looks like a stuck switch.', flag: true, d: [] }
+]}];
+
+const STEPS = [];
+STAGES.forEach((g, gi) => g.steps.forEach(s => {
+  s.n = STEPS.length + 1; s.stage = gi; STEPS.push(s);
+}));
+
+/* Which steps touch a given part, and which parts a step touches. Both
+   derived from the same list, so neither can go stale. */
+const PARTSTEPS = {}, STEPPARTS = {};
+STEPS.forEach(s => s.d.forEach(o => {
+  if (!o.i) return;
+  (PARTSTEPS[o.i] = PARTSTEPS[o.i] || new Set()).add(s.n);
+  (STEPPARTS[s.n] = STEPPARTS[s.n] || new Set()).add(o.i);
+}));
+
+/* ============================================================
+   Readings. One row per node, one value per state.
+   usb = cord out, USB in.  off = mains on, fan commanded off.
+   on  = mains on, fan commanded on.
+   ============================================================ */
+const STATES = {
+  usb: { label: 'USB only, cord out',
+    note: '<b>Cord out, USB in.</b> The whole 12 V half is dead: no mains, no 12 V, no 5 V from the buck. The Pico runs from VBUS through its own internal diode, so the sensors, the button and the LEDs all work and the fan cannot move. This is the state to program in.' },
+  off: { label: 'Mains on, fan off',
+    note: '<b>Cord in, GP17 low.</b> 12 V is up, the buck is up, the gate is sitting at the source voltage so the MOSFET is off, and the fan’s yellow lead is pulled to nearly 0 V through the fan itself. The mains end of the box is live — do not put a probe in it.' },
+  on: { label: 'Mains on, fan on',
+    note: '<b>Cord in, GP17 high.</b> The S8050 is saturated, the gate is about 12 V below the source, the MOSFET is on and yellow is at 12 V. Blue is already at 5 V, so the fan runs at full speed and the tach pulses twice a revolution. The mains end is still live.' }
+};
+
+const VTAGS = [
+  { x: 199, y: 132, lx: 199, ly: 218, i: 'fuse', net: 'ac',
+    v: { usb: 'cord out · dead', off: '120 V AC · live', on: '120 V AC · live' } },
+  { x: 588, y: B12, lx: 588, ly: 24, i: 'rail12', net: 'v12',
+    v: { usb: '0 V', off: '12.0 V', on: '12.0 V' } },
+  { x: 500, y: 424, lx: 520, ly: 406, a: 'middle', i: 'buck5', net: 'v5',
+    v: { usb: '0 V', off: '5.0 V', on: '5.0 V' } },
+  { x: 620, y: 424, lx: 612, ly: 452, a: 'end', i: 'd5819', net: 'v5',
+    v: { usb: '≈4.7 V from USB', off: '≈4.6 V', on: '≈4.6 V' } },
+  { x: 795, y: 155, lx: 744, ly: 124, a: 'end', i: 'fet', net: 'part',
+    v: { usb: '0 V gate', off: '≈12 V gate', on: '≈0.1 V gate' } },
+  { x: 940, y: 190, lx: 912, ly: 226, a: 'end', i: 'drain', net: 'v12',
+    v: { usb: '0 V', off: '≈0 V · switch open', on: '≈12 V · switch closed' } },
+  { x: 820, y: 480, lx: 812, ly: 524, a: 'end', i: 'base', net: 'sig',
+    v: { usb: '0 V · GP17 low', off: '0 V · GP17 low', on: '3.3 V · 0.7 V at the base' } },
+  { x: 1015, y: 446, lx: 1054, ly: 496, a: 'start', i: 'green', net: 'tach',
+    v: { usb: '3.3 V idle', off: '3.3 V idle', on: 'pulsing · 1.5–2.5 V average' } },
+  { x: 1028, y: 340, lx: 1000, ly: 360, a: 'end', i: 'blue', net: 'pwm',
+    v: { usb: '0 V', off: '≈5.0 V', on: '≈5.0 V' } },
+  { x: 700, y: B0, lx: 700, ly: 632, i: 'gnd', net: 'gnd',
+    v: { usb: '0.00 V · the reference', off: '0.00 V · the reference', on: '0.00 V · the reference' } },
+  { x: 250, y: R33, lx: 250, ly: 726, i: 'p33', net: 'v33',
+    v: { usb: '3.30 V', off: '3.30 V', on: '3.30 V' } },
+  { x: 1120, y: 250, lx: 1120, ly: 396, a: 'middle', i: 'fan', net: 'v12',
+    v: { usb: 'still', off: 'still', on: '≈2000 rpm' } }
+];
+
+/* ============================================================
+   Part detail. meter rows may be a fixed string or one per state.
+   ============================================================ */
+const INFO = {
+c8: { t: 'IEC C8 inlet', s: 'figure-8, two pins', where: 'left end wall', haz: true,
+  m: [['Mates with', 'an IEC C7 cord'], ['Earth pin', 'none — Class II'], ['Rated', '2.5 A']],
+  why: 'The cord is a NEMA 1-15P to C7. C7 is the figure-8 end that plugs in here. Only two conductors enter the box.',
+  chk: 'With the cord out, continuity from each inlet tab to the module pin it feeds, through J5, and no continuity from either tab to the aluminum.',
+  bad: '<b>There is nowhere to land an earth wire.</b> The supply is Class II. A wire from a mains contact to the box does not create a protective earth — it gives a fault current a path into the case you are holding.' },
+fuse: { t: 'Fuse, hot lead', s: '2 A time-lag, 5 × 20 mm', where: 'left end wall, beside the inlet', haz: true,
+  m: [['Value', '2 A, 250 V, time-lag'], ['Run current at 115 V', '≈0.25 A'], ['Cold inrush', '≈20 A'],
+      ['Reads, cord out', 'under 1 Ω end to end']],
+  why: 'It sits between the C8 line tab and J5 pin 2, which the board carries to AC/L. Neutral is not fused. A two-prong plug can go in either way round, so fusing the hot lead is the only way to be sure the fuse is upstream of a fault.',
+  chk: 'Continuity across the fuse with the cord out. Nothing else about it is measurable in circuit.',
+  bad: 'The IRM-10 spec sheet does not print a fuse value; it points at the installation manual. 2 A slow-blow is sized over the run current and under the cold inrush. <b>A fast-blow of the same number opens on every power-up.</b>' },
+irm: { t: 'Mean Well IRM-10-12', s: 'AC/L · AC/N · −V · +V', where: 'mains end, on the floor of the box', haz: true,
+  m: [['+V to −V', { usb: 'dead, cord out', off: '11.7 – 12.3 V', on: '11.7 – 12.3 V' }],
+      ['Rated', '12 V, 0.85 A, 10 W'], ['Isolation', '3 kV AC, in to out'], ['Standard', 'UL 62368-1, Class II']],
+  why: 'It is the only part in the box that touches mains, and the isolation barrier is inside it. Everything downstream of +V and −V is low voltage. The module is board-mount, so the enclosure is what makes the mains side a finished box.',
+  chk: 'Cord in, meter across +V and −V before anything else is connected to them.',
+  bad: '<b>About −12 V means +V and −V are swapped.</b> Unplug and swap them before the buck is attached. The output is isolated, so this does not hurt the module — it hurts everything downstream. Clearances around the module come from the installation manual, not from this drawing.' },
+rail12: { t: '+12 V rail', s: 'net · IRM +V', where: 'the run between the module, the MOSFET and the buck',
+  m: [['Idle', { usb: '0 V', off: '12.0 V ± 2.5 %', on: '12.0 V ± 2.5 %' }],
+      ['Fan draw', '0.1 A maximum'], ['Available', '0.85 A'], ['Sag when the fan starts', 'under 0.2 V']],
+  why: 'Three things hang on this rail: the MOSFET source, the 100 kΩ gate pull-up, and pin 1 of the buck. The yellow wire is <em>not</em> on it — yellow is on the drain and only reaches 12 V while the MOSFET is on.',
+  chk: 'Black probe on 0 V, red anywhere on the rail. It should not move when the fan starts.',
+  bad: '<b>The Pico never touches this rail.</b> 12 V on any GPIO is a destroyed pin, and the most likely way it happens is the yellow lead landing where the V1 sheet says tach.' },
+gnd: { t: '0 V', s: 'net · one net, joined once', where: 'module −V, buck pin 2, S8050 emitter, both diode anodes, fan black, Pico pin 38',
+  m: [['Anywhere on the net', '0.00 V — it is the reference'], ['To Pico pin 38', 'under 1 Ω'],
+      ['To +12', 'open'], ['To the aluminum box', 'open']],
+  why: 'Every reading on this sheet is measured against this net. The fan’s return current and the sensors’ return current share it, which is why the fan’s black lead is no longer switched.',
+  chk: 'Park the black probe here and leave it there for every other measurement on the page.',
+  bad: '<b>Do not bond the box to 0 V.</b> The MOSFET tab is the drain, and a bonded case turns the first accidental touch between tab and lid into a short from switched 12 V to ground.' },
+buck: { t: 'Recom R-78E5.0-1.0', s: 'pin 1 +Vin · pin 2 GND · pin 3 +5 V', where: 'low-voltage end, beside the Pico',
+  m: [['Pin 1', { usb: '0 V', off: '12 V', on: '12 V' }],
+      ['Pin 3', { usb: '0 V', off: '4.75 – 5.25 V', on: '4.75 – 5.25 V' }],
+      ['Rated', '5.0 V, 1 A'], ['This build draws', '≈ 0.15 A']],
+  why: 'It makes the Pico’s 5 V, which is what lets the installed unit run without a USB cable. Sized for a Pico, not for an LED ring.',
+  chk: 'Match the three pins to the datasheet top view before soldering, then power it with nothing on pin 3 and read pin 3 to 0 V.',
+  bad: 'Reversed pins destroy it on first power. 28 V is its input ceiling, so 12 V is comfortably inside — but it is a switching part and its ground pin is not optional.' },
+buck5: { t: '+5 V node', s: 'buck pin 3', where: 'between the buck, the 1N5819 and the fan’s blue lead',
+  m: [['To 0 V', { usb: '0 V', off: '≈5.0 V', on: '≈5.0 V' }],
+      ['Feeds', 'the 1N5819, and the fan’s blue lead'], ['Never feeds', 'a GPIO, or the SHT40']],
+  why: 'This node exists twice over: it is the Pico’s installed supply, and it is the 5 V the fan’s PWM input needs to read as 100 %. Blue taps it here, upstream of the diode, so the PWM pin sees a real 5.0 V rather than 4.6 V.',
+  chk: 'Read it with the cord in and USB out. Then plug USB in as well and confirm it does not change.',
+  bad: 'Anything on this node reaching a 3.3 V part is a dead part. The only three things on it are the buck, the diode and one blue wire.' },
+d5819: { t: '1N5819 into VSYS', s: 'Schottky · band toward the Pico', where: 'between buck pin 3 and Pico pin 39',
+  m: [['Anode, buck side', { usb: '0 V', off: '5.0 V', on: '5.0 V' }],
+      ['Cathode, pin 39', { usb: '≈4.7 V from USB', off: '≈4.6 V', on: '≈4.6 V' }],
+      ['Forward drop', '0.3 – 0.4 V at this current'], ['Pin 40', 'no wire']],
+  why: 'USB power reaches VSYS through the Pico’s own diode from VBUS. This is the matching diode for the buck, so both supplies can be present at once and neither feeds the other. It is the reason a programming cable is safe while the cord is in.',
+  chk: 'Out of circuit, diode mode: about 0.25 V one way, open the other. In circuit, pin 39 sits a few tenths below pin 3.',
+  bad: '<b>Pin 40 is VBUS, the corner beside the USB socket.</b> Landing the buck there back-feeds the computer’s port. Pin 39 is the next pin down that edge. Backwards, the Pico simply never powers from the buck.' },
+vbus: { t: 'VBUS, pin 40', s: 'USB programming port', where: 'Pico, the corner beside the socket',
+  m: [['With USB', { usb: '≈5 V from the host', off: '0 V · no cable', on: '0 V · no cable' }],
+      ['Wire from the buck', 'none, ever']],
+  why: 'Installed power does not use this pin. USB remains the programming port and nothing else. On V1 this pin fed the fan; on V2 it feeds nothing.',
+  chk: 'Look at it. There should be no solder on it.',
+  bad: 'A wire here is the one mistake on this sheet that damages something outside the project.' },
+fet: { t: 'IRF9540 · Q2', s: 'P-channel MOSFET, TO-220', where: 'low-voltage end, lying flat, tab insulated',
+  m: [['Source', { usb: '0 V', off: '12 V', on: '12 V' }],
+      ['Gate to 0 V', { usb: '0 V', off: '≈12 V · off', on: '≈0.1 V · on' }],
+      ['Gate to source', { usb: '0 V', off: '0 V · off', on: '≈−12 V · on' }],
+      ['Drain', { usb: '0 V', off: 'near 0 V', on: '≈12 V' }],
+      ['Gate rating', '± 20 V']],
+  why: 'High-side switching: the MOSFET makes and breaks the fan’s +12 V and the fan’s ground stays permanently tied to the Pico. That is the whole reason this part exists — the V1 low-side S8050 would leave the tach pin referenced to a floating ground and pull GP18 toward 12 V.',
+  chk: 'Part number toward you, leads down: <b>gate, drain, source</b>. Measure gate to 0 V in both commanded states before the drain is wired; 12 V and 0.1 V is the proof the driver works.',
+  bad: '<b>The metal tab is the drain, not a heatsink.</b> Screwed to the box it is switched 12 V on the case. At 0.1 A and 0.117 Ω this part dissipates about a milliwatt, so it needs no heatsinking at all — insulate it and forget it.' },
+rgs: { t: '100 kΩ, gate to source', s: 'holds the fan off at boot', where: 'across the MOSFET’s gate and source pins',
+  m: [['Gate to source, off', '0 V'], ['Current through it, on', '≈0.12 mA'],
+      ['Out of circuit', '100 kΩ']],
+  why: 'Until the firmware sets GP17, that pin is high-impedance. This resistor keeps the gate and the source at the same voltage through that moment, and a P-channel with 0 V gate-to-source is off.',
+  chk: 'Cord in, fan commanded off: gate to source must be 0 V, not a few volts.',
+  bad: '<b>Leave it out and the gate floats.</b> The fan can spin the instant 12 V appears — the same failure the V1 base pulldown was there to prevent, one stage further up the circuit.' },
+rg: { t: '100 Ω, collector to gate', s: 'the only part between the two switches', where: 'between the S8050 collector and the MOSFET gate',
+  m: [['Across it, steady state', 'a few millivolts'], ['Peak current at the edge', 'about 0.12 A'],
+      ['Out of circuit', '100 Ω']],
+  why: 'It limits the current spike as the gate capacitance charges and discharges. At DC almost nothing flows through it, because the only steady current is the 100 kΩ from 12 V — about a tenth of a milliamp.',
+  chk: 'Nothing useful reads across it in circuit. Measure it out of circuit and move on.',
+  bad: 'Too large a value slows the edge, which matters only if this ever becomes a PWM circuit. It is not one.' },
+s8050: { t: 'S8050 · Q1', s: 'NPN — was the fan switch, now the gate driver', where: 'low-voltage end, on the tag strip',
+  m: [['Base, commanded on', { usb: '0 V', off: '0 V', on: '0.70 – 0.80 V' }],
+      ['Collector', { usb: '0 V', off: '≈12 V', on: 'under 0.2 V' }],
+      ['Emitter', '0 V, always'],
+      ['Collector current, on', '≈0.12 mA'], ['Base current, on', '≈2.6 mA']],
+  why: 'The same transistor and the same two resistors as the V1 board, doing a different job: it no longer carries the fan’s current, it only pulls a gate down. Which is why its collector current fell from 50 mA to a tenth of a milliamp.',
+  chk: 'Diode mode, red on the middle leg: about 0.7 to both outer legs means NPN. With red still on the base the emitter reads a few tens of millivolts higher than the collector.',
+  bad: 'Emitter to 0 V, base to the 1 kΩ, collector to the 100 Ω. <b>An S8550 in the same package turns on when the base goes low</b> and cannot work here. Backwards, gain drops to about 3 and the gate barely moves.' },
+base: { t: 'Base network', s: '1 kΩ from GP17, 100 kΩ to 0 V', where: 'between the Pico’s pin 22 and the S8050',
+  m: [['GP17, commanded on', { usb: '0 V', off: '0 V', on: '3.30 V' }],
+      ['Base, commanded on', { usb: '0 V', off: '0 V', on: '≈0.7 V' }],
+      ['GP17 at boot', 'high-impedance — the 100 kΩ holds the base down'],
+      ['Base drive', '≈2.6 mA']],
+  why: 'Unchanged from V1, same pin, same values. High still means fan on, which is the reason the V1 firmware runs this board with no edits.',
+  chk: 'Probe each end of the 1 kΩ with the fan commanded on: 3.3 V on the GPIO side, 0.7 V on the base side.',
+  bad: '<b>Swap the two resistors and nothing ever turns on.</b> A 100 kΩ in series against a 1 kΩ pulldown is a 100:1 divider that never reaches 0.7 V. Their color bands differ in one place only — the fourth: brown for 1 k, orange for 100 k.' },
+drain: { t: 'Drain node · the yellow lead', s: 'switched +12 V', where: 'MOSFET tab, the 1N4148 band, and one wire out of the box',
+  m: [['Commanded off', { usb: '0 V', off: 'near 0 V, through the fan', on: '≈12 V' }],
+      ['Commanded on', { usb: '0 V', off: 'near 0 V', on: '11.8 – 12.0 V' }],
+      ['Across the fan, running', '≈12 V'], ['To any GPIO', 'open — always']],
+  why: 'This is the node the MOSFET makes and breaks, and the only 12 V conductor that leaves the box. The fan’s internal electronics pull it toward 0 V when the switch is open, which is the opposite of what the V1 collector did — there, an open switch let the node rise to the supply.',
+  chk: 'Commanded on it is within a couple of hundred millivolts of the rail. If it is several volts low, the MOSFET is not fully on: check the gate.',
+  bad: '<b>Yellow on a GPIO destroys the pin, and yellow on raw +12 makes a fan that never stops.</b> The V1 sheet calls this wire tach. It is not.' },
+d4148: { t: '1N4148 across the fan', s: 'band on the yellow side', where: 'at the fan’s connector, on the tag strip',
+  m: [['Fan on', 'reverse biased — conducts nothing'],
+      ['At switch-off', 'clamps the yellow lead near −0.7 V'],
+      ['Out of circuit, diode mode', '≈0.65 V one way, open the other']],
+  why: 'A motor winding fights any attempt to stop its current. This gives that energy a path instead of letting it appear across the MOSFET. The fan’s own drive electronics make it precautionary rather than essential; it costs a cent and one solder joint.',
+  chk: 'Diode mode with the cord out: red probe on the plain end reads about 0.65 V, the other way round reads open.',
+  bad: '<b>Band on the ground side is a short from 12 V to 0 V</b> the moment the MOSFET turns on. Cathode, which is the band, goes on the drain. Anode on fan ground.' },
+fan: { t: 'Noctua NF-F12 iPPC-2000 IP67', s: '12 V · 0.1 A · four wires', where: 'the air box, at the end of four conductors',
+  m: [['Running', { usb: 'still — no 12 V', off: 'still — switch open', on: '≈2000 rpm' }],
+      ['Tach', '2 pulses per revolution'], ['Current', '0.1 A maximum, 1.2 W'],
+      ['Free air', '72 CFM'], ['Maximum pressure', '3.94 mm H₂O · 0.155 in w.g.'], ['Noise', '29.7 dBA']],
+  why: 'Yellow to the drain, black to 0 V, green to GP18, blue to buck pin 3. On/off only — there is no PWM firmware in V2, and the blue tie to 5 V is what makes GP17 mean full speed.',
+  chk: 'Spin it by hand with the cord out and watch nothing happen. Then command it on and confirm rpm, not just noise.',
+  bad: 'IP67 and a UL 94 V-0 frame, so the fan itself is not the fragile part of this build. <b>A low blue lead stops it even with 12 V on yellow</b>, which reads exactly like a dead fan.' },
+black: { t: 'Black lead · fan pin 1', s: 'fan ground, permanent', where: 'joins 0 V at the tag strip',
+  m: [['To Pico pin 38', 'under 1 Ω'], ['Switched', 'no'], ['Carries', 'the full 0.1 A']],
+  why: 'On the V1 fan this lead went to the S8050 collector, because that transistor switched the ground. Here the ground has to stay tied to the Pico, or the tach output has no shared reference and GP18 gets pulled toward 12 V.',
+  chk: 'Continuity from this lead to pin 38 with everything unpowered.',
+  bad: 'Switching this lead instead of yellow is the V1 circuit, and on a 12 V fan it is how the tach pin dies.' },
+green: { t: 'Green lead · fan pin 3', s: 'tach, open collector', where: 'GP18, pin 24, with a 10 kΩ to pin 36',
+  m: [['Fan stopped', { usb: '3.3 V idle', off: '3.3 V idle', on: 'pulsing' }],
+      ['Running, on a meter', { usb: '3.3 V', off: '3.3 V', on: '1.5 – 2.5 V average' }],
+      ['At 2000 rpm', '66.7 Hz'], ['Pull-up', '10 kΩ to 3.3 V']],
+  why: 'It only ever pulls the line low, so the pull-up is what makes a high. Same circuit as V1, same GPIO, same <code>TACH_PPR = 2</code> — a different color of wire. The firmware counts falling edges and multiplies by 30.',
+  chk: 'A meter shows the average of a square wave, so something near half the rail while spinning is correct. Ignore the reading entirely while the fan is stopped.',
+  bad: '<b>Pull this to 5 V or 12 V and GP18 is destroyed</b> — the pin is not 5 V tolerant. No pull-up at all reads as a wildly unstable rpm, or zero. A steady 0 V is a short to ground.' },
+rtach: { t: '10 kΩ tach pull-up', s: 'to 3.3 V, pin 36', where: 'across the green lead and the 3.3 V rail',
+  m: [['Line idle', '3.3 V, no current'], ['Line pulled low', '0.33 mA'], ['Out of circuit', '10 kΩ']],
+  why: 'An open-collector output has nothing to pull itself high with. Without this the tach line floats and the pulse count is noise.',
+  chk: 'Cord out, measure resistance from the green node to pin 36.',
+  bad: 'To 5 V or 12 V it destroys GP18. This is the one pull-up on the board whose <em>destination</em> matters as much as its value.' },
+blue: { t: 'Blue lead · fan pin 4', s: 'PWM input, tied high', where: 'buck pin 3, upstream of the 1N5819',
+  m: [['To 0 V', { usb: '0 V', off: '≈5.0 V', on: '≈5.0 V' }],
+      ['Must never read', '12 V'], ['Duty the fan sees', '100 %']],
+  why: 'The PWM input is a 5 V pin. Tied high, the fan runs at full speed whenever the MOSFET applies 12 V. This is why V2 needs no PWM firmware, and why the tie is not optional.',
+  chk: 'It should read 5 V whenever the buck is up, in both commanded states.',
+  bad: '<b>12 V on blue is over the input’s rating.</b> It lands on buck pin 3 — not on VSYS, not on the 12 V rail. Left floating, some fans free-run and some stop; do not find out which.' },
+pico: { t: 'Pico 2 W', s: 'RP2350 · the V1 image, unchanged', where: 'low-voltage end, USB reachable through the wall',
+  m: [['Powered by', { usb: 'USB, through VBUS', off: 'the buck, through pin 39', on: 'the buck, through pin 39' }],
+      ['Fan on', 'GP17 high'], ['Tach', 'GP18, 2 pulses/rev'],
+      ['MIN_RPM', '800 — this fan turns 2000'], ['Humidity', 'SHT40 on GP0 / GP1'],
+      ['Every logic pin', '3.3 V, never 5 V']],
+  why: 'The two power parts need no code — the IRF9540 and the R-78E neither run nor require a driver. The SHT40 does: <code>sht4x.py</code>, and the one function that reads climate. Write and prove that on the V1 breadboard first, so V2 powers up on an image that is already known good.',
+  chk: '<code>calibrate.fan()</code> drives GP17 and prints rpm. Ctrl-C gets a REPL even while <code>main.py</code> is looping.',
+  bad: 'Three entries in <code>config.py</code> become lies the day this is wired: <code>PIN_TACH</code> says the tach wire is yellow, <code>STUCK_S</code> was timed on a 40 mm rotor, and <code>PIN_DHT = 22</code> should not exist at all. Keep <code>SAMPLE_S = 2</code> even though the new sensor no longer forces it — the whole loop is reasoned against that cadence.' },
+sht: { t: 'SHT40 breakout', s: 'humidity and temperature · Adafruit 4885', where: 'room air — never in the duct',
+  m: [['VIN to 0 V', '3.30 V'], ['Address', '0x44, fixed'],
+      ['RH accuracy', '±1.8 % typical, 25–75 %'], ['Temperature', '±0.2 °C typical'],
+      ['Minimum sample interval', 'milliseconds — not 2 s'], ['Onboard heater', 'yes, commanded']],
+  why: 'Humidity is what actually decides the fan; the light sensor only says whether anyone is there. This replaces the DHT22, which was the weakest part on the V1 board — better accuracy, no two-second floor on the sample rate, and a heater that can clear a saturated element after a long shower. It costs no GPIO because it shares a bus. The spare QT socket is on the breakout, at the grille, and that is where an SGP41 would chain later. The board has no second socket.',
+  chk: 'VIN to 0 V reads 3.30 V. Then scan the bus: 0x44 and nothing else, followed by the serial number, which proves CRC handling before any control logic depends on it.',
+  bad: 'Land power on <b>VIN</b>, not on the 3V pad — that pad is the breakout’s own regulator output. The bus pull-ups are already on the board, so do not add a set. If the sensor ends up on a long tail, drop the bus to 100 kHz rather than lengthening it at 400 kHz.' },
+i2c: { t: 'I²C bus', s: 'GP0 SDA · GP1 SCL · pins 1 and 2', where: 'J3 pins 3 and 4, with the LDR on pins 5 and 6',
+  m: [['Both lines, idle', '3.3 V'], ['Pull-ups', 'on the breakout, not the Pico'],
+      ['Devices today', 'one — SHT40 at 0x44'], ['Room for', 'the SGP41 at 0x59, later']],
+  why: 'Two wires instead of one pin, and the reason the DHT22 is gone: the bus the SGP41 will need is the same bus a humidity sensor can live on. J3 is that harness. An SGP41, if it comes, chains at the grille and does not need a second run to the board.',
+  chk: 'Both lines idle at 3.3 V with the sensor connected, and a scan returns exactly one address.',
+  bad: 'A line stuck low is wiring or a missing pull-up. Neither the SHT40 nor the SGP41 stretches the clock, so a hung clock is never the sensor asking for time.' },
+ldr: { t: 'LDR', s: 'top of the light divider', where: 'room air, seeing the fixture',
+  m: [['Covered', '100 kΩ – 1 MΩ'], ['Lit room', '1 – 5 kΩ'], ['Top leg', '3.3 V'],
+      ['No polarity', 'either way round']],
+  why: 'The bathroom light is the occupancy signal. The LDR sits above the 10 kΩ, so more light means less resistance above the tap and the tap climbs.',
+  chk: 'Unpowered, measure it alone: once with a thumb over it, once under the room light. You want at least ten to one.',
+  bad: 'Moving it into the duct makes it read the inside of a pipe. It stays in room air, and so does the SHT40.' },
+rldr: { t: '10 kΩ, bottom of the divider', s: 'sets where the swing lands', where: 'on the board, not in the grille cable',
+  m: [['Across it — the tap', '0.15 V dark → 2.8 V lit'], ['Divider current', '15 – 300 µA'],
+      ['Out of circuit', '10 kΩ']],
+  why: 'It gives the LDR something to divide against, and 10 kΩ puts the interesting part of the swing near the middle of the ADC range for ordinary indoor light.',
+  chk: 'Probe the tap against 0 V, then cup a hand over the LDR and watch it fall.',
+  bad: 'Stuck near 3.3 V: this resistor is not reaching 0 V. Stuck near 0 V: the LDR is not reaching 3.3 V.' },
+adc: { t: 'Light tap → GP26 / ADC0', s: 'analogue input · pin 31', where: 'the divider node',
+  m: [['Dark, measured here', '4 800 – 6 200 raw'], ['Light on, measured here', '30 000 – 32 500 raw'],
+      ['Thresholds in config', 'LIGHT_ON 22000 · LIGHT_OFF 14000'], ['Absolute maximum', '3.3 V — never 5 V']],
+  why: '<code>read_u16()</code> maps 0 – 3.3 V onto 0 – 65535. Those raw numbers were measured in the mounting position on 2026-09-26, which is what makes the thresholds real rather than placeholders.',
+  chk: 'Read it with the fixture on, then off, and confirm both numbers land outside the dead band between the two thresholds.',
+  bad: 'A reading that never moves is usually the sensor seeing a different light than the room does. Moving the sensor changes the numbers, so it has to be recalibrated where it will live.' },
+btn: { t: 'Button → GP16', s: 'active low · pin 21', where: 'on the grille, J4 pin 2, return on J4 pin 1',
+  m: [['Released', '3.3 V, internal pull-up'], ['Pressed', '0 V'],
+      ['Tap', '15 minute boost'], ['Hold 2 s', 'relearn the humidity baseline'], ['Hold 8 s', 'Wi-Fi provisioning']],
+  why: 'The pin’s internal pull-up holds the line high and the button’s only job is to short it to 0 V. R9, 1 kΩ on the board, is protection for a pin at the end of a cable, not a pull-up.',
+  chk: 'Continuity across the two contacts you wired: it should close only while held.',
+  bad: 'Beeping all the time means two pins on the same side of a tactile switch, which are permanently joined inside the part. <b>Use diagonally opposite corners.</b>' },
+leds: { t: 'Status LEDs', s: 'GP19 green · GP20 red', where: 'on the grille; R7 and R8 on the board feed the anodes, each cathode returns on its own J4 pin',
+  m: [['Series resistor', '330 Ω'], ['Across the green LED', '≈2.1 V'], ['Across the red LED', '≈1.9 V'],
+      ['Current', '3.6 – 4.2 mA'], ['Anode', 'the GPIO side']],
+  why: 'Two LEDs carry five states, so the controller can be read without a serial cable: green alone is idle, green blinking is the learn pass, red alone is running, red blinking is boost, both blinking is a fault.',
+  chk: 'With one lit, probe the anode end of its resistor, J4 pin 3 or 5, against 0 V — about 2.1 V green, 1.9 V red, and 3.3 V on the Pico end. The 1.2–1.4 V across the resistor is the proof current is flowing.',
+  bad: 'Anode at 3.3 V, cathode also at 3.3 V and the LED dark means it is in backwards. No harm done; turn it round. Flat on the rim, and the short leg, is the cathode.' },
+p33: { t: '+3.3 V rail', s: 'net · Pico pin 36', where: 'the sensor half, and the tach pull-up',
+  m: [['To 0 V', '3.25 – 3.35 V'], ['Available', '≈300 mA'], ['This build draws', 'under 10 mA'],
+      ['Above 3.4 V', 'unplug — 5 V has reached the logic']],
+  why: 'Regulated on the Pico, from whichever supply is feeding VSYS. It powers the SHT40, the light divider, the tach pull-up and both LEDs, and every logic level in the circuit is referenced to it.',
+  chk: 'It should be 3.3 V in all three states, because the Pico’s regulator does not care whether VSYS came from USB or the buck.',
+  bad: 'Anything above 3.4 V means a 5 V wire has reached this net. Unplug first, then find it — the SHT40 and the tach pull-up are the two places it happens.' }
+};
+
+/* ============================================================
+   Render the schematic
+   ============================================================ */
+const sch = document.getElementById('schem');
+sch.setAttribute('viewBox', `0 0 ${SW} ${SH}`);
+
+function wrap(o, parent) {
+  /* Every object gets an .obj group so a net can be traced, and a .part
+     group as well if it has something to say. */
+  const g = el('g', { class: 'obj' });
+  g.dataset.net = o.net || (o.col ? '' : 'part');
+  if (o.i && INFO[o.i]) {
+    const p = el('g', { class: 'part', 'data-info': o.i, tabindex: '0', role: 'button' });
+    const ti = el('title');
+    ti.textContent = INFO[o.i].t + ' — click for detail';
+    p.appendChild(ti);
+    g.appendChild(p);
+    parent.appendChild(g);
+    return { draw: p, needsBox: o.k !== 'w' };
+  }
+  parent.appendChild(g);
+  return { draw: g, needsBox: false };
+}
+
+const frameLayer = el('g', { class: 'frame' });
+sch.appendChild(frameLayer);
+const stepLayer = el('g');
+sch.appendChild(stepLayer);
+const hopLayer = el('g', { class: 'hops' });
+
+const needBox = [];
+FRAME.forEach(o => {
+  const { draw, needsBox } = wrap(o, frameLayer);
+  sdraw(o, draw);
+  if (needsBox && draw.classList.contains('part')) needBox.push(draw);
+});
+STEPS.forEach(s => {
+  const g = el('g', { class: 'grp', 'data-step': s.n });
+  s.d.forEach(o => {
+    const { draw, needsBox } = wrap(o, g);
+    sdraw(o, draw);
+    if (draw.classList.contains('part')) {
+      if (o.k === 'w') draw.appendChild(el('path', { class: 'hit', d: 'M' + o.p.map(p => p.join(',')).join(' L') }));
+      else if (needsBox) needBox.push(draw);
+    }
+  });
+  stepLayer.appendChild(g);
+});
+sch.appendChild(hopLayer);
+
+/* Hit areas sized after layout, so a small symbol is still easy to click. */
+needBox.forEach(p => {
+  let b;
+  try { b = p.getBBox(); } catch (e) { return; }
+  if (!b.width && !b.height) return;
+  p.appendChild(el('rect', { class: 'hitbox', x: b.x - 5, y: b.y - 5,
+    width: b.width + 10, height: b.height + 10 }));
+});
+
+/* ---- crossings, found rather than maintained ---- */
+(function hops() {
+  const H = [], V = [];
+  SEGS.forEach(s => {
+    const [x1, y1] = s.a, [x2, y2] = s.b;
+    if (y1 === y2 && x1 !== x2) H.push({ y: y1, x0: Math.min(x1, x2), x1: Math.max(x1, x2), col: s.col });
+    else if (x1 === x2 && y1 !== y2) V.push({ x: x1, y0: Math.min(y1, y2), y1: Math.max(y1, y2), w: s.w });
+  });
+  const near = (x, y) => DOTS.some(d => Math.abs(d[0] - x) < 4 && Math.abs(d[1] - y) < 4);
+  H.forEach(h => V.forEach(v => {
+    if (v.x <= h.x0 + 2 || v.x >= h.x1 - 2) return;      /* endpoint = a corner, not a crossing */
+    if (h.y <= v.y0 + 2 || h.y >= v.y1 - 2) return;
+    if (near(v.x, h.y)) return;                           /* junction: leave it joined */
+    hopLayer.appendChild(el('line', { x1: v.x, y1: h.y - 7, x2: v.x, y2: h.y + 7,
+      stroke: 'var(--surface)', 'stroke-width': (v.w || 2) + 2.5 }));
+    hopLayer.appendChild(el('path', { d: `M${v.x - 7},${h.y} A7,7 0 0,1 ${v.x + 7},${h.y}`,
+      fill: 'none', stroke: h.col, 'stroke-width': 2 }));
+  }));
+})();
+
+/* ---- readings, one layer, state-aware ---- */
+const vlayer = el('g', { class: 'vlayer' });
+sch.appendChild(vlayer);
+VTAGS.forEach(o => {
+  const g = el('g', { class: 'vtag part', 'data-info': o.i, tabindex: '0', role: 'button' });
+  const ti = el('title');
+  ti.textContent = (INFO[o.i] ? INFO[o.i].t : o.i) + ' — expected reading, click for detail';
+  g.appendChild(ti);
+  const lx = o.lx === undefined ? o.x : o.lx, ly = o.ly === undefined ? o.y : o.ly;
+  if (lx !== o.x || ly !== o.y) {
+    g.appendChild(el('line', { x1: o.x, y1: o.y, x2: lx, y2: ly, stroke: 'var(--ink-dim)',
+      'stroke-width': .9, 'stroke-dasharray': '2 2' }));
+    g.appendChild(el('circle', { cx: o.x, cy: o.y, r: 2.8, fill: 'var(--bg)',
+      stroke: NC(o.net), 'stroke-width': 1.5 }));
+  }
+  g.appendChild(el('rect', { class: 'plate', rx: 2.5, x: 0, y: 0, width: 0, height: 0 }));
+  const t = el('text', { x: lx, y: ly + 3.4, 'text-anchor': o.a || 'middle', fill: NC(o.net) });
+  g.appendChild(t);
+  o._t = t;
+  vlayer.appendChild(g);
+});
+
+function sizePlates() {
+  vlayer.querySelectorAll('g.vtag').forEach(g => {
+    const t = g.querySelector('text'), r = g.querySelector('rect.plate');
+    const w = t.getComputedTextLength() || t.textContent.length * 5.6;
+    const a = t.getAttribute('text-anchor'), x = +t.getAttribute('x'), y = +t.getAttribute('y') - 3.4;
+    const x0 = a === 'start' ? x : a === 'end' ? x - w : x - w / 2;
+    r.setAttribute('x', x0 - 4.5); r.setAttribute('y', y - 8);
+    r.setAttribute('width', w + 9); r.setAttribute('height', 16);
+  });
+}
+
+/* ============================================================
+   State
+   ============================================================ */
+let state = 'off', picked = null, sel = null, netFocus = null;
+
+function paintState() {
+  VTAGS.forEach(o => { o._t.textContent = o.v[state]; });
+  sizePlates();
+  document.getElementById('stateNote').innerHTML = STATES[state].note;
+  document.querySelectorAll('#stateSel button').forEach(b =>
+    b.setAttribute('aria-pressed', b.dataset.state === state ? 'true' : 'false'));
+  if (picked) showInfo(picked, true);
+  paintStatePanel();
+  paintBudget();
+}
+
+document.getElementById('stateSel').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  state = b.dataset.state;
+  paintState();
+});
+
+document.getElementById('vtoggle').addEventListener('change', e =>
+  vlayer.classList.toggle('off', !e.target.checked));
+
+/* Net names on the wires are useful when tracing and noise the rest of the
+   time, so they are off by default. */
+const nameLayer = el('g', { class: 'vlayer off' });
+sch.appendChild(nameLayer);
+[['+12 V', 700, B12 - 8, 'v12'], ['0 V', 250, B0 - 8, 'gnd'], ['+3.3 V', 700, R33 - 8, 'v33'],
+ ['0 V', 400, R0 - 8, 'gnd'], ['+5 V', 530, 408, 'v5'], ['mains L', 260, 124, 'ac'],
+ ['mains N', 260, 164, 'ac'], ['yellow · switched +12', 900, 182, 'v12'],
+ ['green · tach', 1024, 460, 'tach'], ['blue · PWM 5 V', 700, 570, 'pwm']
+].forEach(([t, x, y, net]) => txt(nameLayer, x, y, t, 'lbl-dim', 'middle', NC(net)));
+document.getElementById('ntoggle').addEventListener('change', e =>
+  nameLayer.classList.toggle('off', !e.target.checked));
+
+/* ---- net tracing ---- */
+const legend = document.getElementById('netLegend');
+Object.entries(NETS).forEach(([k, v]) => {
+  if (k === 'part') return;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.dataset.net = k;
+  b.setAttribute('aria-pressed', 'false');
+  b.innerHTML = `<b style="background:${v.c}"></b>${v.n}`;
+  legend.appendChild(b);
+});
+legend.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  netFocus = netFocus === b.dataset.net ? null : b.dataset.net;
+  legend.querySelectorAll('button').forEach(x =>
+    x.setAttribute('aria-pressed', x.dataset.net === netFocus ? 'true' : 'false'));
+  if (netFocus && sel !== null) focusStep(sel);       /* the two modes fight; net wins */
+  sch.querySelectorAll('.obj').forEach(o => {
+    o.style.opacity = !netFocus ? '' : (o.dataset.net === netFocus ? '1' : '.1');
+  });
+  frameLayer.style.opacity = netFocus ? '.4' : '';
+  document.getElementById('focusNote').textContent = netFocus
+    ? NETS[netFocus].n + ' — every wire on this net' : (sel ? 'step ' + sel : 'all connections');
+});
+
+/* ============================================================
+   Inspect panel
+   ============================================================ */
+const insp = document.getElementById('inspect');
+const EMPTY = '<p class="hintline">Nothing selected. Click a part, a wire or a reading above &mdash; or press Tab, then Enter, to step through them.</p>';
+
+function showInfo(key, keep) {
+  const inf = key ? INFO[key] : null;
+  picked = inf ? key : null;
+  document.querySelectorAll('.figure .part').forEach(p =>
+    p.classList.toggle('picked', p.dataset.info === picked));
+  if (!inf) { insp.innerHTML = EMPTY; return; }
+  const rows = (inf.m || []).map(([a, b]) => {
+    const live = b && typeof b === 'object';
+    return `<dt>${a}</dt><dd class="${live ? 'live' : ''}">${live ? b[state] : b}</dd>`;
+  }).join('');
+  const st = [...(PARTSTEPS[key] || [])].sort((a, b) => a - b);
+  insp.innerHTML =
+    `<div class="ihead"><h3>${inf.t}</h3><span class="isub">${inf.s}</span>` +
+      (inf.where ? `<span class="iwhere">${inf.where}</span>` : '') +
+      (inf.haz ? `<span class="ihaz">mains · cord out first</span>` : '') + `</div>` +
+    `<div class="icols">` +
+      (rows ? `<dl class="meter">${rows}</dl>` : `<div></div>`) +
+      `<div class="prose">` +
+        (inf.why ? `<p><span class="tag2">what it is for</span>${inf.why}</p>` : '') +
+        (inf.chk ? `<p><span class="tag2">how to check it</span>${inf.chk}</p>` : '') +
+        (inf.bad ? `<p class="bad"><span class="tag2">if it reads wrong</span>${inf.bad}</p>` : '') +
+      `</div>` +
+    `</div>` +
+    (st.length ? `<p class="isteps">Built at ${st.length > 1 ? 'steps' : 'step'} ` +
+      st.map(n => `<button type="button" data-goto="${n}">${String(n).padStart(2, '0')}</button>`).join('') +
+      ` · highlighted values follow the state selector.</p>` : '');
+  if (!keep) insp.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+insp.addEventListener('click', e => {
+  const b = e.target.closest('button[data-goto]');
+  if (!b) return;
+  const n = +b.dataset.goto;
+  sel = null;
+  focusStep(n);
+  document.querySelector(`li.step[data-n="${n}"]`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+
+function pickFrom(target) {
+  const p = target.closest('.part');
+  if (!p) { showInfo(null); return; }
+  if (sel !== null) focusStep(sel);          /* a dimmed part is unreadable */
+  showInfo(p.dataset.info === picked ? null : p.dataset.info, true);
+}
+[sch].forEach(s => {
+  s.addEventListener('click', e => pickFrom(e.target));
+  s.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (!e.target.closest('.part')) return;
+    e.preventDefault();
+    pickFrom(e.target);
+  });
+});
+
+/* ============================================================
+   Checklist
+   ============================================================ */
+const root = document.getElementById('stepsRoot');
+const KEY = 'smartfan.v2.build';
+let done = new Set();
+try { done = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch (e) { /* private window */ }
+
+STAGES.forEach((g, gi) => {
+  const sec = document.createElement('section');
+  sec.className = 'group';
+  sec.innerHTML = `<h3>${gi + 1}. ${g.name}</h3>` +
+    `<p class="stage"><span class="${g.live ? 'live' : ''}">${g.live ? 'cord in' : 'cord out'}</span>` +
+    `<span>${g.steps.length} step${g.steps.length > 1 ? 's' : ''}</span></p>` +
+    `<p class="why">${g.why}</p>`;
+  const ol = document.createElement('ol');
+  ol.className = 'steps';
+  g.steps.forEach(s => {
+    const li = document.createElement('li');
+    li.className = 'step';
+    li.dataset.n = s.n;
+    li.tabIndex = 0;
+    li.innerHTML =
+      `<span class="num">${String(s.n).padStart(2, '0')}</span>` +
+      `<span class="chk" role="checkbox" tabindex="0" aria-checked="false" aria-label="Step ${s.n} complete">` +
+        `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6.2 L4.4 9.6 L11 2.4" fill="none" stroke="#0d1114" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>` +
+      `</span>` +
+      `<span class="txt"><span class="main">${s.t}</span>` +
+      (s.c ? `<span class="note${s.flag ? ' flag' : ''}">${s.c}</span>` : '') + `</span>`;
+    ol.appendChild(li);
+  });
+  sec.appendChild(ol);
+  root.appendChild(sec);
+});
+
+const note = document.getElementById('focusNote');
+
+function focusStep(n) {
+  sel = (sel === n) ? null : n;
+  if (sel !== null && netFocus) {          /* clear a net trace when a step is picked */
+    netFocus = null;
+    legend.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', 'false'));
+    sch.querySelectorAll('.obj').forEach(o => { o.style.opacity = ''; });
+    frameLayer.style.opacity = '';
+  }
+  sch.classList.toggle('dimming', sel !== null);
+  stepLayer.querySelectorAll('.grp').forEach(g => g.classList.toggle('on', +g.dataset.step === sel));
+  hopLayer.style.opacity = sel !== null ? '0' : '';
+  /* keep the readings that belong to this step, fade the rest */
+  const mine = sel === null ? null : (STEPPARTS[sel] || new Set());
+  vlayer.querySelectorAll('g.vtag').forEach(g => {
+    g.style.opacity = mine === null ? '' : (mine.has(g.dataset.info) ? '1' : '.12');
+  });
+  document.querySelectorAll('li.step').forEach(li => li.classList.toggle('sel', +li.dataset.n === sel));
+  const s = sel ? STEPS[sel - 1] : null;
+  note.textContent = s
+    ? `step ${String(sel).padStart(2, '0')} · ${STAGES[s.stage].name.toLowerCase()}`
+    : 'all connections';
+  document.getElementById('stageTag').textContent = s
+    ? `stage ${s.stage + 1} of ${STAGES.length}` : `${STAGES.length} stages`;
+}
+
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify([...done])); } catch (e) {} };
+
+function render() {
+  document.querySelectorAll('li.step').forEach(li => {
+    const on = done.has(+li.dataset.n);
+    li.classList.toggle('done', on);
+    li.querySelector('.chk').setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  document.getElementById('count').textContent = `${done.size} / ${STEPS.length}`;
+  document.getElementById('barfill').style.width = (done.size / STEPS.length * 100) + '%';
+}
+
+function nextUndone(after) {
+  for (let i = after + 1; i <= STEPS.length; i++) if (!done.has(i)) return i;
+  for (let i = 1; i <= STEPS.length; i++) if (!done.has(i)) return i;
+  return null;
+}
+
+function toggle(n) {
+  const completing = !done.has(n);
+  completing ? done.add(n) : done.delete(n);
+  save();
+  render();
+  if (!completing) return;
+  const next = nextUndone(n);
+  if (next === null) { if (sel !== null) focusStep(sel); return; }
+  sel = null;
+  focusStep(next);
+  const li = document.querySelector(`li.step[data-n="${next}"]`);
+  if (li) li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+root.addEventListener('click', e => {
+  const li = e.target.closest('li.step');
+  if (!li) return;
+  if (e.target.closest('.chk')) { toggle(+li.dataset.n); return; }
+  focusStep(+li.dataset.n);
+  if (window.innerWidth <= 980) document.getElementById('schematic').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+root.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const li = e.target.closest('li.step');
+  if (!li) return;
+  e.preventDefault();
+  if (e.target.classList.contains('chk')) toggle(+li.dataset.n);
+  else focusStep(+li.dataset.n);
+});
+document.getElementById('reset').addEventListener('click', () => { done.clear(); save(); render(); });
+
+/* ---- the state panel beside the checklist ---- */
+const STATEROWS = [
+  ['IRM +V to −V', { usb: 'dead', off: '11.7 – 12.3 V', on: '11.7 – 12.3 V' }],
+  ['Buck pin 3', { usb: '0 V', off: '4.75 – 5.25 V', on: '4.75 – 5.25 V' }],
+  ['VSYS pin 39', { usb: '≈4.7 V', off: '4.5 – 4.8 V', on: '4.5 – 4.8 V' }],
+  ['Pin 36', { usb: '3.3 V', off: '3.3 V', on: '3.3 V' }],
+  ['Gate to 0 V', { usb: '0 V', off: '≈12 V', on: '≈0.1 V' }],
+  ['Yellow to 0 V', { usb: '0 V', off: 'near 0 V', on: '≈12 V' }],
+  ['Blue to 0 V', { usb: '0 V', off: '≈5 V', on: '≈5 V' }],
+  ['GP18', { usb: '3.3 V', off: '3.3 V', on: 'pulsing' }],
+  ['SDA and SCL', { usb: '3.3 V idle', off: '3.3 V idle', on: '3.3 V idle' }],
+  ['The rotor', { usb: 'still', off: 'still', on: '≈2000 rpm' }],
+  ['The mains end', { usb: 'dead · cord out', off: 'LIVE', on: 'LIVE' }]
+];
+function paintStatePanel() {
+  document.getElementById('statePanel').innerHTML =
+    '<dl class="meter">' + STATEROWS.map(([a, b]) =>
+      `<dt>${a}</dt><dd class="${b[state] === 'LIVE' ? '' : 'live'}"${b[state] === 'LIVE' ? ' style="color:#f0a5a7"' : ''}>${b[state]}</dd>`
+    ).join('') + '</dl>';
+}
+
+/* ============================================================
+   Enclosure plan. Same part keys as the schematic, so a click here
+   selects there. Footprints are datasheet outlines at 4.4 px/mm.
+   ============================================================ */
+(function boxplan() {
+  /* Box coordinates in mm, origin at the outside corner, mains end wall on
+     the left. The board is hardware/v2 as placed by generate.py: 96 x 70 mm,
+     centered on the 103.5 x 78 mm floor between the corner bosses. Part
+     rectangles are the KiCad courtyards, read from smartfan-v2.kicad_pcb. */
+  const S = 4.4, X0 = 64, Y0 = 44;
+  const mm = v => v * S;
+  const bx = document.getElementById('boxplan');
+  bx.setAttribute('viewBox', '0 0 940 580');
+  const W = mm(119.5), H = mm(94);
+  const BX = 11.75, BY = 12;                       /* board origin in the box */
+  const px = x => X0 + mm(BX + x), py = y => Y0 + mm(BY + y);
+  const add = (t, a, parent = bx) => { const e = el(t, a); parent.appendChild(e); return e; };
+
+  /* box, and the inner face of the wall */
+  add('rect', { x: X0, y: Y0, width: W, height: H, rx: 9, fill: 'var(--metal)',
+    stroke: 'var(--metal-ed)', 'stroke-width': 2 });
+  add('rect', { x: X0 + 10, y: Y0 + 10, width: W - 20, height: H - 20, rx: 5, fill: 'none',
+    stroke: 'var(--line)', 'stroke-dasharray': '5 4' });
+
+  add('line', { x1: X0, y1: Y0 - 18, x2: X0 + W, y2: Y0 - 18, stroke: 'var(--ink-dim)', 'stroke-width': 1 });
+  txt(bx, X0 + W / 2, Y0 - 24, '119.5 mm', 'lbl-dim', 'middle');
+  add('line', { x1: X0 - 16, y1: Y0, x2: X0 - 16, y2: Y0 + H, stroke: 'var(--ink-dim)', 'stroke-width': 1 });
+  const vt = txt(bx, X0 - 21, Y0 + H / 2, '94 mm', 'lbl-dim', 'middle');
+  vt.setAttribute('transform', `rotate(-90 ${X0 - 21} ${Y0 + H / 2})`);
+  const mw = txt(bx, X0 - 34, Y0 + H / 2, 'mains end wall', 'lbl', 'middle', 'var(--w-ac)');
+  mw.setAttribute('transform', `rotate(-90 ${X0 - 34} ${Y0 + H / 2})`);
+
+  /* the board */
+  add('rect', { x: px(0), y: py(0), width: mm(96), height: mm(70), rx: 3,
+    fill: 'var(--pcb)', stroke: 'var(--pcb-edge)', 'stroke-width': 1.4, opacity: .9 });
+  txt(bx, px(94), py(68), 'hardware/v2 · 96 × 70 mm', 'lbl-dim', 'end');
+
+  /* 120 V copper and everything within 6.4 mm of it: the area the ground
+     pour leaves out. */
+  const zone = [[0, 0], [36, 0], [36, 33], [17, 33], [17, 44.5], [0, 44.5]]
+    .map(([x, y]) => `${px(x)},${py(y)}`).join(' ');
+  add('polygon', { points: zone, fill: 'rgba(239,138,140,.12)', stroke: 'var(--w-ac)',
+    'stroke-width': 1.1, 'stroke-dasharray': '7 5' });
+
+  /* mounting holes: M3, nylon standoffs; the dashed ring is a screw head */
+  [[22, 33.5], [58, 10], [80, 36.5], [91, 63]].forEach(([x, y]) => {
+    add('circle', { cx: px(x), cy: py(y), r: mm(3.2), fill: 'none', stroke: 'var(--ink-dim)',
+      'stroke-width': .8, 'stroke-dasharray': '2 2' });
+    add('circle', { cx: px(x), cy: py(y), r: mm(1.6), fill: 'var(--metal)', stroke: 'var(--ink-dim)', 'stroke-width': 1 });
+  });
+
+  const item = (o) => {
+    const g = el('g', o.i ? { class: 'part', 'data-info': o.i, tabindex: '0', role: 'button' } : {});
+    const ti = el('title');
+    ti.textContent = o.tip || ((o.i && INFO[o.i] ? INFO[o.i].t : o.t) + (o.i ? ' — click for detail' : ''));
+    g.appendChild(ti);
+    const x = px(o.x), y = py(o.y), w = mm(o.w), h = mm(o.h);
+    add('rect', { x, y, width: w, height: h, rx: o.r === undefined ? 3 : o.r,
+      class: 'halo', fill: 'var(--accent)' }, g);
+    add('rect', { x, y, width: w, height: h, rx: o.r === undefined ? 3 : o.r,
+      fill: o.fill || 'var(--raised)', stroke: o.stroke || '#4a5760', 'stroke-width': 1.2,
+      'stroke-dasharray': o.dash || 'none', 'fill-opacity': o.op === undefined ? 1 : o.op }, g);
+    if (o.t) txt(g, x + w / 2, y + (h > 30 ? 17 : h / 2 + 4), o.t, h > 14 ? 'lbl-ink' : 'lbl-dim', 'middle');
+    if (o.t2) txt(g, x + w / 2, y + 31, o.t2, 'lbl-dim', 'middle');
+    if (o.t3) txt(g, x + w / 2, y + 45, o.t3, 'lbl-dim', 'middle');
+    bx.appendChild(g);
+    return g;
+  };
+
+  /* mains end */
+  item({ x: 3.45, y: 2.85, w: 45.7, h: 25.4, t: 'IRM-10-12 · PS1', t2: '21.5 mm tall, the tallest part',
+    t3: 'AC pins at this end, 12 V at that end', i: 'irm', stroke: 'var(--w-ac)' });
+  item({ x: 0.5, y: 28.56, w: 10.9, h: 11.26, t: 'J5', stroke: 'var(--w-ac)',
+    tip: 'J5 · mains screw terminal: pin 1 the C8, pin 2 the fuse. Wire entries face the end wall.' });
+  txt(bx, px(30), py(31.9), '120 V zone', 'lbl', 'middle', 'var(--w-ac)');
+
+  /* power and the fan switch */
+  item({ x: 46.43, y: 29.25, w: 12.2, h: 9.09, t: 'U1', t2: '', i: 'buck', tip: 'R-78E5.0-1.0 buck · U1' });
+  item({ x: 18.66, y: 37.41, w: 12.95, h: 3.29, i: 'd5819', tip: '1N5819 into VSYS · D1' });
+  item({ x: 67.3, y: 1.29, w: 10.59, h: 21.05, t: 'Q1', i: 'fet', tip: 'IRF9540 · Q1 on the board · lies flat, tab is the drain' });
+  item({ x: 60.05, y: 31.44, w: 5.55, h: 4.83, i: 's8050', tip: 'S8050 · Q2 on the board' });
+  item({ x: 73.95, y: 29.25, w: 9.81, h: 2.59, i: 'd4148', tip: '1N4148 across the fan · D2' });
+  [[58.95, 37.41, 12.35, 3.09, 'base', 'R1 1 kΩ base'], [55.45, 25.0, 12.35, 3.09, 'base', 'R2 100 kΩ base pulldown'],
+   [68.51, 22.95, 3.09, 12.35, 'rg', 'R3 100 Ω collector to gate'], [64.1, 9.79, 3.09, 12.35, 'rgs', 'R4 100 kΩ gate to source'],
+   [41.95, 38.45, 12.35, 3.09, 'rtach', 'R5 10 kΩ tach pull-up'], [24.45, 66.0, 12.35, 3.09, 'rldr', 'R6 10 kΩ LDR divider'],
+   [74.2, 50.45, 3.09, 12.35, 'leds', 'R7 330 Ω green LED'], [78.67, 50.45, 3.09, 12.35, 'leds', 'R8 330 Ω red LED'],
+   [71.05, 50.45, 3.09, 12.35, 'btn', 'R9 1 kΩ button']]
+    .forEach(([x, y, w, h, i, tip]) => item({ x, y, w, h, i, tip, r: 1.5 }));
+  txt(bx, px(76), py(65.4), 'R9 R7 R8', 'lbl-dim', 'middle');
+
+  /* the Pico, in sockets, USB toward the mains wall */
+  item({ x: 11.68, y: 42.61, w: 51, h: 21, t: 'Pico 2 W · U2', t2: 'in two 20-pin sockets', i: 'pico',
+    fill: '#1b3a2e', stroke: 'var(--pcb-edge)' });
+  add('rect', { x: px(10.3), y: py(49.5), width: mm(3.4), height: mm(7.2), rx: 1.5,
+    fill: 'var(--bg)', stroke: 'var(--accent)', 'stroke-width': 1.2 });
+  add('rect', { x: px(53), y: py(46), width: mm(17), height: mm(14.9), rx: 2, fill: 'none',
+    stroke: 'var(--accent)', 'stroke-width': 1, 'stroke-dasharray': '4 3' });
+  txt(bx, px(61.5), py(58.6), 'antenna · no copper', 'lbl-dim', 'middle');
+
+  /* connectors */
+  item({ x: 88.2, y: 38.25, w: 7.09, h: 11.19, t: 'J2', i: 'fan', tip: 'J2 · keyed fan header, the NF-F12 plugs straight in' });
+  item({ x: 6.23, y: 65.73, w: 16.33, h: 3.63, t: 'J3', i: 'sht', tip: 'J3 · grille sensor cable' });
+  item({ x: 84.23, y: 50.23, w: 3.63, h: 16.33, i: 'btn', tip: 'J4 · grille button and LED cable' });
+  txt(bx, px(86.05), py(48.9), 'J4', 'lbl-ink', 'middle');
+
+  /* panel parts on the mains end wall. They hang above the board, so they
+     are drawn as outlines: where they go is the open fit check. */
+  item({ x: -BX, y: 48, w: 24, h: 27, t: 'C8 inlet', t2: 'above the board', i: 'c8', dash: '5 3',
+    fill: 'var(--bg)', op: .2, stroke: 'var(--w-ac)' });
+  item({ x: -BX, y: 33.5, w: 32, h: 12.5, t: 'fuse holder', i: 'fuse', dash: '5 3', r: 6,
+    fill: 'var(--bg)', op: .2, stroke: 'var(--w-ac)' });
+
+  /* what leaves the box: fan lead and J4 out the far wall, J3 out the front */
+  item({ x: 119.5 - BX - 1.4, y: 37.5, w: 2.8, h: 12.5, i: 'fan', r: 1.5,
+    fill: 'var(--bg)', stroke: 'var(--w-12)', tip: 'Grommet · the fan lead to the air box' });
+  item({ x: 119.5 - BX - 1.4, y: 52, w: 2.8, h: 12.5, i: 'btn', r: 1.5,
+    fill: 'var(--bg)', stroke: 'var(--w-33)', tip: 'Cable fitting · J4 button and LEDs' });
+  item({ x: 7.5, y: 94 - BY - 1.4, w: 14, h: 2.8, i: 'sht', r: 1.5,
+    fill: 'var(--bg)', stroke: 'var(--w-33)', tip: 'Cable fitting · J3 sensors' });
+
+  /* callouts. Left of the box for the mains wall, right for the far wall. */
+  const lead = (x1, y1, x2, y2) => add('polyline', { points: `${x1},${y1} ${x2},${y2}`, fill: 'none',
+    stroke: 'var(--ink-dim)', 'stroke-width': .8 });
+  const R = X0 + W + 12;
+  lead(px(78), py(6), R - 4, py(6));
+  txt(bx, R, py(4.5), 'Q1 IRF9540, lying flat', 'lbl');
+  txt(bx, R, py(4.5) + 13, 'tab is the drain: no screw, or nylon', 'lbl-dim');
+  txt(bx, R, py(43.5), 'grommet · fan lead to the air box', 'lbl');
+  txt(bx, R, py(43.5) + 13, 'plugs into J2, keyed', 'lbl-dim');
+  txt(bx, R, py(58), 'fitting · J4 button and LEDs', 'lbl');
+  txt(bx, R, py(58) + 13, '3.3 V, to the grille', 'lbl-dim');
+  txt(bx, px(14.5), Y0 + H + 22, 'fitting · J3 sensors, 3.3 V, to the grille', 'lbl', 'start');
+
+  lead(px(10.3), py(53.1), px(-4), Y0 + H + 36);
+  txt(bx, X0, Y0 + H + 44, 'The Pico’s USB end faces the mains wall, under the C8: program with the lid off, the Pico lifted out of its sockets, or a right-angle lead.', 'lbl-dim');
+  txt(bx, X0, Y0 + H + 60, 'C8 and fuse holder positions are a guess. They reach 20–35 mm in, over J5, the Pico’s USB end and J3: place them with the parts in hand.', 'lbl', 'start', 'var(--w-ac)');
+  txt(bx, X0, Y0 + H + 76, '34 mm outside, 29.75 mm inside: 21.5 mm of IRM-10 on a 1.6 mm board leaves about 6.6 mm for standoffs. Caliper the box.', 'lbl-dim');
+  txt(bx, X0, Y0 + H + 92, 'Dashed rings are M3 screw heads, 8.3 mm or more from 120 V copper. The fan, the duct and anything printed live outside this box.', 'lbl-dim');
+})();
+
+document.getElementById('boxplan').addEventListener('click', e => pickFrom(e.target));
+document.getElementById('boxplan').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (!e.target.closest('.part')) return;
+  e.preventDefault();
+  pickFrom(e.target);
+});
+
+/* ============================================================
+   Fan duty. Airflow against static pressure, and what the 12 V
+   rail is carrying while it happens.
+   ============================================================ */
+const CURVES = [
+  { k: '2000', n: 'NF-F12 iPPC-2000', sub: 'the one on the list', c: 'var(--s-2000)',
+    p: [[0, 72], [0.10, 20], [0.155, 0]] },
+  { k: '3000', n: 'NF-F12 iPPC-3000', sub: 'the step up, same pocket', c: 'var(--s-3000)',
+    p: [[0, 110], [0.10, 81], [0.25, 26], [0.30, 0]] },
+  { k: 'bath', n: 'Panasonic FV-08VQ5', sub: 'a real bath fan, for scale', c: 'var(--s-ref)',
+    p: [[0.10, 80], [0.25, 62]], dash: true }
+];
+const PMAX = 0.32, CMAX = 120;
+
+function cfmAt(cv, p) {
+  const pts = cv.p;
+  if (p < pts[0][0] - 1e-9 || p > pts[pts.length - 1][0] + 1e-9) return null;
+  for (let i = 1; i < pts.length; i++) {
+    if (p <= pts[i][0]) {
+      const [p0, c0] = pts[i - 1], [p1, c1] = pts[i];
+      return c0 + (c1 - c0) * (p - p0) / (p1 - p0);
+    }
+  }
+  return pts[pts.length - 1][1];
+}
+
+(function chart() {
+  const c = document.getElementById('fanchart');
+  c.setAttribute('viewBox', '0 0 620 400');
+  const L = 54, R = 596, T = 26, B = 330;
+  const X = cfm => L + cfm / CMAX * (R - L);
+  const Y = p => B - p / PMAX * (B - T);
+  const add = (t, a, parent = c) => { const e = el(t, a); parent.appendChild(e); return e; };
+
+  /* recessive grid */
+  for (let p = 0; p <= 0.30001; p += 0.05) {
+    add('line', { x1: L, y1: Y(p), x2: R, y2: Y(p), stroke: 'var(--line-soft)', 'stroke-width': 1 });
+    txt(c, L - 8, Y(p) + 3.5, p.toFixed(2), 'lbl-dim', 'end');
+  }
+  for (let f = 0; f <= 120; f += 20) {
+    add('line', { x1: X(f), y1: T, x2: X(f), y2: B, stroke: 'var(--line-soft)', 'stroke-width': 1 });
+    txt(c, X(f), B + 16, f, 'lbl-dim', 'middle');
+  }
+  txt(c, L - 8, T - 10, 'in w.g.', 'lbl-dim', 'end');
+  txt(c, R, B + 32, 'CFM', 'lbl-dim', 'end');
+
+  /* the two figures a bathroom is actually judged against */
+  [[20, '20 CFM continuous'], [50, '50 CFM intermittent']].forEach(([f, t]) => {
+    add('line', { x1: X(f), y1: T, x2: X(f), y2: B, stroke: 'var(--ink-dim)', 'stroke-width': 1,
+      'stroke-dasharray': '3 4' });
+    const g = txt(c, X(f) + 5, T + 12, t, 'lbl-dim', 'start');
+    g.setAttribute('transform', `rotate(90 ${X(f) + 5} ${T + 12})`);
+  });
+
+  CURVES.forEach(cv => {
+    const d = 'M' + cv.p.map(([p, f]) => `${X(f)},${Y(p)}`).join(' L');
+    const a = { d, stroke: cv.c, 'stroke-width': 2, fill: 'none', 'stroke-linecap': 'round' };
+    if (cv.dash) a['stroke-dasharray'] = '6 4';
+    add('path', a);
+    cv.p.forEach(([p, f]) => add('circle', { cx: X(f), cy: Y(p), r: 4, fill: cv.c,
+      stroke: 'var(--surface)', 'stroke-width': 2 }));
+    /* direct label at the high-pressure end, so identity is never color alone */
+    const [pn, fn] = cv.p[cv.p.length - 1];
+    txt(c, X(fn) + 10, Y(pn) - 6, cv.n, 'lbl-ink', 'start', 'var(--ink)');
+  });
+
+  /* the moving readout */
+  const live = add('g');
+  add('line', { x1: L, y1: Y(0.1), x2: R, y2: Y(0.1), stroke: 'var(--accent)', 'stroke-width': 1.4,
+    'stroke-dasharray': '5 4', id: 'pline' }, live);
+  CURVES.forEach(cv => add('circle', { cx: 0, cy: 0, r: 6, fill: 'none', stroke: cv.c,
+    'stroke-width': 2.5, id: 'pt-' + cv.k, opacity: 0 }, live));
+  txt(live, L + 128, Y(0.1) - 7, '', 'lbl', 'start', 'var(--accent)').setAttribute('id', 'plabel');
+})();
+
+const readout = document.getElementById('readout');
+const verdict = document.getElementById('verdict');
+
+function paintDuty() {
+  const p = +document.getElementById('prange').value / 100;
+  document.getElementById('pTag').textContent = p.toFixed(2) + ' in w.g.';
+  const L = 54, R = 596, T = 26, B = 330;
+  const Y = v => B - v / PMAX * (B - T), X = f => L + f / CMAX * (R - L);
+  document.getElementById('pline').setAttribute('y1', Y(p));
+  document.getElementById('pline').setAttribute('y2', Y(p));
+  const lab = document.getElementById('plabel');
+  lab.setAttribute('y', Y(p) - 7);
+  lab.textContent = p.toFixed(2) + ' in w.g.  ·  ' + (p * 25.4).toFixed(1) + ' mm H₂O';
+
+  readout.innerHTML = CURVES.map(cv => {
+    const f = cfmAt(cv, p);
+    const dot = document.getElementById('pt-' + cv.k);
+    if (f === null) { dot.setAttribute('opacity', 0); }
+    else {
+      dot.setAttribute('opacity', 1);
+      dot.setAttribute('cx', X(f)); dot.setAttribute('cy', Y(p));
+    }
+    return `<div class="readrow"><b class="sw" style="background:${cv.c}"></b>` +
+      `<span class="nm">${cv.n}<br><span style="color:var(--ink-dim);font-size:11.5px">${cv.sub}</span></span>` +
+      `<span class="vv">${f === null ? '—' : Math.round(f) + ' CFM'}` +
+      (f === null ? '<br><small>off its published curve</small>'
+                  : (f < 1 ? '<br><small>stalled</small>' : '')) + `</span></div>`;
+  }).join('');
+
+  const f = cfmAt(CURVES[0], p);
+  let cls = 'ok', msg;
+  if (f === null || f < 1) { cls = 'bad'; msg = '<b>Stalled.</b> Past 0.155 in w.g. this fan moves nothing at all. That is the whole case for the 3000 rpm part — or for a shorter, straighter duct.'; }
+  else if (f < 20) { cls = 'bad'; msg = `<b>${Math.round(f)} CFM.</b> Under the 20 CFM a continuous-running bathroom fan is normally expected to move, let alone 50 for an intermittent one.`; }
+  else if (f < 50) { cls = 'warn'; msg = `<b>${Math.round(f)} CFM.</b> Enough for continuous running, short of the 50 CFM figure used for intermittent bath fans. This is the band a short, easy duct is expected to land in.`; }
+  else { cls = 'ok'; msg = `<b>${Math.round(f)} CFM.</b> Clears both the continuous and the intermittent figures — but only with a duct this easy, which is worth proving with a measurement rather than assuming.`; }
+  verdict.className = 'verdict ' + cls;
+  verdict.innerHTML = msg + ' <span style="color:var(--ink-dim)">A filter is now in the housing brief, and it spends pressure this fan may not have: 0.155 in total, 0.1 already gone to an easy duct. If the filter stays, the iPPC-3000 is the fan.</span>';
+}
+document.getElementById('prange').addEventListener('input', paintDuty);
+
+/* ---- 12 V budget ---- */
+function paintBudget() {
+  const AVAIL = 0.85;
+  const fan = state === 'on' ? 0.10 : 0;
+  const pico = state === 'usb' ? 0 : 0.07;
+  const free = Math.max(0, AVAIL - fan - pico);
+  const segs = [['fan', fan, 'var(--w-12)'], ['Pico, through the buck', pico, 'var(--w-5)'],
+                ['headroom', free, 'var(--line)']];
+  document.getElementById('budgetLead').innerHTML = state === 'usb'
+    ? 'Cord out: the module is not supplying anything. Numbers below are what it will carry with the cord in.'
+    : `Drawing <b style="color:var(--accent)">${(fan + pico).toFixed(2)} A</b> of the module’s 0.85 A, fan ${state === 'on' ? 'running' : 'off'}.`;
+  const shown = state === 'usb' ? [['fan', 0.10, 'var(--w-12)'], ['Pico, through the buck', 0.07, 'var(--w-5)'], ['headroom', 0.68, 'var(--line)']] : segs;
+  document.getElementById('bbar').innerHTML = shown.map(([n, v, c]) =>
+    `<span style="flex:${Math.max(v, 0.001)};background:${c};opacity:${state === 'usb' ? .45 : 1}" title="${n}"></span>`).join('');
+  document.getElementById('blegend').innerHTML = shown.map(([n, v, c]) =>
+    `<span><b style="background:${c}"></b>${n} ${v.toFixed(2)} A</span>`).join('') +
+    '<span style="color:var(--ink-dim)">The Pico figure is an estimate: about 0.12 A at 5 V with Wi-Fi up, referred back through the buck. Measure it before it matters.</span>';
+}
+
+/* ---- go ---- */
+paintState();
+render();
+paintDuty();
+
+/* ============================================================
+   Three dimensions.
+
+   Plain isometric: x runs right-and-down, y runs left-and-down,
+   z runs up. No perspective, so anything measured along an axis
+   stays measurable on the page -- which is the only reason to
+   draw a box in 3D on a build sheet rather than in plan.
+
+   Millimetres throughout. The inch figures in the ceiling view
+   are the ones that were given; their millimetre equivalents are
+   what the geometry is actually checked against.
+   ============================================================ */
+(function iso3d() {
+  const C = Math.cos(Math.PI / 6), S = Math.sin(Math.PI / 6);
+  const svg = document.getElementById('iso');
+  let K = 2.6, OX = 360, OY = 300;          /* scale and origin, per view */
+
+  const P = (x, y, z) => [OX + (x - y) * C * K, OY + (x + y) * S * K - z * K];
+  const pts = a => a.map(p => p.join(',')).join(' ');
+
+  /* A solid, as its three visible faces. Top lightest, then the face
+     toward the viewer's left, then the one toward the right. */
+  function solid(g, o) {
+    const { x, y, z, w, d, h } = o;
+    const f = o.fill || '#2b353d';
+    const sh = (c, k) => c;
+    const top = [P(x, y, z + h), P(x + w, y, z + h), P(x + w, y + d, z + h), P(x, y + d, z + h)];
+    const lft = [P(x, y + d, z), P(x + w, y + d, z), P(x + w, y + d, z + h), P(x, y + d, z + h)];
+    const rgt = [P(x + w, y, z), P(x + w, y + d, z), P(x + w, y + d, z + h), P(x + w, y, z + h)];
+    const wrap = o.i && INFO[o.i]
+      ? (() => {
+          const p = el('g', { class: 'part', 'data-info': o.i, tabindex: '0', role: 'button' });
+          const t = el('title'); t.textContent = INFO[o.i].t + ' — click for detail';
+          p.appendChild(t); g.appendChild(p); return p;
+        })()
+      : g;
+    if (o.i && INFO[o.i]) wrap.appendChild(el('polygon',
+      { points: pts(top), class: 'halo', fill: 'var(--accent)' }));
+    [[lft, .74], [rgt, .52], [top, 1]].forEach(([q, k]) => {
+      wrap.appendChild(el('polygon', {
+        points: pts(q), fill: f, 'fill-opacity': k * (o.op === undefined ? 1 : o.op),
+        stroke: o.stroke || '#5b6a75', 'stroke-width': o.sw || 1, 'stroke-linejoin': 'round',
+        'stroke-dasharray': o.dash || 'none'
+      }));
+    });
+    if (o.t) {
+      const c = P(x + w / 2, y + d / 2, z + h);
+      txt(wrap, c[0], c[1] + 4, o.t, o.cls || 'lbl-ink', 'middle');
+      if (o.t2) txt(wrap, c[0], c[1] + 16, o.t2, 'lbl-dim', 'middle');
+    }
+    return wrap;
+  }
+
+  /* Wireframe box: all twelve edges, nothing filled. For envelopes. */
+  function cage(g, o) {
+    const { x, y, z, w, d, h } = o;
+    const a = [[x, y, z], [x + w, y, z], [x + w, y + d, z], [x, y + d, z]];
+    const b = a.map(p => [p[0], p[1], p[2] + h]);
+    const line = (p, q, dash) => g.appendChild(el('line', {
+      x1: P(...p)[0], y1: P(...p)[1], x2: P(...q)[0], y2: P(...q)[1],
+      stroke: o.stroke || 'var(--line)', 'stroke-width': o.sw || 1.2,
+      'stroke-dasharray': dash || (o.dash || 'none')
+    }));
+    /* the three edges hidden behind the solid are dashed */
+    line(a[0], a[1], '4 4'); line(a[0], a[3], '4 4'); line(a[0], b[0], '4 4');
+    line(a[1], a[2]); line(a[2], a[3]);
+    line(a[1], b[1]); line(a[2], b[2]); line(a[3], b[3]);
+    b.forEach((p, i) => line(p, b[(i + 1) % 4]));
+  }
+
+  /* A cylinder on the x axis: a duct stub, drawn as a strip of quads so
+     the silhouette is right without a perspective camera. */
+  function tube(g, x0, x1, cy, cz, r, fill) {
+    const N = 28;
+    const ring = (x, t) => P(x, cy + r * Math.cos(t), cz + r * Math.sin(t));
+    for (let i = 0; i < N; i++) {
+      const t0 = i / N * Math.PI * 2, t1 = (i + 1) / N * Math.PI * 2;
+      const tm = (t0 + t1) / 2;
+      /* lit from the upper left, which is where the top faces already point */
+      const k = .38 + .62 * Math.max(0, Math.cos(tm - Math.PI * 1.15));
+      g.appendChild(el('polygon', {
+        points: pts([ring(x0, t0), ring(x1, t0), ring(x1, t1), ring(x0, t1)]),
+        fill: fill || '#3a4750', 'fill-opacity': k, stroke: 'none'
+      }));
+    }
+    const face = [];
+    for (let i = 0; i <= N; i++) face.push(ring(x1, i / N * Math.PI * 2));
+    g.appendChild(el('polygon', { points: pts(face), fill: '#161c21',
+      stroke: '#6d7d88', 'stroke-width': 1.1 }));
+  }
+
+  /* A dimension: a line along one axis with the figure beside it. */
+  function dim(g, p, q, label, off) {
+    const a = P(...p), b = P(...q), o = off || [0, 0];
+    g.appendChild(el('line', { x1: a[0] + o[0], y1: a[1] + o[1], x2: b[0] + o[0], y2: b[1] + o[1],
+      stroke: 'var(--ink-dim)', 'stroke-width': .9 }));
+    [[a, o], [b, o]].forEach(([r, k]) => g.appendChild(el('line', {
+      x1: r[0], y1: r[1], x2: r[0] + k[0], y2: r[1] + k[1],
+      stroke: 'var(--ink-dim)', 'stroke-width': .6, 'stroke-dasharray': '2 2' })));
+    const m = [(a[0] + b[0]) / 2 + o[0], (a[1] + b[1]) / 2 + o[1]];
+    const t = txt(g, m[0], m[1] - 5, label, 'lbl-dim', 'middle');
+    return t;
+  }
+
+  /* A leader from a point in space out to a caption. */
+  function call(g, p, dx, dy, lines, col) {
+    const a = P(...p), b = [a[0] + dx, a[1] + dy];
+    g.appendChild(el('path', { d: `M${a[0]},${a[1]} L${b[0]},${b[1]}`,
+      stroke: col || 'var(--ink-dim)', 'stroke-width': .9, fill: 'none' }));
+    g.appendChild(el('circle', { cx: a[0], cy: a[1], r: 2.6, fill: 'var(--bg)',
+      stroke: col || 'var(--ink-dim)', 'stroke-width': 1.2 }));
+    const anc = dx < 0 ? 'end' : 'start';
+    lines.forEach((l, i) => txt(g, b[0] + (dx < 0 ? -6 : 6), b[1] + 4 + i * 13, l,
+      i ? 'lbl-dim' : 'lbl', anc, i ? null : (col || 'var(--ink)')));
+  }
+
+  /* ---------------------------------------------------------- views ---- */
+  const BOX = { w: 119.5, d: 94, h: 34 };          /* Hammond 1590BB */
+
+  const VIEWS = {
+    outside: {
+      label: 'The box, closed',
+      note: 'What the finished electronics enclosure looks like with the lid on. Holes: mains inlet, fuse, the fan cable, and a fitting for each grille cable. The USB slot drawn on the far wall is from before the board, which puts the Pico’s USB at the mains end: program with the lid off. Nothing lands on the aluminum. The fittings sit on the end walls in the assembly model, clear of the mains end.',
+      vb: [0, 0, 1000, 470], k: 2.2, o: [430, 140],
+      draw(g) {
+        solid(g, { x: 0, y: 0, z: 0, ...BOX, fill: '#39434b', t: 'Hammond 1590BB', t2: '119.5 × 94 × 34 mm' });
+
+        /* mains end: inlet and fuse, on the 94 mm wall at x = 0 */
+        const endF = (yy, zz, hh, dd, fill, stroke) => {
+          const q = [P(0, yy, zz), P(0, yy + dd, zz), P(0, yy + dd, zz + hh), P(0, yy, zz + hh)];
+          g.appendChild(el('polygon', { points: pts(q), fill: fill, stroke: stroke, 'stroke-width': 1.2 }));
+        };
+        endF(30, 6, 19.5, 27, '#1b2329', 'var(--w-ac)');
+        endF(66, 10, 12.5, 12.5, '#1b2329', 'var(--w-ac)');
+
+        call(g, [0, 43, 16], -78, -66, ['IEC C8 inlet', 'two pins · no earth'], 'var(--w-ac)');
+        call(g, [0, 72, 16], -84, 44, ['fuse holder', '2 A time-lag, hot only'], 'var(--w-ac)');
+
+        /* far end: USB slot and the four-wire grommet, on the wall at x = 119.5 */
+        const farF = (yy, zz, hh, dd, stroke) => {
+          const q = [P(BOX.w, yy, zz), P(BOX.w, yy + dd, zz), P(BOX.w, yy + dd, zz + hh), P(BOX.w, yy, zz + hh)];
+          g.appendChild(el('polygon', { points: pts(q), fill: '#11171b', stroke: stroke, 'stroke-width': 1.2 }));
+        };
+        farF(14, 12, 10, 16, 'var(--accent-dk)');
+        farF(58, 8, 16, 16, 'var(--w-12)');
+        call(g, [BOX.w, 22, 17], 86, -52, ['USB slot, dropped', 'the board puts USB at the mains end'], 'var(--accent)');
+        call(g, [BOX.w, 66, 16], 86, 26, ['grommet · four conductors', 'yellow · black · green · blue'], 'var(--w-12)');
+
+        /* Sketch only. One mark on this wall; the fittings sit on the end walls in model-v2.html. */
+        const frontF = () => {
+          const q = [P(52, BOX.d, 8), P(68, BOX.d, 8), P(68, BOX.d, 22), P(52, BOX.d, 22)];
+          g.appendChild(el('polygon', { points: pts(q), fill: '#11171b', stroke: 'var(--w-33)', 'stroke-width': 1.2 }));
+        };
+        frontF();
+        call(g, [60, BOX.d, 15], -146, 44, ['two grille fittings', 'J3 sensors · J4 button and LEDs'], 'var(--w-33)');
+
+        /* lid screws */
+        [[12, 12], [107, 12], [12, 82], [107, 82]].forEach(([sx, sy]) => {
+          const c = P(sx, sy, BOX.h);
+          g.appendChild(el('circle', { cx: c[0], cy: c[1], r: 2.4, fill: 'none',
+            stroke: '#7c8d99', 'stroke-width': 1 }));
+        });
+
+        dim(g, [0, BOX.d, 0], [BOX.w, BOX.d, 0], '119.5 mm', [-6, 62]);
+        dim(g, [BOX.w, 0, 0], [BOX.w, BOX.d, 0], '94 mm', [44, 30]);
+        dim(g, [0, BOX.d, 0], [0, BOX.d, BOX.h], '34 mm', [-34, -16]);
+      }
+    },
+
+    inside: {
+      label: 'The box, lid off',
+      note: 'The hardware/v2 board on 5 mm nylon standoffs, with the lid lifted clear. Every part is at its KiCad position and drawn to its footprint, at a typical height. The IRM-10 is the tallest thing in the box: its top is about 1.7 mm under the lid on Hammond’s 29.75 mm inside height, so caliper the box before ordering. The C8 inlet and the fuse holder are dashed because where they sit on the wall is still a guess: they hang over J5, the Pico’s USB end and J3.',
+      vb: [0, 0, 1000, 620], k: 2.2, o: [430, 300],
+      draw(g) {
+        const LID = 118;              /* how far the lid is lifted, for the drawing only */
+        const BX = 11.75, BY = 12;    /* board origin in the box: centered between the bosses */
+        const FLOOR = 2.5, STAND = 5, PCB = 1.6;
+        const ZB = FLOOR + STAND, ZT = ZB + PCB;      /* board bottom, board top */
+
+        /* The lid first, and high enough that it never covers what it came off. */
+        solid(g, { x: 0, y: 0, z: LID, w: BOX.w, d: BOX.d, h: 3, fill: '#39434b' });
+        [[12, 12], [107, 12], [12, 82], [107, 82]].forEach(([sx, sy]) => {
+          const a = P(sx, sy, BOX.h), b = P(sx, sy, LID);
+          g.appendChild(el('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1],
+            stroke: 'var(--accent-dk)', 'stroke-width': .8, 'stroke-dasharray': '3 3' }));
+        });
+
+        /* floor, then the walls as a cage so nothing inside is hidden */
+        solid(g, { x: 0, y: 0, z: 0, w: BOX.w, d: BOX.d, h: FLOOR, fill: '#39434b' });
+        cage(g, { x: 0, y: 0, z: 0, w: BOX.w, d: BOX.d, h: BOX.h, stroke: '#4c5a64' });
+
+        /* standoffs, then the board */
+        [[22, 33.5], [58, 10], [80, 36.5], [91, 63]].forEach(([x, y]) =>
+          solid(g, { x: BX + x - 1.8, y: BY + y - 1.8, z: FLOOR, w: 3.6, d: 3.6, h: STAND, fill: '#d9d4c4', stroke: '#8f8a7c' }));
+        solid(g, { x: BX, y: BY, z: ZB, w: 96, d: 70, h: PCB, fill: 'var(--pcb)', stroke: 'var(--pcb-edge)' });
+
+        /* 120 V zone on the board top: the area the ground pour leaves out */
+        const zone = [[0, 0], [36, 0], [36, 33], [17, 33], [17, 44.5], [0, 44.5]]
+          .map(([x, y]) => P(BX + x, BY + y, ZT + .05));
+        g.appendChild(el('polygon', { points: pts(zone), fill: 'rgba(239,138,140,.16)',
+          stroke: 'var(--w-ac)', 'stroke-width': 1, 'stroke-dasharray': '6 5' }));
+
+        /* Parts in board millimeters: x, y, w, d, height above the board. */
+        const on = (x, y, w, d, h, o = {}) => ({ x: BX + x, y: BY + y, z: ZT + (o.dz || 0), w, d, h, ...o });
+        const parts = [
+          on(3.45, 2.85, 45.7, 25.4, 21.5, { fill: '#4a3a3c', stroke: 'var(--w-ac)', i: 'irm', t: 'IRM-10-12', t2: '21.5 mm' }),
+          on(0.5, 28.56, 10.9, 11.26, 10, { fill: '#2f6b4f', stroke: 'var(--w-ac)', t: 'J5' }),
+          on(46.43, 29.25, 11.6, 8.5, 10.4, { fill: '#2f4a5c', stroke: '#4a7290', i: 'buck' }),
+          on(67.3, 1.29, 10.59, 21.05, 4.6, { fill: '#3b3f44', stroke: '#6d7d88', i: 'fet' }),
+          on(60.05, 31.44, 5.55, 4.83, 5, { fill: '#22282d', i: 's8050' }),
+          on(18.66, 37.41, 12.95, 3.29, 2.6, { fill: '#22282d', i: 'd5819' }),
+          on(73.95, 29.25, 9.81, 2.59, 2.2, { fill: '#9a6f4f', i: 'd4148' }),
+          on(88.2, 38.25, 7.09, 11.19, 11, { fill: '#e8e2d2', stroke: '#8f8a7c', i: 'fan' }),
+          on(6.23, 65.73, 16.33, 3.63, 8.5, { fill: '#22282d', i: 'sht' }),
+          on(84.23, 50.23, 3.63, 16.33, 8.5, { fill: '#22282d', i: 'btn' }),
+          /* the Pico: two sockets, the module on top, USB at the mains end */
+          on(11.7, 42.95, 51, 2.54, 8.5, { fill: '#22282d' }),
+          on(11.7, 60.73, 51, 2.54, 8.5, { fill: '#22282d' }),
+          on(11.68, 42.61, 51, 21, 1.2, { dz: 8.5, fill: '#1b3a2e', stroke: 'var(--pcb-edge)', i: 'pico', t: 'Pico 2 W' }),
+          on(10.3, 49.5, 3.4, 7.2, 2.7, { dz: 9.7, fill: '#8a949b' }),
+          ...[[58.95, 37.41, 12.35, 3.09, 'base'], [55.45, 25.0, 12.35, 3.09, 'base'],
+              [68.51, 22.95, 3.09, 12.35, 'rg'], [64.1, 9.79, 3.09, 12.35, 'rgs'],
+              [41.95, 38.45, 12.35, 3.09, 'rtach'], [24.45, 66.0, 12.35, 3.09, 'rldr'],
+              [74.2, 50.45, 3.09, 12.35, 'leds'], [78.67, 50.45, 3.09, 12.35, 'leds'],
+              [71.05, 50.45, 3.09, 12.35, 'btn']]
+            .map(([x, y, w, d, i]) => on(x, y, w, d, 2.4, { fill: '#7b8fa0', stroke: '#4f5f6b', i })),
+          /* panel parts on the mains wall, position not settled */
+          { x: 0, y: 60, z: 10.5, w: 22, d: 27, h: 19.5, fill: '#1b2329', stroke: 'var(--w-ac)', dash: '5 3', op: .45, i: 'c8' },
+          { x: 0, y: 45.5, z: 13.75, w: 32, d: 12.5, h: 12.5, fill: '#1b2329', stroke: 'var(--w-ac)', dash: '5 3', op: .45, i: 'fuse' }
+        ];
+
+        /* Painter's order for boxes that do not intersect: A goes first when it
+           lies wholly behind B on x or y, or wholly under it while overlapping
+           in plan. The viewer looks from +x, +y, +z. */
+        const behind = (a, b) => {
+          const sepX = a.x + a.w <= b.x + 1e-6, sepY = a.y + a.d <= b.y + 1e-6;
+          const ovX = a.x < b.x + b.w && b.x < a.x + a.w, ovY = a.y < b.y + b.d && b.y < a.y + a.d;
+          if (ovX && ovY) return a.z + a.h <= b.z + 1e-6;
+          return sepX || sepY;
+        };
+        const left = parts.slice(), order = [];
+        while (left.length) {
+          let k = left.findIndex(a => !left.some(b => b !== a && behind(b, a)));
+          if (k < 0) k = 0;
+          order.push(left.splice(k, 1)[0]);
+        }
+        order.forEach(o => solid(g, o));
+
+        const top = (x, y, z) => [BX + x, BY + y, ZT + z];
+        call(g, [60, 47, LID + 3], 132, -34, ['lid', 'four screws, straight off']);
+        call(g, top(26, 4, 21.5), -150, -60, ['IRM-10-12 on the board', 'about 1.7 mm under the lid'], 'var(--w-ac)');
+        call(g, top(3, 34, 10), -160, -10, ['J5 · mains in', 'entries face the end wall'], 'var(--w-ac)');
+        call(g, [8, 74, 30], -110, 40, ['C8 and fuse holder', 'position is a guess'], 'var(--w-ac)');
+        call(g, top(12, 53, 12.4), -120, 120, ['Pico USB end', 'lid off, or lift the Pico out'], 'var(--accent)');
+        call(g, top(72, 6, 4.6), 150, -110, ['IRF9540 · Q1, flat', 'tab is the drain — insulated']);
+        call(g, top(52, 33, 10.4), 120, -150, ['R-78E buck · U1', '10.4 mm tall']);
+        call(g, top(92, 44, 11), 110, 10, ['J2 · fan header', 'keyed']);
+        call(g, top(86, 60, 8.5), 90, 60, ['J4 · button and LEDs']);
+        call(g, [BX + 91, BY + 63, FLOOR + 2], 60, 110, ['5 mm nylon standoffs', 'insulating sheet under the board']);
+        dim(g, [BOX.w, 0, 0], [BOX.w, 0, BOX.h], '34 mm outside', [44, 0]);
+      }
+    },
+
+    ceiling: {
+      label: 'In the ceiling',
+      note: 'The envelope as given: 16 × 16 in of ceiling, 6 in deep, with a 4 in male spigot. Everything drawn here is inside that box. The three notes in red are the ones the numbers force rather than suggest — they are worth settling with a tape measure before anything is modelled.',
+      vb: [0, 0, 1060, 580], k: 0.85, o: [420, 175],
+      draw(g) {
+        const EW = 406.4, ED = 406.4, EH = 152.4;     /* 16 × 16 × 6 in */
+
+        /* the room-side ceiling plane, at z = 0 */
+        const plane = [P(0, 0, 0), P(EW, 0, 0), P(EW, ED, 0), P(0, ED, 0)];
+        g.appendChild(el('polygon', { points: pts(plane), fill: 'rgba(124,141,153,.07)',
+          stroke: '#3a454e', 'stroke-width': 1 }));
+        cage(g, { x: 0, y: 0, z: 0, w: EW, d: ED, h: EH, stroke: 'var(--accent-dk)', sw: 1.3 });
+
+        /* grille aperture in the ceiling */
+        const ap = [P(120, 120, .5), P(280, 120, .5), P(280, 280, .5), P(120, 280, .5)];
+        g.appendChild(el('polygon', { points: pts(ap), fill: '#10161a',
+          stroke: 'var(--ink-dim)', 'stroke-width': 1, 'stroke-dasharray': '5 4' }));
+
+        /* fan cartridge, axis vertical, sitting over the aperture */
+        solid(g, { x: 130, y: 130, z: 16, w: 120, d: 120, h: 25, fill: '#4a3f36',
+          stroke: '#7d6a55', i: 'fan' });
+        call(g, [190, 130, 41], -108, -104, ['NF-F12 cartridge', '120 × 25 mm, flat over the grille'], 'var(--accent)');
+
+        /* plenum: the 120 square turning into the round, and the spigot out
+           of its side. The duct centreline sits at 95 mm of the 152. */
+        solid(g, { x: 126, y: 126, z: 41, w: 128, d: 128, h: 65, fill: '#2b353d' });
+        tube(g, 254, 386, 190, 95, 50, '#3f4a54');
+        call(g, [386, 190, 95], 76, -34, ['4 in male spigot', '≈99.5 mm OD, into 100 mm flex'], 'var(--accent)');
+
+        /* electronics box, in the same void, out of the airstream */
+        solid(g, { x: 40, y: 300, z: 6, w: BOX.w, d: BOX.d, h: BOX.h, fill: '#39434b',
+          i: 'pico', t: '1590BB', t2: '34 mm tall' });
+
+        /* the four conductors between them */
+        const run = [[120, 330, 40], [200, 300, 46], [250, 200, 44]];
+        g.appendChild(el('path', {
+          d: 'M' + run.map(p => P(...p).join(',')).join(' L'),
+          stroke: 'var(--w-12)', 'stroke-width': 2, fill: 'none', 'stroke-linecap': 'round' }));
+        call(g, [200, 300, 46], -104, 50, ['four conductors', 'yellow · black · green · blue'], 'var(--w-12)');
+
+        dim(g, [0, ED, 0], [EW, ED, 0], '16 in · 406 mm', [-8, 52]);
+        dim(g, [EW, 0, 0], [EW, ED, 0], '16 in · 406 mm', [52, 30]);
+        dim(g, [0, ED, 0], [0, ED, EH], '6 in · 152 mm', [-42, -12]);
+
+        call(g, [200, 200, EH], 26, -96, ['duct centreline at 95 mm', 'of 152 — about 7 mm over the top of it'], 'var(--danger)');
+        call(g, [386, 190, 20], 98, 70, ['so the spigot leaves sideways', 'a vertical exit will not fit'], 'var(--danger)');
+        call(g, [0, 203, EH], -40, -76, ['16 in o.c. = 14.5 in clear', 'a 16 in footprint spans a joist'], 'var(--danger)');
+      }
+    }
+  };
+
+  /* ---------------------------------------------------------- render ---- */
+  const note = document.getElementById('isoNote');
+  const sel = document.getElementById('isoSel');
+  let view = 'outside';
+
+  function render() {
+    const v = VIEWS[view];
+    K = v.k; OX = v.o[0]; OY = v.o[1];
+    svg.setAttribute('viewBox', v.vb.join(' '));
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const g = el('g');
+    svg.appendChild(g);
+    v.draw(g);
+    note.textContent = v.note;
+    sel.querySelectorAll('button').forEach(b =>
+      b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'));
+    if (picked) svg.querySelectorAll('.part').forEach(p =>
+      p.classList.toggle('picked', p.dataset.info === picked));
+  }
+
+  sel.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    view = b.dataset.view;
+    render();
+  });
+  svg.addEventListener('click', e => pickFrom(e.target));
+  svg.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (!e.target.closest('.part')) return;
+    e.preventDefault();
+    pickFrom(e.target);
+  });
+
+  render();
+})();
+
+</script>
+</body>
+</html>

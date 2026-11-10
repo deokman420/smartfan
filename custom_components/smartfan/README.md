@@ -37,7 +37,7 @@ Pick one; if you pick this, delete the MQTT device from Home Assistant.
 Via HACS, as a **custom repository**:
 
 1. HACS → three-dot menu → **Custom repositories**
-2. Repository: `https://github.com/deokman420/fan-controller`, category
+2. Repository: `https://github.com/deokman420/smartfan`, category
    **Integration**
 3. Install **Smartfan bathroom controller**, then restart Home Assistant
 

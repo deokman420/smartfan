@@ -94,8 +94,11 @@ def device_build(host="fan.local"):
         import urllib.request
         env = io.open(os.path.join(ROOT, ".env"), encoding="utf-8").read()
         tok = re.search(r'HASS_LLAT\s*=\s*"?([^"\s]+)', env).group(1)
+        m = re.search(r'^HA_URL\s*=\s*"?([^"\s]+)', env, re.M)
+        base = (os.environ.get("HA_URL") or (m.group(1) if m else
+                "http://homeassistant.local:8123")).rstrip("/")
         req = urllib.request.Request(
-            "https://ha.local.phbeks.com/api/states/"
+            base + "/api/states/"
             "sensor.bathroom_fan_controller_build",
             headers={"Authorization": "Bearer " + tok})
         with urllib.request.urlopen(req, timeout=8) as f:
@@ -123,7 +126,7 @@ def local_ip():
     """The address this machine has on the device's network."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(("192.168.0.5", 1))       # no traffic sent
+        s.connect(("10.255.255.255", 1))   # no traffic sent
         return s.getsockname()[0]
     finally:
         s.close()

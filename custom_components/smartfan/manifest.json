@@ -1,0 +1,12 @@
+{
+  "domain": "smartfan",
+  "name": "Smartfan bathroom controller",
+  "codeowners": ["@deokman420"],
+  "config_flow": true,
+  "documentation": "https://github.com/deokman420/smartfan/blob/main/custom_components/smartfan/README.md",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/deokman420/smartfan/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

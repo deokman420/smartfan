@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duct collar — STL</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #0d1114; --surface: #141a1f; --raised: #1b2329; --line: #2a343c;
+  --ink: #e4ebf0; --ink-mid: #9fb0bc; --ink-dim: #7c8d99; --accent: #d9bd96;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --cond: "IBM Plex Sans Condensed", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body);
+       overflow: hidden; height: 100vh; }
+canvas { display: block; touch-action: none; }
+
+.panel { position: fixed; background: rgba(20, 26, 31, .92);
+         border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+         backdrop-filter: blur(8px); }
+#title { top: 16px; left: 16px; max-width: 300px; }
+#title h1 { margin: 0 0 3px; font-family: var(--cond); font-size: 19px; letter-spacing: .01em; }
+#title p { margin: 0; font-size: 12px; color: var(--ink-dim); line-height: 1.45; }
+#title code { font-family: var(--mono); font-size: 11px; color: var(--ink-mid); }
+
+#facts { bottom: 16px; left: 16px; font-family: var(--mono); font-size: 11.5px;
+         color: var(--ink-mid); line-height: 1.75; }
+#facts b { color: var(--ink); font-weight: 500; }
+#facts .k { color: var(--ink-dim); display: inline-block; min-width: 92px; }
+
+#ctl { top: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; gap: 6px; align-items: center; }
+button { font-family: var(--cond); font-size: 12px; letter-spacing: .02em;
+         background: var(--raised); color: var(--ink-mid); border: 1px solid var(--line);
+         border-radius: 7px; padding: 6px 11px; cursor: pointer; }
+button:hover { color: var(--ink); border-color: #3b4852; }
+button[aria-pressed="true"] { background: var(--accent); color: #1a1204; border-color: var(--accent); }
+.lab { font-family: var(--mono); font-size: 10px; color: var(--ink-dim);
+       text-transform: uppercase; letter-spacing: .09em; }
+
+#err { position: fixed; inset: 0; display: none; place-items: center; font-family: var(--mono);
+       font-size: 13px; color: #e35f62; padding: 32px; text-align: center;
+       white-space: pre-wrap; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div id="title" class="panel">
+  <h1 id="hName">Duct collar</h1>
+  <p id="hNote">Smartfan V2 &middot; built from the dimensions in <code>model-v2.html</code>.
+     Each part sits the way it prints. Drag to orbit, scroll to zoom.</p>
+</div>
+
+<div id="ctl" class="panel">
+  <div class="lab">part</div>
+  <div class="row">
+    <button data-part="collar" aria-pressed="true">collar</button>
+    <button data-part="half" aria-pressed="false">elbow half</button>
+    <button data-part="whole" aria-pressed="false">elbow, one piece</button>
+  </div>
+  <div class="row">
+    <button data-part="cartridge" aria-pressed="false">cartridge frame</button>
+    <button data-part="filter" aria-pressed="false">filter frame</button>
+  </div>
+  <div class="row">
+    <button data-part="grille" aria-pressed="false">grille</button>
+    <button data-part="coupons" aria-pressed="false">fit coupons</button>
+  </div>
+  <div class="lab" style="margin-top:4px">view</div>
+  <div class="row">
+    <button data-view="iso">iso</button>
+    <button data-view="side">side</button>
+    <button data-view="top">down the bore</button>
+  </div>
+  <div class="lab" style="margin-top:4px">show</div>
+  <div class="row">
+    <button id="bSpin" aria-pressed="true">turntable</button>
+    <button id="bWire" aria-pressed="false">wireframe</button>
+    <button id="bBed" aria-pressed="true">print bed</button>
+  </div>
+</div>
+
+<div id="facts" class="panel">
+  <div><span class="k">bore</span><b id="fBore">&mdash;</b></div>
+  <div><span class="k">envelope</span><b id="fBox">&mdash;</b></div>
+  <div><span class="k">triangles</span><b id="fTri">&mdash;</b></div>
+  <div><span class="k">orientation</span><b id="fHow">&mdash;</b></div>
+</div>
+
+<div id="err"></div>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script>
+/* ------------------------------------------------------------------
+   A binary STL is 80 bytes of header, a uint32 facet count, then 50
+   bytes per facet: a normal, three vertices, two bytes of attribute.
+   That is the whole format, so it is read here rather than pulling in
+   a loader -- the three.js in vendor/ came out of model-v2.html and
+   has no STLLoader in it.
+   ------------------------------------------------------------------ */
+function parseBinarySTL(buf) {
+  const dv = new DataView(buf);
+  const n = dv.getUint32(80, true);
+  if (84 + n * 50 !== buf.byteLength)
+    throw new Error('not a binary STL, or truncated');
+  const pos = new Float32Array(n * 9);
+  for (let f = 0; f < n; f++) {
+    const o = 84 + f * 50;
+    for (let v = 0; v < 3; v++) {
+      const p = o + 12 + v * 12, i = f * 9 + v * 3;
+      pos[i]     = dv.getFloat32(p, true);
+      pos[i + 1] = dv.getFloat32(p + 4, true);
+      pos[i + 2] = dv.getFloat32(p + 8, true);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return { geo: g, tris: n };
+}
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1114);
+scene.fog = new THREE.Fog(0x0d1114, 460, 1500);
+
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.5, 4000);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.075;
+controls.minDistance = 90;
+controls.maxDistance = 900;
+
+scene.add(new THREE.HemisphereLight(0x8fa6b8, 0x1d262c, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 0.95);
+key.position.set(180, 280, 170);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -180; key.shadow.camera.right = 180;
+key.shadow.camera.top = 180; key.shadow.camera.bottom = -180;
+key.shadow.camera.far = 900;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xbcd2e6, 0.32);
+fill.position.set(-220, 120, -140);
+scene.add(fill);
+const bounce = new THREE.DirectionalLight(0xa8bccd, 0.55);
+bounce.position.set(-60, -180, 90);
+scene.add(bounce);
+
+/* a bed to read the 144 flange against: 440 across, 55 a square */
+const bed = new THREE.Group();
+bed.add(new THREE.GridHelper(440, 8, 0x3d4a54, 0x222c33));
+const plate = new THREE.Mesh(new THREE.CircleGeometry(300, 64),
+  new THREE.ShadowMaterial({ opacity: .4 }));
+plate.rotation.x = -Math.PI / 2;
+plate.position.y = -0.05;
+plate.receiveShadow = true;
+bed.add(plate);
+scene.add(bed);
+
+const mat = new THREE.MeshStandardMaterial({ color: 0x3a4650, roughness: .62, metalness: .12 });
+const wireMat = new THREE.MeshBasicMaterial({ color: 0x9fb0bc, wireframe: true });
+
+const spin = new THREE.Group();
+scene.add(spin);
+let part = null;
+let tallest = 80, frame = 150;   /* so the camera suits whichever part is up */
+
+/* Every STL leaves the build scripts standing the way it prints -- Z up,
+   sitting on z = 0 -- so all this has to do is turn Z-up into three.js's
+   Y-up and drop it on the bed. */
+const PARTS = {
+  collar: {
+    file: 'duct-collar-v2.stl',
+    name: 'Duct collar',
+    bore: 'D100 · wall 2.4 · OD 104.8',
+    how: 'proud end down, one piece'
+  },
+  half: {
+    file: 'turning-elbow-v2-half.stl',
+    name: 'Turning elbow, half',
+    bore: 'D100 · R/D 0.53 · wall 2.4',
+    how: 'split face down, print twice'
+  },
+  whole: {
+    file: 'turning-elbow-v2.stl',
+    name: 'Turning elbow, one piece',
+    bore: 'D100 · R/D 0.53 · wall 2.4',
+    how: 'on its lip, wants support'
+  },
+  cartridge: {
+    file: 'cartridge-frame-v2.stl',
+    name: 'Cartridge frame',
+    bore: '132 sq · cavity 120.6 · wall 5.7',
+    how: 'standing up, no support'
+  },
+  filter: {
+    file: 'filter-frame-v2.stl',
+    name: 'Filter frame',
+    bore: '186 sq · window 158 · pocket 170.6',
+    how: 'plate down, no support'
+  },
+  grille: {
+    file: 'grille-v2.stl',
+    name: 'Grille',
+    bore: '210 sq · 9 slots · 100 cm² open',
+    how: 'void face down, no support'
+  },
+  coupons: {
+    file: 'fit-coupons.stl',
+    name: 'Fit coupons',
+    bore: 'collar bead · cartridge corner',
+    how: 'print these first'
+  }
+};
+
+function fail(msg) {
+  const el = document.getElementById('err');
+  el.style.display = 'grid';
+  el.textContent = msg + '\n\nThis page has to be served over http; ' +
+    'fetch is blocked on file://';
+  console.error('[parts] ' + msg);
+}
+
+function loadPart(key) {
+  const spec = PARTS[key];
+  document.getElementById('err').style.display = 'none';
+  document.getElementById('hName').textContent = spec.name;
+
+  fetch(spec.file)
+    .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.arrayBuffer(); })
+    .then(buf => {
+      const parsed = parseBinarySTL(buf);
+      const geo = parsed.geo;
+      geo.rotateX(-Math.PI / 2);          /* slicer Z up -> three.js Y up */
+      geo.computeBoundingBox();
+      const c = geo.boundingBox.getCenter(new THREE.Vector3());
+      geo.translate(-c.x, -geo.boundingBox.min.y, -c.z);
+      geo.computeVertexNormals();
+      geo.computeBoundingBox();
+
+      if (part) { spin.remove(part); part.geometry.dispose(); }
+      part = new THREE.Mesh(geo, bWire.getAttribute('aria-pressed') === 'true' ? wireMat : mat);
+      part.castShadow = true;
+      part.receiveShadow = true;
+      spin.add(part);
+
+      const s = geo.boundingBox.getSize(new THREE.Vector3());
+      document.getElementById('fBore').textContent = spec.bore;
+      document.getElementById('fBox').textContent =
+        s.x.toFixed(1) + ' × ' + s.z.toFixed(1) + ' × ' + s.y.toFixed(1) + ' mm';
+      document.getElementById('fTri').textContent = parsed.tris.toLocaleString();
+      document.getElementById('fHow').textContent = spec.how;
+
+      tallest = s.y;
+      frame = Math.max(s.x, s.y, s.z);
+      setView('iso');
+      console.log('[parts] ' + spec.file + ': ' + parsed.tris + ' triangles, ' +
+        s.x.toFixed(1) + ' x ' + s.z.toFixed(1) + ' x ' + s.y.toFixed(1) + ' mm');
+    })
+    .catch(e => fail('Could not load ' + spec.file + '\n' + e.message));
+}
+
+document.querySelectorAll('[data-part]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    document.querySelectorAll('[data-part]').forEach(function (o) {
+      o.setAttribute('aria-pressed', String(o === b));
+    });
+    loadPart(b.dataset.part);
+  });
+});
+
+function setView(which) {
+  const d = { iso: [1.35, 1.2, 1.55], side: [0, 0.35, 2.1], top: [0, 2.35, 0.001] }[which];
+  const k = Math.max(frame, 90);
+  camera.position.set(d[0] * k, d[1] * k + tallest / 2, d[2] * k);
+  controls.target.set(0, tallest / 2, 0);
+  controls.update();
+}
+document.querySelectorAll('[data-view]').forEach(function (b) {
+  b.addEventListener('click', function () { setView(b.dataset.view); });
+});
+
+const bSpin = document.getElementById('bSpin');
+const bWire = document.getElementById('bWire');
+const bBed = document.getElementById('bBed');
+let spinning = true;
+bSpin.addEventListener('click', function () {
+  spinning = !spinning;
+  bSpin.setAttribute('aria-pressed', String(spinning));
+});
+bWire.addEventListener('click', function () {
+  const on = bWire.getAttribute('aria-pressed') !== 'true';
+  bWire.setAttribute('aria-pressed', String(on));
+  if (part) part.material = on ? wireMat : mat;
+});
+bBed.addEventListener('click', function () {
+  const on = bBed.getAttribute('aria-pressed') !== 'true';
+  bBed.setAttribute('aria-pressed', String(on));
+  bed.visible = on;
+});
+
+addEventListener('resize', function () {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+loadPart('collar');
+
+let last = performance.now();
+(function loop(t) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((t - last) / 1000, 0.1);
+  last = t;
+  if (spinning) spin.rotation.y += dt * 0.42;
+  controls.update();
+  renderer.render(scene, camera);
+})(last);
+
+console.log('[collar] viewer up');
+</script>
+</body>
+</html>

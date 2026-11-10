@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smartfan V2 — wiring</title>
+<meta name="description" content="Hookup diagram for the Smartfan V2 bathroom fan: mains to J5, the NF-F12 lead colors, and the two grille cables.">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0d1114; --surface: #141a1f; --raised: #1b2329;
+  --line: #2a343c; --line-soft: #202a31;
+  --ink: #e4ebf0; --ink-mid: #9fb0bc; --ink-dim: #7c8d99;
+  --accent: #d9bd96; --accent-dk: #ae815b;
+  --danger: #e35f62; --warn: #e0a33c;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(1100px 420px at 8% -10%, #1a242c 0%, transparent 55%),
+    var(--bg);
+  color: var(--ink);
+  font-family: var(--body); font-size: 16px; line-height: 1.5;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 32px 16px 80px; }
+a { color: var(--accent); text-underline-offset: 3px; }
+h1 {
+  font-family: var(--cond); font-weight: 600;
+  font-size: clamp(32px, 5vw, 46px); line-height: 1.05;
+  margin: 0 0 10px; letter-spacing: -.02em;
+}
+.eyebrow {
+  font-family: var(--cond); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--accent-dk); font-weight: 600; font-size: 13px; margin: 0 0 8px;
+}
+.lede { color: var(--ink-mid); max-width: 72ch; margin: 0 0 16px; }
+.banner {
+  border: 1px solid #5a3032; background: #1c1416;
+  border-radius: 12px; padding: 12px 14px; margin: 0 0 18px; max-width: 78ch;
+}
+.banner b { color: var(--danger); }
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; padding: 12px;
+}
+.scrollx { overflow-x: auto; }
+svg { display: block; width: 100%; min-width: 980px; height: auto; }
+.wire { fill: none; stroke-linecap: round; stroke-linejoin: round; cursor: pointer; }
+svg.picking .wire { opacity: .14; }
+svg.picking .wire.on { opacity: 1; stroke-width: 5; }
+.pin { cursor: pointer; }
+.detail {
+  margin: 12px 4px 0; min-height: 4.6em;
+  font-size: 15px; color: var(--ink-mid);
+}
+.detail b { color: var(--ink); font-weight: 600; }
+.rows { list-style: none; margin: 18px 0 0; padding: 0; }
+.rows li { margin: 0; }
+.rows button {
+  width: 100%; text-align: left; cursor: pointer;
+  background: transparent; color: var(--ink);
+  border: 0; border-bottom: 1px solid var(--line-soft);
+  padding: 9px 8px; font: 14.5px var(--body);
+  display: grid; grid-template-columns: 16px 92px 1fr; gap: 10px; align-items: baseline;
+}
+.rows button.on { background: #1b2329; }
+.rows button:hover { background: #192026; }
+.sw { width: 14px; height: 8px; border-radius: 4px; display: inline-block; }
+.grp { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); }
+h2 { font-family: var(--cond); font-weight: 600; font-size: 22px; margin: 28px 0 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+th { font-family: var(--cond); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim); }
+footer { margin-top: 28px; color: var(--ink-dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Pico 2 W · Prototype V2 · hookup</p>
+  <h1>Where each wire lands</h1>
+  <p class="lede">Same kind of drawing as the V1 breadboard sheet: a hole, a color, and the other end. The MOSFET, the buck, the diode, and the resistors are copper on the board already. This page is only the wires you make. Meter readings and the build order stay on the <a href="build-sheet-v2.html">build sheet</a>.</p>
+  <div class="banner">
+    <b>Yellow is not one thing.</b> On the fan, yellow is switched 12&nbsp;V. On the sensor cable, yellow is SCL, a 3.3&nbsp;V logic wire, and it splices to the yellow conductor in the short QT pigtail. They leave through different fittings. Landing the fan’s yellow on GP18 destroys the pin.
+  </div>
+  <div class="card">
+    <div class="scrollx"><svg id="hook" role="img" aria-label="Wiring diagram: mains, fan lead, sensor cable, button and LED cable"></svg></div>
+    <p class="detail" id="detail"><b>Click a wire.</b> Pin 1 on every connector is the square pad. A crossing without a dot is not a joint.</p>
+  </div>
+  <ul class="rows" id="rows"></ul>
+
+  <h2>Colors to use when you make the cables</h2>
+  <p class="lede">These are the colors on this sheet, so the drawing matches the wire in your hand. The fan colors are the ones Noctua already put on the lead. The sensor colors match the Adafruit 4209 pigtail on the four wires that splice to it.</p>
+  <table>
+    <thead><tr><th>Cable</th><th>Wire</th><th>Insulation</th><th>Other end</th></tr></thead>
+    <tbody id="key"></tbody>
+  </table>
+  <footer>
+    <p>Open beside <a href="build-sheet-v2.html">build-sheet-v2.html</a>. The V1 sheet at the repo root is a different fan: there, yellow is tach and red is 5&nbsp;V. This fan has no red lead.</p>
+  </footer>
+</div>
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('hook');
+svg.setAttribute('viewBox', '0 0 1100 980');
+
+const C = {
+  hot: '#ef8a8c', neu: '#c5d0d8', blk: '#9aa7b1', red: '#e35f62',
+  blu: '#6fb0e8', yel: '#e6c84a', grn: '#6fbf8a', org: '#e08a3c',
+  wht: '#e8eef2', gry: '#8d9ba6', vio: '#a98ee0', pnk: '#e7a0c4'
+};
+
+/* Board pins sit at x=560. The far end of each cable sits at x=820.
+   Pin 1 is the top pin of each connector. */
+const J2 = [250, 294, 338, 382];
+const J3 = [470, 506, 542, 578, 614, 650];
+const J4 = [730, 766, 802, 838, 874, 910];
+const AC = { L: 128, N: 196 };
+
+const WIRES = [
+  { id: 'hot', group: 'Mains', name: 'Hot, through the fuse', color: C.hot, ins: 'cord black or brown',
+    d: `M 36 ${AC.L} H 168 M 248 ${AC.L} H 360`,
+    note: 'Cord hot into the C8 L contact, then the fuse, then J5 pin 2 on the board, the screw beside the silk FUSE. The board carries it on to the IRM-10’s AC pin. Nothing else goes in this lead. Strip 6 mm, no tinning, and tug it after tightening.' },
+  { id: 'neu', group: 'Mains', name: 'Neutral, no fuse', color: C.neu, ins: 'cord white or blue',
+    d: `M 36 ${AC.N} H 360`,
+    note: 'Cord neutral into the C8 N contact and straight to J5 pin 1, the screw beside the silk C8. There is no earth pin on a C8, and the C8 is not polarized: hot is whichever lead the fuse is in. Do not run a wire from either mains contact to the aluminum box.' },
+  { id: 'fan1', group: 'Fan J2', name: 'Black, permanent 0 V', color: C.blk, ins: 'black',
+    y: J2[0],
+    note: 'J2 is a keyed fan header, so the NF-F12’s own plug goes straight on and only fits one way. Nothing to crimp. Pin 1, black. This ground stays tied. Do not switch it. It is the same 0 V as the Pico and the IRM −V, joined on the board.' },
+  { id: 'fan2', group: 'Fan J2', name: 'Yellow, switched 12 V', color: C.yel, ins: 'yellow',
+    y: J2[1],
+    note: 'J2 pin 2 to the fan’s yellow lead. This is the IRF9540 drain. It is 12 V when GP17 is high and open when the fan is off. Never land it on a GPIO. On the V1 fan this color was tach.' },
+  { id: 'fan3', group: 'Fan J2', name: 'Green, tach', color: C.grn, ins: 'green',
+    y: J2[2],
+    note: 'J2 pin 3 to the fan’s green lead. Open-collector tach into GP18, pin 24. The 10 kΩ pull-up to 3.3 V is already on the board. Two pulses per revolution.' },
+  { id: 'fan4', group: 'Fan J2', name: 'Blue, PWM held at 5 V', color: C.blu, ins: 'blue',
+    y: J2[3],
+    note: 'J2 pin 4 to the fan’s blue lead. Tied to the buck’s +5 V, before the 1N5819. Never 12 V and never VSYS. A low PWM pin stops the fan even with 12 V on yellow. This fan has no red lead.' },
+  { id: 's1', group: 'Sensors J3', name: 'Black, 0 V', color: C.blk, ins: 'black',
+    y: J3[0],
+    note: 'J3 pin 1 to SHT40 GND. At the grille, splice it to the black wire of the Adafruit 4209 pigtail. The LDR does not use this pin.' },
+  { id: 's2', group: 'Sensors J3', name: 'Red, 3.3 V to VIN', color: C.red, ins: 'red',
+    y: J3[1],
+    note: 'J3 pin 2 to SHT40 VIN, through the red wire of the 4209. Land it on VIN. The breakout’s 3V pad is the regulator output and stays empty.' },
+  { id: 's3', group: 'Sensors J3', name: 'Blue, SDA', color: C.blu, ins: 'blue',
+    y: J3[2],
+    note: 'J3 pin 3 to SHT40 SDA, through the blue wire of the 4209. That is GP0, Pico pin 1. Pull-ups are on the breakout. Do not add another pair.' },
+  { id: 's4', group: 'Sensors J3', name: 'Yellow, SCL', color: C.yel, ins: 'yellow',
+    y: J3[3],
+    note: 'J3 pin 4 to SHT40 SCL, through the yellow wire of the 4209. That is GP1, Pico pin 2. This yellow is 3.3 V logic. It is not the fan’s yellow, and the two cables do not share a connector.' },
+  { id: 's5', group: 'Sensors J3', name: 'White, LDR signal', color: C.wht, ins: 'white',
+    y: J3[4],
+    note: 'J3 pin 5 to one leg of the LDR. The 10 kΩ to 0 V is on the board, so this wire is the divider tap into GP26, pin 31. The LDR has no polarity. It does not go to the QT plug.' },
+  { id: 's6', group: 'Sensors J3', name: 'Orange, LDR 3.3 V', color: C.org, ins: 'orange',
+    y: J3[5],
+    note: 'J3 pin 6 to the other LDR leg. A second 3.3 V, so the sensor cable does not need a splice. On the board this pin is the same 3.3 V as pin 2.' },
+  { id: 'b1', group: 'Button J4', name: 'Black, button return', color: C.blk, ins: 'black',
+    y: J4[0],
+    note: 'J4 pin 1 to one terminal of the button. The button shorts this to pin 2. GP16’s pull-up is inside the Pico. The LED cathodes do not share this wire; each has its own pin, and pins 4 and 6 are 0 V on the board as well.' },
+  { id: 'b2', group: 'Button J4', name: 'Gray, button', color: C.gry, ins: 'gray',
+    y: J4[1],
+    note: 'J4 pin 2 to the other button terminal. It reaches GP16, Pico pin 21, through R9, 1 kΩ, on the board. No polarity.' },
+  { id: 'b3', group: 'Button J4', name: 'Green, green LED anode', color: C.grn, ins: 'green',
+    y: J4[2],
+    note: 'J4 pin 3 to the green LED anode, the long leg. GP19, Pico pin 25, drives it high through R7, 330 Ω, on the board.' },
+  { id: 'b4', group: 'Button J4', name: 'Violet, green LED cathode', color: C.vio, ins: 'violet',
+    y: J4[3],
+    note: 'J4 pin 4 to the green LED cathode, the flat side and the short leg. This pin is 0 V on the board; the 330 Ω is on the anode side. Do not add a resistor in the cable.' },
+  { id: 'b5', group: 'Button J4', name: 'White, red LED anode', color: C.wht, ins: 'white',
+    y: J4[4],
+    note: 'J4 pin 5 to the red LED anode. GP20, Pico pin 26, through R8, 330 Ω, on the board. The insulation is white on purpose: a red wire in this cable would look like the 3.3 V on J3.' },
+  { id: 'b6', group: 'Button J4', name: 'Pink, red LED cathode', color: C.pnk, ins: 'pink',
+    y: J4[5],
+    note: 'J4 pin 6 to the red LED cathode. 0 V on the board, like pin 4.' }
+];
+
+function el(name, attrs) {
+  const n = document.createElementNS(NS, name);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+function add(name, attrs) { const n = el(name, attrs); svg.appendChild(n); return n; }
+function text(x, y, s, o) {
+  const n = add('text', Object.assign({ x, y, fill: '#9fb0bc', 'font-size': 12, 'font-family': 'IBM Plex Sans, sans-serif' }, o));
+  n.textContent = s;
+  return n;
+}
+
+/* frames */
+add('rect', { x: 16, y: 28, width: 300, height: 250, rx: 12, fill: '#141a1f', stroke: '#2a343c' });
+text(32, 52, 'ON THE BOX WALL', { fill: '#ae815b', 'font-family': 'IBM Plex Sans Condensed, sans-serif', 'font-size': 13, 'letter-spacing': 1.2 });
+text(32, 74, 'C8 inlet, no earth pin', { fill: '#e4ebf0', 'font-size': 15 });
+
+add('rect', { x: 330, y: 28, width: 280, height: 924, rx: 12, fill: '#141a1f', stroke: '#2a343c' });
+text(346, 52, 'ON THE BOARD', { fill: '#ae815b', 'font-family': 'IBM Plex Sans Condensed, sans-serif', 'font-size': 13, 'letter-spacing': 1.2 });
+text(346, 74, 'Pin 1 is the square pad', { fill: '#e4ebf0', 'font-size': 15 });
+text(346, 96, '−V and +V of the IRM stay soldered.', { 'font-size': 12 });
+text(346, 112, 'Do not bring them out to the wall.', { 'font-size': 12 });
+
+text(806, 218, 'FAN  ·  NF-F12', { fill: '#ae815b', 'font-family': 'IBM Plex Sans Condensed, sans-serif', 'font-size': 13, 'letter-spacing': 1.2 });
+add('rect', { x: 790, y: J2[0] - 22, width: 290, height: J2[3] - J2[0] + 44, rx: 12, fill: '#141a1f', stroke: '#2a343c' });
+
+text(806, J3[0] - 32, 'GRILLE  ·  SHT40 AND LDR', { fill: '#ae815b', 'font-family': 'IBM Plex Sans Condensed, sans-serif', 'font-size': 13, 'letter-spacing': 1.2 });
+add('rect', { x: 790, y: J3[0] - 22, width: 290, height: J3[5] - J3[0] + 44, rx: 12, fill: '#141a1f', stroke: '#2a343c' });
+
+text(806, J4[0] - 32, 'GRILLE  ·  BUTTON AND LEDS', { fill: '#ae815b', 'font-family': 'IBM Plex Sans Condensed, sans-serif', 'font-size': 13, 'letter-spacing': 1.2 });
+add('rect', { x: 790, y: J4[0] - 22, width: 290, height: J4[5] - J4[0] + 44, rx: 12, fill: '#141a1f', stroke: '#2a343c' });
+
+/* fuse */
+add('rect', { x: 176, y: AC.L - 14, width: 64, height: 28, rx: 4, fill: '#1b2329', stroke: '#ef8a8c' });
+text(186, AC.L + 4, '2 A', { fill: '#ef8a8c', 'font-size': 12, 'font-family': 'IBM Plex Mono, monospace' });
+text(32, 250, 'Fuse in the hot lead only.', { fill: '#ef8a8c', 'font-size': 12 });
+
+WIRES.forEach(w => {
+  if (w.y) w.d = `M 566 ${w.y} H 814`;
+  const p = add('path', { class: 'wire', 'data-id': w.id, d: w.d, stroke: w.color, 'stroke-width': 3.2 });
+  const title = el('title', {});
+  title.textContent = w.name;
+  p.appendChild(title);
+});
+
+function pin(x, y, id, square) {
+  const g = el('g', { class: 'pin', 'data-id': id });
+  if (square) g.appendChild(el('rect', { x: x - 8, y: y - 8, width: 16, height: 16, rx: 2, fill: 'none', stroke: '#d9bd96', 'stroke-width': 1.4 }));
+  g.appendChild(el('circle', { cx: x, cy: y, r: 5, fill: '#0d1114', stroke: '#e4ebf0', 'stroke-width': 1.6 }));
+  svg.appendChild(g);
+}
+
+/* mains terminals */
+pin(168, AC.L, 'hot', true);
+pin(360, AC.L, 'hot', false);
+pin(168, AC.N, 'neu', false);
+pin(360, AC.N, 'neu', true);
+text(176, AC.L - 18, 'C8  L', { fill: '#e4ebf0', 'font-size': 12 });
+text(176, AC.N + 22, 'C8  N', { fill: '#e4ebf0', 'font-size': 12 });
+text(372, AC.L + 4, 'J5  2  FUSE', { fill: '#e4ebf0', 'font-size': 13 });
+text(372, AC.N + 4, 'J5  1  C8', { fill: '#e4ebf0', 'font-size': 13 });
+
+const BOARD = [
+  ['J2', J2, ['1  0 V', '2  12 V switched', '3  tach', '4  +5 V PWM']],
+  ['J3', J3, ['1  GND', '2  3.3 V', '3  SDA', '4  SCL', '5  LDR', '6  LDR 3.3 V']],
+  ['J4', J4, ['1  GND', '2  button', '3  green +', '4  green −', '5  red +', '6  red −']]
+];
+const FAR = [
+  ['black  0 V', 'yellow  12 V', 'green  tach', 'blue  +5 V'],
+  ['QT black  GND', 'QT red  VIN', 'QT blue  SDA', 'QT yellow  SCL', 'LDR  either leg', 'LDR  other leg'],
+  ['button', 'button', 'green anode', 'green cathode', 'red anode', 'red cathode']
+];
+
+BOARD.forEach(([name, ys, labels], gi) => {
+  text(372, ys[0] - 16, name, { fill: '#d9bd96', 'font-size': 14, 'font-family': 'IBM Plex Sans Condensed, sans-serif' });
+  ys.forEach((y, i) => {
+    const id = WIRES.find(w => w.y === y).id;
+    pin(560, y, id, i === 0);
+    text(372, y + 4, labels[i], { fill: '#e4ebf0', 'font-size': 13, 'font-family': 'IBM Plex Mono, monospace' });
+    pin(820, y, id, i === 0);
+    text(836, y + 4, FAR[gi][i], { fill: '#e4ebf0', 'font-size': 13 });
+  });
+});
+
+text(346, 938, 'Pico pin 40 VBUS: no wire. Pin 39 is already the diode.', { fill: '#e0a33c', 'font-size': 12 });
+
+const detail = document.getElementById('detail');
+const rows = document.getElementById('rows');
+let cur = null;
+
+WIRES.forEach(w => {
+  const li = document.createElement('li');
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.dataset.id = w.id;
+  b.innerHTML = `<i class="sw" style="background:${w.color}"></i><span class="grp">${w.group}</span><span>${w.name}</span>`;
+  li.appendChild(b);
+  rows.appendChild(li);
+});
+
+const key = document.getElementById('key');
+WIRES.forEach(w => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${w.group}</td><td>${w.name}</td><td><i class="sw" style="background:${w.color}"></i> ${w.ins}</td><td>${w.note}</td>`;
+  key.appendChild(tr);
+});
+
+function show(id) {
+  cur = cur === id ? null : id;
+  svg.classList.toggle('picking', cur !== null);
+  svg.querySelectorAll('.wire').forEach(p => p.classList.toggle('on', p.dataset.id === cur));
+  rows.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.id === cur));
+  const w = WIRES.find(x => x.id === cur);
+  detail.innerHTML = w
+    ? `<b>${w.group} · ${w.name}.</b> ${w.note}`
+    : '<b>Click a wire.</b> Pin 1 on every connector is the square pad. A crossing without a dot is not a joint.';
+}
+
+svg.addEventListener('click', e => {
+  const t = e.target.closest('[data-id]');
+  if (!t) { show(null); return; }
+  show(t.dataset.id);
+});
+rows.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  show(b.dataset.id);
+});
+</script>
+</body>
+</html>

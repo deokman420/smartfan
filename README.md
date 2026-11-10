@@ -46,6 +46,77 @@ humidity, light and odor — plus fan switching, both status LEDs, the button
 and the tachometer, all verified on the board. Over-the-air updates install and
 hold as of 2026-11-03. Parked work is in [`docs/TODO.md`](docs/TODO.md).
 
+> [!WARNING]
+> **The V2 build in [`hardware/v2/`](hardware/v2/) connects to mains voltage.**
+> Mains wiring can kill you and can start a fire. Build it only if you are
+> competent to work on mains, keep it unplugged while it is open, and follow
+> your local electrical code, which may require a licensed electrician for a
+> fixed ceiling installation. The V2 board has **not been fabricated or tested
+> yet**. It is a design to check, not a proven build. The V1 build below runs
+> on 5 V USB and has no mains anywhere. This project comes with **no warranty**
+> (see [License](#license)).
+
+## Build your own
+
+There are two builds. Start with V1.
+
+| | V1: the bench unit | V2: the ceiling unit |
+|---|---|---|
+| Status | Running and commissioned | Designed, not fabricated |
+| Power | 5 V USB | 120 V mains in, 12 V and 5 V made on the board |
+| Fan | Noctua NF-A4x10 5V (stirs air, does not extract it) | Noctua NF-F12 industrialPPC-2000 IP67 |
+| Humidity | DHT22 | SHT40 |
+| Wiring | Breadboard: [`build-sheet.html`](build-sheet.html) | KiCad PCB: [`hardware/v2/`](hardware/v2/) |
+| Parts | The [Hardware](#hardware) table below | [`hardware/v2/shopping-list-v2.html`](hardware/v2/shopping-list-v2.html) |
+| Printed parts | None | [`hardware/v2/cad/`](hardware/v2/cad/) (not test-fitted yet) |
+
+The firmware today drives V1: it reads a DHT22 and, if fitted, an SGP41. The
+SHT40 driver (`sht4x.py`) exists and is tested, but `main.py` does not use it
+yet, so V2 needs that change before it reads humidity.
+
+### First install
+
+You need Python 3 with `pip install mpremote`, Node.js 20+ for the app, and a
+USB cable. The examples use `COM5`. On Linux or macOS the port is something
+like `/dev/ttyACM0`.
+
+1. **Flash MicroPython.** Use the Pico 2 W ARM build, not RISC-V, from
+   <https://micropython.org/download/RPI_PICO2_W/>. Hold BOOTSEL, plug in,
+   and drag the `.uf2` onto the RP2350 drive.
+2. **Copy the firmware.** Do it in safe mode, so the controller (and its 8 s
+   watchdog) is not running while files land:
+
+   ```bash
+   mpremote connect COM5 fs touch :safemode + reset
+   mpremote connect COM5 fs cp boot.py ota.py main.py config.py settings.py \
+     telemetry.py light.py sgp41.py sht4x.py voc.py net.py mqtt.py ringbuf.py \
+     calibrate.py provision.py improv.py httpd.py webapi.py store.py wifi.py :
+   ```
+
+   That is `SHIP` in `tools/ota_publish.py` plus the two recovery files. Do
+   **not** copy `secrets.py`, `settings.json` or `identity.py` from this repo.
+   They belong to one device.
+3. **Build and push the app.** This builds the app, copies it to flash, takes
+   the board out of safe mode and restarts it:
+
+   ```bash
+   cd app && npm ci && cd ..
+   python tools/build_www.py --push COM5
+   ```
+
+4. **Connect it to Wi-Fi.** With no `secrets.py` the board starts its own
+   setup network. Follow [Setting up a unit](#setting-up-a-unit). Over USB,
+   copy `secrets.example.py` to `secrets.py`, fill it in, and copy it across
+   in safe mode instead.
+5. **Calibrate the light** in the room it will live in. See
+   [Calibration](#calibration--the-light-in-the-room).
+6. **Optional: Home Assistant.** Set `MQTT_HOST` in `secrets.py`, then add the
+   integration in [`custom_components/smartfan/`](custom_components/smartfan/)
+   through HACS.
+
+After the first install, firmware updates go over the air. See
+[Updating over the air](#updating-over-the-air).
+
 ## Hardware
 
 | | |
@@ -114,6 +185,8 @@ Parked items, each with what unblocks it: [`docs/TODO.md`](docs/TODO.md).
 | `tools/build_www.py` | Gzips the built app into `www/` and pushes it to flash. |
 | `build-sheet.html` | Wiring: 34 steps, a tappable breadboard diagram and a schematic. |
 | `troubleshoot.html` | Diagnostics: serial-log decoder, fault tree, expected voltages. |
+| `hardware/v2/` | The V2 mains board (KiCad, Gerbers), its build docs, and the printed parts in `cad/`. |
+| `custom_components/smartfan/` | The Home Assistant integration, installable through HACS. |
 
 Both HTML files are standalone — open them directly in a browser.
 
@@ -261,7 +334,8 @@ confirmed it. No button, no command.
   - **2b** — remote configuration via MQTT subscribe.
   - **2c** — watchdog, backoff, offline buffering, safe-mode boot pin.
   - **2d** — dashboard (Home Assistant's own first).
-- **Phase 3** — mains relay for a real ceiling extractor, in a proper enclosure.
+- **Phase 3** — a real ceiling extractor on mains, in a proper enclosure.
+  Designed, not built: [`hardware/v2/`](hardware/v2/).
 - **Phase 4** — provisioning and the app.
 - **Phase 5** — the device serves the app and its own history, so a broker
   and Home Assistant are both optional. ✅ Done. Plan:
@@ -540,3 +614,17 @@ in any orientation.
 A PNP in this socket also sits with its base-emitter junction reverse-biased
 near 5 V against a 6 V limit, which destroys it. That cost two parts and most of
 an evening. `troubleshoot.html` covers the full test.
+
+## License
+
+- **Firmware, app, Home Assistant integration and tools:** GNU GPL v3.0. See
+  [`LICENSE`](LICENSE).
+- **Hardware** (everything in [`hardware/`](hardware/): schematic, PCB,
+  Gerbers, CAD scripts and STLs): CERN Open Hardware Licence v2, Strongly
+  Reciprocal. See [`hardware/LICENSE`](hardware/LICENSE).
+- **Bundled third-party files** keep their own licenses: Inter and JetBrains
+  Mono (SIL Open Font License, [`app/LICENSES/`](app/LICENSES/)) and three.js
+  (MIT, [`hardware/v2/cad/vendor/LICENSE-three.txt`](hardware/v2/cad/vendor/LICENSE-three.txt)).
+
+Both licenses come with no warranty. You build and install this at your own
+risk, and that matters most for anything connected to mains.

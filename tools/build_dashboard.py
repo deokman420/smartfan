@@ -10,7 +10,6 @@ claims a state the device is not actually in.
 import io, json, re, sys
 import websocket
 
-HA_WS = "wss://ha.local.phbeks.com/api/websocket"
 # Deliberately NOT renamed alongside the display title. This script
 # creates-or-updates by url_path, so changing it would leave the old
 # dashboard orphaned beside a new one -- and break the bookmark.
@@ -20,6 +19,18 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env = io.open(os.path.join(ROOT, ".env"), encoding="utf-8").read()
 TOKEN = re.search(r'HASS_LLAT\s*=\s*"?([^"\s]+)', env).group(1)
+
+
+def _setting(name, default):
+    """From the environment, else a NAME=value line in .env, else default."""
+    m = re.search(r"^%s\s*=\s*\"?([^\"\s]+)" % name, env, re.M)
+    return os.environ.get(name) or (m.group(1) if m else default)
+
+
+# Where Home Assistant answers. homeassistant.local:8123 is what a fresh
+# install advertises; set HA_URL in .env for anything else.
+HA_URL = _setting("HA_URL", "http://homeassistant.local:8123").rstrip("/")
+HA_WS = "ws" + HA_URL[len("http"):] + "/api/websocket"
 
 NL = chr(10)          # written via heredocs; avoids escaping backslash-n
 
@@ -47,11 +58,10 @@ def _live_entities():
     missing-entity report at the end of main() still catches it.
     """
     import urllib.request
-    host = HA_WS.split("://", 1)[1].split("/", 1)[0]
-    for scheme in ("https", "http"):
+    for base in (HA_URL,):
         try:
             r = urllib.request.Request(
-                "%s://%s/api/states" % (scheme, host),
+                "%s/api/states" % base,
                 headers={"Authorization": "Bearer " + TOKEN})
             with urllib.request.urlopen(r, timeout=15) as f:
                 return {e["entity_id"] for e in json.load(f)}
@@ -466,7 +476,7 @@ def main():
     unused = sorted(e for e in live
                     if any(p in e for p in PREFIXES) and e not in refs)
     print("entities not shown: %s" % (", ".join(unused) if unused else "none"))
-    print("URL: https://ha.local.phbeks.com/%s/main" % URL_PATH)
+    print("URL: %s/%s/main" % (HA_URL, URL_PATH))
     ws.close()
     return 0
 

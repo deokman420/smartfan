@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smartfan V2 — assembly sheet</title>
+<meta name="description" content="Build order, parts list and dimensions for the printed half of the Smartfan V2 bathroom fan: what goes in, in what order, and what to check before the next thing goes on top of it.">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0d1114; --surface: #141a1f; --raised: #1b2329;
+  --line: #2a343c; --line-soft: #202a31;
+  --ink: #e4ebf0; --ink-mid: #9fb0bc; --ink-dim: #7c8d99;
+  --accent: #d9bd96; --accent-dk: #ae815b;
+  --ok: #8fcea4; --warn: #e0a33c; --danger: #e35f62;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, #1a242c 0%, transparent 55%),
+    var(--bg);
+  color: var(--ink);
+  font-family: var(--body); font-size: 16px; line-height: 1.5;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 36px 16px 90px; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:hover { color: #f0e2cc; }
+code, .mono { font-family: var(--mono); font-size: .92em; }
+
+.eyebrow {
+  font-family: var(--cond); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--accent-dk); font-weight: 600; font-size: 13px; margin: 0 0 8px;
+}
+h1 {
+  font-family: var(--cond); font-weight: 600;
+  font-size: clamp(32px, 5vw, 46px); line-height: 1.05;
+  margin: 0 0 12px; letter-spacing: -.02em;
+}
+h2 {
+  font-family: var(--cond); font-weight: 600;
+  font-size: clamp(22px, 3vw, 28px); margin: 44px 0 6px; letter-spacing: -.01em;
+}
+h3 { font-family: var(--cond); font-size: 18px; margin: 24px 0 6px; }
+.lede { color: var(--ink-mid); max-width: 68ch; margin: 0 0 24px; }
+.sub { color: var(--ink-dim); max-width: 70ch; margin: 0 0 18px; font-size: 15px; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; padding: 18px 20px; margin: 18px 0;
+}
+.card.flag { border-color: var(--accent-dk); background: #19202a; }
+.card h3 { margin-top: 0; }
+.card p:last-child { margin-bottom: 0; }
+
+.pill {
+  display: inline-block; font-family: var(--mono); font-size: 11px;
+  letter-spacing: .06em; text-transform: uppercase;
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 2px 9px; color: var(--ink-dim); margin-left: 8px; vertical-align: 2px;
+}
+.pill.warn { color: var(--warn); border-color: #5a4524; }
+.pill.ok { color: var(--ok); border-color: #2f4f3b; }
+.pill.opt { color: var(--accent); border-color: var(--accent-dk); }
+
+.tablewrap { overflow-x: auto; margin: 14px 0 6px; }
+table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+th {
+  font-family: var(--cond); font-size: 12px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-dim); font-weight: 600;
+  border-bottom-color: var(--line);
+}
+td.num, th.num { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+tr.total td { border-top: 1px solid var(--line); border-bottom: none; font-weight: 600; }
+td b { color: var(--ink); }
+.dim { color: var(--ink-mid); font-family: var(--mono); font-size: 13px; }
+
+/* ---- build order ---- */
+.bar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: var(--raised); border: 1px solid var(--line);
+  border-radius: 12px; padding: 12px 16px; margin: 18px 0 8px;
+  position: sticky; top: 10px; z-index: 5;
+  backdrop-filter: blur(6px);
+}
+.bar .count { font-family: var(--mono); font-size: 14px; color: var(--ink); }
+.bar .track { flex: 1 1 160px; height: 6px; background: #0e1419; border-radius: 999px; overflow: hidden; }
+.bar .fill { height: 100%; width: 0; background: var(--accent); transition: width .25s ease; }
+button.reset {
+  font-family: var(--cond); font-size: 12px; letter-spacing: .03em;
+  background: transparent; color: var(--ink-dim);
+  border: 1px solid var(--line); border-radius: 7px; padding: 5px 11px; cursor: pointer;
+}
+button.reset:hover { color: var(--ink); border-color: #3b4852; }
+
+.stage { margin: 26px 0 0; }
+.stage > h3 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.stage > h3 .n {
+  font-family: var(--mono); font-size: 13px; color: var(--accent-dk);
+  border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px;
+}
+.stage .why { color: var(--ink-dim); font-size: 14.5px; margin: 0 0 10px; max-width: 70ch; }
+ul.steps { list-style: none; margin: 0; padding: 0; }
+ul.steps li {
+  display: grid; grid-template-columns: 26px 1fr; gap: 10px;
+  padding: 9px 12px; border: 1px solid var(--line-soft);
+  border-radius: 10px; margin-bottom: 7px; background: #121820;
+  cursor: pointer; align-items: start;
+}
+ul.steps li:hover { border-color: var(--line); }
+ul.steps li .box {
+  width: 18px; height: 18px; margin-top: 2px; border-radius: 5px;
+  border: 1px solid #3b4852; display: grid; place-items: center;
+  font-size: 12px; color: #0d1114; background: transparent;
+}
+ul.steps li.done { opacity: .55; }
+ul.steps li.done .box { background: var(--accent); border-color: var(--accent); }
+ul.steps li.done .box::after { content: "\2713"; font-weight: 700; }
+ul.steps li .t { font-size: 15px; }
+ul.steps li .k {
+  display: block; margin-top: 4px; font-family: var(--mono);
+  font-size: 12.5px; color: var(--ink-dim);
+}
+ul.steps li .k.check::before { content: "check \2192 "; color: var(--accent-dk); }
+ul.steps li .k.stop { color: var(--warn); }
+ul.steps li .k.stop::before { content: "stop \2192 "; color: var(--warn); }
+
+footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--ink-dim); font-size: 14px; }
+@media (max-width: 560px) { .bar { position: static; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="eyebrow">Smartfan · Prototype V2 · the printed half</p>
+<h1>Assembly sheet</h1>
+<p class="lede">
+  What goes into the ceiling, in what order, and what to check before the next
+  thing goes on top of it. The electronics have their own sheet — this one stops
+  where <a href="build-sheet-v2.html">the build sheet</a> starts. Every dimension
+  here comes from <a href="model-v2.html">the model</a> by way of the scripts in
+  <code>cad/</code>, which are what actually produced the STLs.
+</p>
+
+<div class="card flag">
+  <h3>Decide the air path before you print</h3>
+  <p>
+    The model offers two, and it offers them as a <em>toggle</em> — the turning
+    elbow is <code>shroud.visible&nbsp;=&nbsp;false</code> in the viewer, with its own
+    set of streamlines. They are alternatives drawn in the same space, never both
+    at once, which is why nothing complains on screen.
+  </p>
+  <p>
+    As parts they foul each other. The collar's inboard stub and the elbow's tail
+    are both Ø104.8 and both want the 22&nbsp;mm of bore between z&nbsp;53 and the
+    wall at 75. <b>Pick one before printing</b>, because the choice changes which
+    files you print:
+  </p>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Build</th><th>Collar</th><th>Elbow</th><th class="num">Extra</th></tr>
+    <tr>
+      <td><b>Plain</b><span class="pill ok">simpler</span><br>
+        <span class="dim">fan blows up into the box, box turns the air</span></td>
+      <td><code>duct-collar-v2.stl</code><br><span class="dim">26 stub inside</span></td>
+      <td>none</td>
+      <td class="num">—</td>
+    </tr>
+    <tr>
+      <td><b>Shroud</b><span class="pill opt">better air</span><br>
+        <span class="dim">R/D 0.53 bend guides it, less recirculation</span></td>
+      <td><code>duct-collar-v2-nostub.stl</code><br><span class="dim">flange on the wall, nothing inside</span></td>
+      <td><code>turning-elbow-v2-collar-half.stl</code> ×2<br>
+        <span class="dim">tail stops on the wall, square flange inside</span></td>
+      <td class="num">+9 h 45 m<br>+140 g</td>
+    </tr>
+  </table>
+  </div>
+  <p class="sub" style="margin-bottom:0">
+    Regenerate either pair with <code>python -I duct_collar.py --no-stub</code> and
+    <code>python -I turning_elbow.py --with-collar</code>. The stock
+    <code>turning-elbow-v2-half.stl</code> is the model's own geometry and does
+    <em>not</em> fit alongside a collar with a stub.
+  </p>
+</div>
+
+<h2>The stack</h2>
+<p class="sub">
+  Millimetres, from the room upward. y&nbsp;=&nbsp;0 is the ceiling line; below it
+  is the room, above it is the void. The filter is on the room side on purpose —
+  put it in the void instead and the stack is 150 of the 152&nbsp;mm available,
+  which is not a tolerance, it is a coincidence.
+</p>
+<div class="tablewrap">
+<table>
+  <tr><th>Where</th><th>What</th><th class="num">y, mm</th><th class="num">Depth</th></tr>
+  <tr><td>room</td><td>grille face</td><td class="num">−24 … −18</td><td class="num">6</td></tr>
+  <tr><td>room</td><td>filter pad</td><td class="num">−18 … −4</td><td class="num">14</td></tr>
+  <tr><td><b>ceiling</b></td><td><b>plasterboard</b></td><td class="num"><b>0</b></td><td class="num">12</td></tr>
+  <tr><td>void</td><td>fan cartridge</td><td class="num">6 … 44</td><td class="num">38</td></tr>
+  <tr><td>void</td><td>duct bore <span class="dim">(centreline 97)</span></td><td class="num">47 … 147</td><td class="num">100</td></tr>
+  <tr><td>void</td><td>clear over it</td><td class="num">147 … 152</td><td class="num">5</td></tr>
+</table>
+</div>
+
+<h2>Printed parts</h2>
+<p class="sub">
+  Bambu A1, 0.4 nozzle, 0.20&nbsp;mm Strength, PETG Basic, 6 walls, 25&nbsp;% infill.
+  Grams are the slicer's filament volume at 1.27&nbsp;g/cm³ — its CLI reports weight
+  as 0.00 because it does not resolve a preset's inheritance.
+  Every STL is already in its print orientation.
+</p>
+<div class="tablewrap">
+<table>
+  <tr>
+    <th>#</th><th>Part</th><th>Key dimensions</th>
+    <th class="num">Qty</th><th class="num">Time</th><th class="num">PETG</th><th>Support</th>
+  </tr>
+  <tr>
+    <td class="num">0</td><td><b>Fit coupons</b><br><code>fit-coupons.stl</code></td>
+    <td class="dim">collar bead + cartridge corner</td>
+    <td class="num">1</td><td class="num">3 h 07 m</td><td class="num">52 g</td><td>none</td>
+  </tr>
+  <tr>
+    <td class="num">1</td><td><b>Duct collar</b><br><code>duct-collar-v2.stl</code></td>
+    <td class="dim">bore Ø100 · OD Ø104.8 · wall 2.4<br>
+      flange Ø144 × 4 · 4 × M6 on R63 at 45°<br>
+      50.8 proud · bead 3 proud, 31.8 ahead of the flange</td>
+    <td class="num">1</td><td class="num">5 h 12 m</td><td class="num">96 g</td><td>flange face only</td>
+  </tr>
+  <tr>
+    <td class="num">2</td><td><b>Turning elbow, half</b><br><code>turning-elbow-v2-half.stl</code>
+      <span class="pill opt">shroud only</span></td>
+    <td class="dim">bore Ø100 · ring R53, R/D 0.53 · wall 2.4<br>
+      lip 128 sq × 4 · crown lands at y 149.4<br>
+      half: 145 × 105.4 × 64</td>
+    <td class="num">2</td><td class="num">4 h 16 m ea</td><td class="num">67 g ea</td><td>none</td>
+  </tr>
+  <tr>
+    <td class="num">3</td><td><b>Cartridge frame</b><br><code>cartridge-frame-v2.stl</code></td>
+    <td class="dim">132 sq outside · wall 5.7 · cavity 120.6 · 38 tall<br>
+      4 seats 22 sq × 6, Ø3.4 pilots on the 105 square<br>
+      rails to ±74, 8 × 4 × 130 · latch 16 × 5 proud</td>
+    <td class="num">1</td><td class="num">7 h 35 m</td><td class="num">126 g</td><td>none</td>
+  </tr>
+  <tr>
+    <td class="num">4</td><td><b>Filter frame</b><br><code>filter-frame-v2.stl</code></td>
+    <td class="dim">plate 186 sq × 4 · window 158, 2 bars each way<br>
+      pocket 170.6 × 10 deep · skirt outside 175.4</td>
+    <td class="num">1</td><td class="num">3 h 47 m</td><td class="num">63 g</td><td>none</td>
+  </tr>
+  <tr>
+    <td class="num">5</td><td><b>Grille</b><br><code>grille-v2.stl</code></td>
+    <td class="dim">210 sq × 6 · 9 slots 170 × 7 at 16 pitch · 100 cm² open<br>
+      4 magnet pockets Ø10 × 4 at ±91<br>
+      bezel 52 × 20 × 2 · button Ø12.4 · LEDs Ø5.4<br>
+      pod: 2 × Ø2.5 pilots · vent 16 × 4 · LDR Ø4</td>
+    <td class="num">1</td><td class="num">8 h 00 m</td><td class="num">146 g</td><td>none</td>
+  </tr>
+  <tr class="total">
+    <td></td><td>the set, 1–5 <span class="dim">(plain build)</span></td><td></td>
+    <td class="num">6 prints</td><td class="num">33 h 07 m</td><td class="num">564 g</td><td></td>
+  </tr>
+  <tr class="total">
+    <td></td><td>shroud build <span class="dim">(no-stub collar + 2 elbow halves)</span></td><td></td>
+    <td class="num">7 prints</td><td class="num">41 h 42 m</td><td class="num">681 g</td><td></td>
+  </tr>
+</table>
+</div>
+
+<h2>Hardware and bought parts</h2>
+<p class="sub">
+  None of this is on <a href="shopping-list-v2.html">the shopping list</a>, which
+  covers the electronics — the fan, the supply, the 1590BB and what goes in it.
+  This is only what the printed half needs.
+</p>
+<div class="tablewrap">
+<table>
+  <tr><th class="num">Qty</th><th>Item</th><th>For</th></tr>
+  <tr><td class="num">4</td><td>M6 × 20 bolts, nuts, washers</td><td>collar through the air box wall — and the elbow's flange on the inside, if fitted</td></tr>
+  <tr><td class="num">4</td><td>M4 × 16 self-tapping, for plastic</td><td>fan down onto the cartridge's four seats, into Ø3.4 pilots</td></tr>
+  <tr><td class="num">2</td><td>M3 × 10 self-tapping, for plastic</td><td>sensor pod onto the grille, into Ø2.5 pilots</td></tr>
+  <tr><td class="num">4</td><td>Neodymium discs, Ø10 × 4</td><td>grille to the ceiling — into the pockets, glued</td></tr>
+  <tr><td class="num">1</td><td>Aluminium flex duct, 100&nbsp;mm</td><td>over the collar: 50.8 of engagement to the bead</td></tr>
+  <tr><td class="num">1</td><td>Worm-drive clamp, 100–120&nbsp;mm</td><td>behind the bead, not on it</td></tr>
+  <tr><td class="num">1</td><td>Lint pad, 170 × 170 × 10, ~10&nbsp;PPI</td><td>into the filter frame's pocket</td></tr>
+  <tr><td class="num">2</td><td>Hanger bars, 368 clear span, 24 × 6</td><td>joist face to joist face, the box hangs off these</td></tr>
+  <tr><td class="num">4</td><td>Wood screws, #8 × 1½″</td><td>bars into the joists</td></tr>
+  <tr><td class="num">1</td><td>CA or PETG solvent</td><td>the elbow's seam, and the magnets</td></tr>
+  <tr><td class="num">1</td><td>Cable fitting, grille</td><td>the button and LED cable, through the Ø12.4 button hole. The fitting sits on the void face, on the button's axis. Do not cut a second hole beside it</td></tr>
+  <tr><td class="num">2</td><td>Cable fittings, 1590BB</td><td>one on each end wall of the electronics box: the sensor cable toward the pod, the button and LED cable toward the button. Not on the face the hanger bar crosses. Placement is in the model</td></tr>
+  <tr><td class="num">1</td><td>Steel air box, 150 × 150, ~107 deep</td><td>not printed: it is the fire barrier, and that is the whole reason it is steel</td></tr>
+</table>
+</div>
+
+<h2>Build order</h2>
+<p class="sub">
+  Tap a step to tick it off; the page remembers. A <span class="mono" style="color:var(--warn)">stop</span>
+  line is one where carrying on costs a part or a reprint.
+</p>
+
+<div class="bar">
+  <span class="count"><span id="n">0</span> / <span id="tot">0</span></span>
+  <span class="track"><span class="fill" id="fill"></span></span>
+  <button class="reset" id="reset">Reset</button>
+</div>
+
+<div id="stages"></div>
+
+<h2>What must not change</h2>
+<div class="card">
+  <p><b>1.6&nbsp;mm over the elbow's crown.</b> The bend tops out at y&nbsp;149.4
+  and the box's inside is 151. Thicken that wall and the part stops fitting the
+  box it was dimensioned for.</p>
+  <p><b>The bore stays 100.</b> Every wall on this build goes outward for the same
+  reason: the fan has 0.155&nbsp;in w.g. in total and the easy-duct case already
+  spends 0.10 of it for about 20&nbsp;CFM. There is no bore area to give back.</p>
+  <p><b>The duct leaves along the bay, not across it.</b> A 100&nbsp;mm hole through
+  a 2×6 is not permitted — a third of 140 is about 46 — and would take the joist
+  with it. The fan's orientation follows from that, not from preference.</p>
+  <p><b>If the filter stays, the fan should be the iPPC-3000.</b> A clean pad costs
+  0.02–0.05&nbsp;in w.g. and a loaded one more, which on the 2000 is most or all of
+  the remaining margin. Same 120 × 25 pocket, same 105 screws; 43.5&nbsp;dBA against
+  29.7 is the trade.</p>
+  <p><b>Do not bolt the elbow's lip to the fan.</b> The four
+  holes on its 105 square are left from an earlier idea about sharing the fan's
+  fixings, and that idea is wrong: it would take the elbow out with the cartridge,
+  and the cartridge dropping out on its own is the thing the whole layout is for.
+  The elbow is held by its wall flange. The lip holes carry nothing.</p>
+  <p style="margin-bottom:0"><b>The grille cables enter the 1590BB on the end walls.</b>
+  The face toward the fan is crossed by a hanger bar, and a gland nut will not
+  sit on that wall. On the grille, the button hole is the cable passage. The
+  sensor cable uses the fitting on the opposite end of the box.</p>
+</div>
+
+<footer>
+  Generated from <code>hardware/v2/cad/</code> — the scripts there are the source,
+  the STLs are output. Print times and weights are Bambu Studio's, measured on
+  these files, not estimated. · <a href="build-sheet-v2.html">Electronics build sheet</a>
+  · <a href="model-v2.html">Model</a> · <a href="cad/viewer.html">STL viewer</a>
+</footer>
+
+</div>
+
+<script>
+const STAGES = [
+  {
+    name: 'Coupons, before anything else',
+    why: 'Three hours against the set’s thirty-three, and it answers the two fits that cannot be checked on a screen.',
+    steps: [
+      { t: 'Print <code>fit-coupons.stl</code>.',
+        k: ['Both coupons are cut out of the real parts by the script, so they cannot drift from what they stand in for.'] },
+      { t: 'Put the actual flex duct over the collar coupon and close the clamp behind the bead.',
+        check: 'The duct goes on over Ø104.8 and the clamp lands between the flange and the bead, not on it.',
+        stop: 'If the duct will not go on, change WALL in duct_collar.py and re-export — before the five-hour print, not after.' },
+      { t: 'Drive an M4 self-tapper into the cartridge coupon’s pilot, and offer the fan’s corner up to the wall.',
+        check: 'The screw bites in 3.4 without splitting the seat, and the fan’s corner clears the 5.7 wall.' }
+    ]
+  },
+  {
+    name: 'Glue the elbow',
+    pill: 'shroud only',
+    why: 'Two halves off one STL — print it, print it again, turn one over. The seam is not structural and is not the fire barrier; the steel box is.',
+    steps: [
+      { t: 'Dry-fit the two halves and look down the bore.',
+        check: 'No step at the seam, and the lip’s two halves meet flush.' },
+      { t: 'Glue the flat faces with CA or a solvent weld and clamp until it holds.',
+        k: ['Tape across the outside works as a clamp; the part is a shell and will not take pressure.'] },
+      { t: 'Check the bore again once it is set.',
+        check: 'Nothing has squeezed into the air path. Scrape any bead of glue out of the bore.' }
+    ]
+  },
+  {
+    name: 'Collar into the air box wall',
+    why: 'Done on the bench, with the box in your hands, because four M6 through sheet steel is miserable overhead.',
+    steps: [
+      { t: 'Cut or confirm the hole in the downstream wall, on the bore centreline at y 97.',
+        check: 'Ø106 if the collar has its 26 stub; Ø101 is enough for the no-stub pair.' },
+      { t: 'Drill the four M6 clearance holes on R63, at 45° to the axes.',
+        k: ['Same pattern on the collar, the steel, and the elbow’s flange if it is fitted — mark one and transfer it.'] },
+      { t: 'Bolt the collar on from outside, flange against the steel.',
+        check: 'The collar’s bore and the hole are concentric, and the flange sits flat with no rock.' }
+    ]
+  },
+  {
+    name: 'Elbow into the box',
+    pill: 'shroud only',
+    why: 'It goes in through the box’s open bottom and is held at the wall, not at the fan — which is what lets the cartridge come back out later.',
+    steps: [
+      { t: 'Lift the elbow in, tail to the wall, lip facing down over where the fan will be.',
+        k: ['The lip is a mouth, not a fixing. Nothing fastens it to the fan or the cartridge.'] },
+      { t: 'Bolt the elbow’s square flange, the steel, and the collar together with the same four M6.',
+        check: 'The elbow’s flange is inside the box, the collar’s outside, steel between them.' },
+      { t: 'Look at the gap over the crown.',
+        check: 'The crown clears the box roof by about 1 mm.',
+        stop: 'If it touches, the box is not 150 or the print has grown. Do not force it — it will push the flange off the wall.' }
+    ]
+  },
+  {
+    name: 'Fan into the cartridge',
+    why: 'The cartridge is the only part that is meant to come back out, so everything about this stage is about it coming out cleanly.',
+    steps: [
+      { t: 'Drop the fan into the 120.6 cavity. It lands on the four corner seats, 6 mm up.',
+        check: 'It sits on all four seats with no rock, and the screw holes line up with the pilots.' },
+      { t: 'Check the airflow arrow before a single screw goes in.',
+        check: 'Air goes up, into the void. The strut side is the outlet.',
+        stop: 'Backwards is a fan that runs, sounds right, and moves the room’s air nowhere.' },
+      { t: 'Run the fan’s lead out of the front face, the same side as the latch.',
+        k: ['The electronics box is on that side at z −152. A lead taken the other way will not reach.'] },
+      { t: 'Four M4 self-tappers through the fan into the Ø3.4 pilots. Snug, not tight.',
+        k: ['They are going into PETG. Stop at the first resistance — a stripped seat is a reprint of a seven-hour part.'] }
+    ]
+  },
+  {
+    name: 'Cartridge into the box',
+    why: 'This is the dry run for every future fan change. If it is awkward now it will be worse overhead.',
+    steps: [
+      { t: 'Slide the cartridge up on its rails until the latch takes.',
+        check: 'It holds on the latch alone, with no hand on it.' },
+      { t: 'Release it and let it come back down.',
+        check: 'It drops clear without touching the elbow, the collar, or the fan lead.',
+        stop: 'If it fouls the elbow, the elbow is sitting below y 44. It cannot be, and something is bolted that should not be.' }
+    ]
+  },
+  {
+    name: 'Into the ceiling',
+    why: 'The box hangs off the timber, the way every retrofit fan on the market does it. It is 150 wide and the bay is 368 clear, so it cannot screw to both joists.',
+    steps: [
+      { t: 'Screw the two hanger bars joist face to joist face, low enough that the duct leaves over the top of them.',
+        k: ['Bars at y 23; the duct centreline is 97.'] },
+      { t: 'Strap the box down onto the bars, four straps.',
+        check: 'The duct spigot points along the bay, parallel to the joists.',
+        stop: 'Across the bay is a 100 mm hole through a 2×6, which is not permitted and would take the joist with it.' },
+      { t: 'Slide the flex duct over the collar and close the clamp behind the bead.',
+        check: 'Two inches — 50.8 — of engagement, clamp between the flange and the bead.' }
+    ]
+  },
+  {
+    name: 'The room side',
+    why: 'Last, because everything here comes off again without tools, and that is the point of it.',
+    steps: [
+      { t: 'Drop the pad into the filter frame’s 170.6 pocket and offer the frame up.',
+        check: 'The pad is captive under the 6 mm ledge and does not bow through the window.' },
+      { t: 'Glue the four magnets into the grille’s Ø10 pockets, faces flush with the plate.',
+        check: 'All four pull, and none stands proud — proud magnets hold the grille off the ceiling.' },
+      { t: 'Mount the sensor pod on its two M3 pilots, over the vent and the LDR hole.',
+        check: 'The SHT40 sees the vent slot and the LDR sees its hole. Through 6 mm of PETG it reads neither.' },
+      { t: 'Run the button and LED cable through a fitting on the void face, in the button hole.',
+        k: ['The Ø12.4 hole is the passage. A second hole on the same axis cuts the fitting’s own thread.',
+            'The sensor cable does not use this fitting. It leaves the pod and enters the 1590BB on the opposite end wall. Pin order is on the electronics sheet: J3 sensors, J4 button and LEDs.'] },
+      { t: 'Fit the button and the two LEDs into the bezel, and put the grille up.',
+        check: 'The button works and both LEDs are visible with the grille closed. That is the only status anyone gets without a phone.' }
+    ]
+  },
+  {
+    name: 'Hand over to the electronics',
+    why: 'From here the other sheet takes it: nothing below is powered until that one says so.',
+    steps: [
+      { t: 'Go to the <a href="build-sheet-v2.html">V2 build sheet</a> and work its seven stages.',
+        k: ['Mains stops in the metal box. The fan is 12 V. Continuity before first power, every time.'] }
+    ]
+  }
+];
+
+const KEY = 'smartfan.v2.assembly';
+let done = new Set();
+try { done = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch (e) { /* private window */ }
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify([...done])); } catch (e) {} };
+
+const host = document.getElementById('stages');
+let total = 0;
+
+STAGES.forEach((g, gi) => {
+  const sec = document.createElement('section');
+  sec.className = 'stage';
+
+  const h = document.createElement('h3');
+  h.innerHTML = '<span class="n">' + (gi + 1) + '</span>' + g.name +
+    (g.pill ? '<span class="pill opt">' + g.pill + '</span>' : '');
+  sec.appendChild(h);
+
+  const why = document.createElement('p');
+  why.className = 'why';
+  why.innerHTML = g.why;
+  sec.appendChild(why);
+
+  const ul = document.createElement('ul');
+  ul.className = 'steps';
+  g.steps.forEach((s, si) => {
+    const id = gi + '.' + si;
+    total++;
+    const li = document.createElement('li');
+    li.dataset.id = id;
+    let inner = '<span class="box"></span><span class="t">' + s.t;
+    (s.k || []).forEach(k => { inner += '<span class="k">' + k + '</span>'; });
+    if (s.check) inner += '<span class="k check">' + s.check + '</span>';
+    if (s.stop) inner += '<span class="k stop">' + s.stop + '</span>';
+    li.innerHTML = inner + '</span>';
+    li.addEventListener('click', ev => {
+      if (ev.target.tagName === 'A') return;      // let the links work
+      done.has(id) ? done.delete(id) : done.add(id);
+      save(); render();
+    });
+    ul.appendChild(li);
+  });
+  sec.appendChild(ul);
+  host.appendChild(sec);
+});
+
+document.getElementById('tot').textContent = total;
+
+function render() {
+  document.querySelectorAll('ul.steps li').forEach(li => {
+    li.classList.toggle('done', done.has(li.dataset.id));
+  });
+  document.getElementById('n').textContent = done.size;
+  document.getElementById('fill').style.width = (done.size / total * 100) + '%';
+}
+
+document.getElementById('reset').addEventListener('click', () => {
+  done.clear(); save(); render();
+});
+
+render();
+console.log('[assembly] ' + total + ' steps, ' + done.size + ' done');
+</script>
+</body>
+</html>

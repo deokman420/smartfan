@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Prototype V2 shopping list for the Smartfan: NF-F12 industrialPPC-2000 IP67, Mean Well IRM-10-12, and the parts that turn 120 V at the device into 12 V and 5 V.">
+<title>Smartfan V2 shopping list</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0d1114;
+    --surface: #141a1f;
+    --raised: #1b2329;
+    --line: #2a343c;
+    --ink: #e4ebf0;
+    --ink-mid: #9fb0bc;
+    --ink-dim: #7c8d99;
+    --accent: #d9bd96;
+    --accent-dk: #ae815b;
+    --ok: #8fcea4;
+    --warn: #e0a33c;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 500px at 10% -10%, #1a242c 0%, transparent 55%),
+      var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:hover { color: #f0e2cc; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 36px 20px 80px; }
+  .eyebrow {
+    font-family: var(--cond);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-dk);
+    font-weight: 600;
+    font-size: 13px;
+    margin: 0 0 8px;
+  }
+  h1 {
+    font-family: var(--cond);
+    font-weight: 600;
+    font-size: clamp(32px, 5vw, 46px);
+    line-height: 1.05;
+    margin: 0 0 12px;
+    letter-spacing: -0.02em;
+  }
+  .lede { color: var(--ink-mid); max-width: 68ch; margin: 0 0 28px; }
+  .total {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px 24px;
+    align-items: end;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 28px;
+  }
+  .total b {
+    font-family: var(--mono);
+    font-size: 32px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: -0.03em;
+  }
+  .total span, .note { color: var(--ink-dim); font-size: 13px; }
+  h2 {
+    font-family: var(--cond);
+    font-size: 22px;
+    font-weight: 600;
+    margin: 36px 0 8px;
+  }
+  .section-note { color: var(--ink-mid); margin: 0 0 14px; max-width: 70ch; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    font-family: var(--cond);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    font-weight: 600;
+    padding: 0 12px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  td {
+    vertical-align: top;
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .part { font-weight: 600; }
+  .mpn { font-family: var(--mono); font-size: 12.5px; color: var(--ink-mid); }
+  .why { color: var(--ink-mid); font-size: 14px; margin-top: 4px; }
+  .qty, .price { font-family: var(--mono); white-space: nowrap; }
+  .price { text-align: right; color: var(--accent); }
+  .stores { font-size: 14px; }
+  .stores a { display: inline-block; margin-right: 12px; }
+  .tag {
+    display: inline-block;
+    font-family: var(--cond);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    padding: 1px 8px;
+    color: var(--ink-dim);
+    margin-left: 6px;
+  }
+  .have td { color: var(--ink-mid); }
+  .have .part { color: var(--ink); font-weight: 500; }
+  ul.plain { margin: 8px 0 0; padding-left: 18px; color: var(--ink-mid); }
+  footer { margin-top: 36px; color: var(--ink-dim); font-size: 13px; }
+  @media (max-width: 720px) {
+    thead { display: none; }
+    table, tbody, tr, td { display: block; width: 100%; }
+    tr {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin-bottom: 12px;
+      padding: 8px 4px;
+    }
+    td { border: 0; padding: 6px 12px; }
+    .price { text-align: left; font-size: 18px; }
+  }
+  @media print {
+    body { background: #fff; color: #111; }
+    a { color: #111; }
+    .total, tr { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Smartfan · Prototype V2 · order list</p>
+  <h1>Shopping list</h1>
+  <p class="lede">Parts for the first build that leaves the USB breadboard. 120&nbsp;V AC stops in the metal box. The fan is 12&nbsp;V. Prices are quantity-one, in US dollars, read on 28&nbsp;September&nbsp;2026. Tax, shipping, and any checkout tariff are not in the number.</p>
+
+  <div class="total">
+    <div>
+      <div class="eyebrow">Priced lines</div>
+      <b>$72.36</b>
+    </div>
+    <span>Amazon for the fan, Adafruit for the sensor, DigiKey for the rest.<br>Fuse and holder are extra, and so are the board and its four connectors. See those rows.</span>
+  </div>
+
+  <h2>Order these</h2>
+  <p class="section-note">One DigiKey cart covers every row except the fan and the two Adafruit lines. The Mouser links are the same parts where that cart was cheaper the same day. Use one of them, not both.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Qty</th>
+        <th>Part</th>
+        <th>Price</th>
+        <th>Where</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Noctua NF-F12 industrialPPC-2000 IP67 PWM</div>
+          <div class="mpn">B00KFCRIQM · UPC 842431014368</div>
+          <div class="why">The fan. 12&nbsp;V, 0.1&nbsp;A, IP67. Yellow is +12&nbsp;V, green is tach, blue ties to 5&nbsp;V. List price on the same page is $34.95.</div>
+        </td>
+        <td class="price">$29.95</td>
+        <td class="stores">
+          <a href="https://www.amazon.com/dp/B00KFCRIQM">Amazon</a>
+          <a href="https://www.noctua.at/en/products/nf-f12-industrialppc-2000-ip67-pwm">Noctua</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Mean Well IRM-10-12</div>
+          <div class="mpn">1866-3028-ND</div>
+          <div class="why">120&nbsp;V AC to 12&nbsp;V at 0.85&nbsp;A, UL&nbsp;62368-1, Class&nbsp;II. The series page showed this price and thousands in stock. The detail page has also shown a backorder, so confirm the cart.</div>
+        </td>
+        <td class="price">$7.40</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/detail/mean-well-usa-inc/IRM-10-12/7704653">DigiKey</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Recom R-78E5.0-1.0</div>
+          <div class="mpn">945-2201-ND</div>
+          <div class="why">12&nbsp;V to 5.0&nbsp;V at 1&nbsp;A for the Pico. Through-hole, three pins. Sized for the Pico, not for an LED ring.</div>
+        </td>
+        <td class="price">$4.51</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/detail/recom-power/R-78E5-0-1-0/4930585">DigiKey</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Infineon IRF9540NPBF</div>
+          <div class="mpn">IRF9540NPBF-ND</div>
+          <div class="why">P-channel MOSFET, TO-220. High-side switch on the fan’s yellow wire. Gate is rated ±20&nbsp;V. Lie it flat in the box. Mouser had it at $1.87 the same day.</div>
+        </td>
+        <td class="price">$2.91</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/detail/infineon-technologies/IRF9540NPBF/812088">DigiKey</a>
+          <a href="https://www.mouser.com/ProductDetail/Infineon-Technologies/IRF9540NPBF">Mouser $1.87</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Qualtek 770W-X2/03</div>
+          <div class="mpn">Q269-ND · IEC 60320 C8</div>
+          <div class="why">Figure-8 inlet, UL / CSA / VDE, 2.5&nbsp;A, quick-connect tabs. No earth pin, which matches the Class&nbsp;II supply. This inlet does not hold the fuse.</div>
+        </td>
+        <td class="price">$1.30</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/detail/qualtek/770W-X2-03/299896">DigiKey</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Qualtek 223020-01</div>
+          <div class="mpn">NEMA 1-15P to IEC C7, 6 ft</div>
+          <div class="why">The cord that plugs into that inlet. US two-prong on the wall end, figure-8 on the device end.</div>
+        </td>
+        <td class="price">$4.06</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/result?keywords=223020-01">DigiKey</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Hammond 1590BB</div>
+          <div class="mpn">HM152-ND · 119.5 × 94 × 34 mm</div>
+          <div class="why">Die-cast aluminum box for the Pico, the IRM-10, the buck, and the MOSFET. Unpainted. The supply is 21.5&nbsp;mm tall on a 1.6&nbsp;mm board, in 29.75&nbsp;mm inside, which leaves about 6.6&nbsp;mm for standoffs: use 5 or 6&nbsp;mm nylon ones and caliper the box first. The TO-220 lies down. Test Wi-Fi in it with the lid on before ordering the board. Mouser listed $13.66.</div>
+        </td>
+        <td class="price">$14.99</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/detail/hammond-manufacturing/1590BB/131016">DigiKey</a>
+          <a href="https://www.mouser.com/ProductDetail/Hammond-Manufacturing/1590BB">Mouser $13.66</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">STMicroelectronics 1N5819</div>
+          <div class="mpn">DO-41 Schottky, 40&nbsp;V, 1&nbsp;A</div>
+          <div class="why">Between the buck and Pico VSYS, so a USB programming cable and the 5&nbsp;V rail do not feed each other. Any 1N5819 in DO-41 is the same part.</div>
+        </td>
+        <td class="price">$0.34</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/result?keywords=1N5819%20STMicroelectronics">DigiKey</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Littelfuse 0215002.MXP <span class="tag">add</span></div>
+          <div class="mpn">5×20 mm ceramic, 2&nbsp;A, 250&nbsp;V, time-lag</div>
+          <div class="why">In series with the hot lead, ahead of the IRM-10. The Mean Well spec sheet points at its installation manual instead of printing a fuse value. 2&nbsp;A slow-blow matches a 0.25&nbsp;A run current and a 20&nbsp;A cold inrush. Buy two if you want a spare. The EU DigiKey catalog showed €2.13 each, so the US cart is the price to trust.</div>
+        </td>
+        <td class="price">cart</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/result?keywords=0215002.MXP">DigiKey</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Littelfuse 82000000005 <span class="tag">add</span></div>
+          <div class="mpn">Panel holder, 5×20 mm, 250&nbsp;V</div>
+          <div class="why">Holds that fuse on the box wall, with 0.187&nbsp;in quick-connects. EU catalog showed €3.10. Same caveat: use the US cart price.</div>
+        </td>
+        <td class="price">cart</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/result?keywords=82000000005">DigiKey</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">The V2 board <span class="tag">add</span></div>
+          <div class="mpn">hardware/v2/fab · 2 layers, 1.6&nbsp;mm, 1&nbsp;oz, 96 × 70&nbsp;mm</div>
+          <div class="why">Send the Gerbers and both drill files in <code>hardware/v2/fab</code> to any two-layer service. Not priced here, because the price is mostly the fab&rsquo;s minimum order and shipping. Work through the &ldquo;Before fab&rdquo; list in <code>hardware/v2/README.md</code> first: Wi-Fi in the closed box, the box height, and a 1:1 print with the parts laid on it.</div>
+        </td>
+        <td class="price">quote</td>
+        <td class="stores"></td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Phoenix Contact MKDS 1,5/2-5,08 <span class="tag">add</span></div>
+          <div class="mpn">1715721 · 2-way screw terminal, 5.08&nbsp;mm</div>
+          <div class="why">J5, where the mains leads land on the board: pin 1 the C8&rsquo;s unfused lead, pin 2 from the fuse holder. Nothing is soldered to the IRM-10&rsquo;s pins by hand.</div>
+        </td>
+        <td class="price">cart</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/result?keywords=1715721">DigiKey</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Molex 47053-1000 <span class="tag">add</span></div>
+          <div class="mpn">4-pin PWM fan header, keyed, 2.54&nbsp;mm</div>
+          <div class="why">J2. The NF-F12&rsquo;s own plug goes straight on and only fits one way, so switched 12&nbsp;V cannot land on the tach. Any 4-pin PC fan header with the same footprint works.</div>
+        </td>
+        <td class="price">cart</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/result?keywords=47053-1000">DigiKey</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">4</td>
+        <td>
+          <div class="part">Female headers, 2.54&nbsp;mm, straight <span class="tag">add</span></div>
+          <div class="mpn">2 × 1&times;20 for the Pico · 2 × 1&times;06 for J3 and J4</div>
+          <div class="why">The Pico sits in sockets, not soldered down, so it can come out for USB: on the board its USB end faces the mains end of the box. The board has traces under the module, so the sockets are not optional.</div>
+        </td>
+        <td class="price">cart</td>
+        <td class="stores">
+          <a href="https://www.digikey.com/en/products/result?keywords=female%20header%201x20%202.54mm">DigiKey</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Sensirion SHT40 Temperature &amp; Humidity, STEMMA QT</div>
+          <div class="mpn">Adafruit 4885 · I&sup2;C 0x44</div>
+          <div class="why">Replaces the DHT22. ±1.8&nbsp;%RH against ±2–5&nbsp;%, ±0.2&nbsp;°C against ±0.5&nbsp;°C, no two-second floor on the sample rate, and a heater that clears a saturated element after a long shower. Carries its own regulator, level shifting and bus pull-ups. Needs <code>sht4x.py</code> — the one piece of new firmware in V2.</div>
+        </td>
+        <td class="price">$5.95</td>
+        <td class="stores">
+          <a href="https://www.adafruit.com/product/4885">Adafruit</a>
+        </td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">STEMMA QT JST SH 4-pin to premium male headers, 150&nbsp;mm</div>
+          <div class="mpn">Adafruit 4209</div>
+          <div class="why">Short pigtail at the grille, from the SHT40's QT socket to the pod plug. It is not the run to the board. That run is six wires into J3, because the LDR shares the cable and has its own 3V3 pin. J4 is a second six-wire cable for the button and the LEDs.</div>
+        </td>
+        <td class="price">$0.95</td>
+        <td class="stores">
+          <a href="https://www.adafruit.com/product/4209">Adafruit</a>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Already on the V1 bench</h2>
+  <p class="section-note">Do not buy these again. The S8050 moves from switching the fan’s ground to driving the MOSFET gate. GP17 high still means fan on.</p>
+  <table class="have">
+    <thead>
+      <tr><th></th><th>Keep</th><th></th><th></th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Raspberry Pi Pico 2 W</div>
+          <div class="why">Same board, same firmware, now in sockets on the V2 board. USB stays the programming port. Installed power comes from the buck into VSYS.</div>
+        </td>
+        <td class="price">have</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">S8050, 1&nbsp;kΩ base resistor, 100&nbsp;kΩ base pulldown</div>
+          <div class="why">Gate driver. Add one new 100&nbsp;Ω between the collector and the MOSFET gate, and one new 100&nbsp;kΩ from that gate to +12&nbsp;V. Both are ordinary 1/4&nbsp;W parts from the same resistor stock.</div>
+        </td>
+        <td class="price">have</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">1N4148 and the 10&nbsp;kΩ tach pull-up</div>
+          <div class="why">Move the diode across the fan: band on the MOSFET drain, other end on fan ground. The 10&nbsp;kΩ stays on GP18 and lands on the green wire.</div>
+        </td>
+        <td class="price">have</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td class="qty"></td>
+        <td>
+          <div class="part">LDR, 10&nbsp;kΩ divider, button, both LEDs, 330&nbsp;Ω pair, one more 1&nbsp;kΩ</div>
+          <div class="why">The button, both LEDs, the LDR and the SHT40 mount on the grille. The 10&nbsp;kΩ, both 330&nbsp;Ω and a new 1&nbsp;kΩ in series with the button stay on the board, the last three between the Pico and J4. The 330&nbsp;Ω pair now feeds the anodes. The DHT22 does not come across.</div>
+        </td>
+        <td class="price">have</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td class="qty">1</td>
+        <td>
+          <div class="part">Noctua NF-A4x10 5V</div>
+          <div class="why">Stays on the V1 breadboard. It is the reference, not a spare impeller for this housing.</div>
+        </td>
+        <td class="price">have</td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Leave on the shelf</h2>
+  <ul class="plain">
+    <li><b>The DHT22.</b> It stays on the V1 breadboard and is not wired into V2. The SHT40 above replaces it, and the swap is worth shipping on V1 first so that V2 boots an image that has already been proven. Soldering a DHT22 into a ceiling unit means doing the sensor wiring twice, the second time up a ladder.</li>
+    <li>The 24&nbsp;V industrialPPC, and the IP52 2000&nbsp;rpm fan that is not the sealed one. The part above is specifically the 12&nbsp;V IP67 PWM.</li>
+    <li>The 3000&nbsp;rpm NF-F12. Same screw pattern, louder, and only the step up if a measured duct comes up short. Amazon lists it near $29.95 as well: <a href="https://www.amazon.com/s?k=NF-F12+industrialPPC-3000+PWM">search</a>.</li>
+    <li>A lint filter. This fan has 0.15&nbsp;in of pressure, and the easy duct test is already 0.1&nbsp;in.</li>
+    <li>The SGP41 and an LED ring. Both are later, and the ring does not run from this 1&nbsp;A buck.</li>
+  </ul>
+
+  <footer>
+    Prices move. The $65.46 is the eight priced rows at quantity one: $29.95 + $7.40 + $4.51 + $2.91 + $1.30 + $4.06 + $14.99 + $0.34. Switching the MOSFET and the box to the Mouser prices drops that by about $2.37. Open <a href="build-sheet-v2.html">build-sheet-v2.html</a> for the schematic and <a href="prototype-v2.md">prototype-v2.md</a> for the design note. The air-path model waits until this fan is in hand.
+  </footer>
+</div>
+</body>
+</html>

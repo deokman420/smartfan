@@ -1,0 +1,7 @@
+(version 1)
+
+# Written by generate.py. Do not edit; change MAINS_GAP there.
+(rule "mains clearance"
+	(condition "((A.NetName == '/AC_N' || A.NetName == '/AC_HOT') && !(B.NetName == '/AC_N' || B.NetName == '/AC_HOT')) || ((B.NetName == '/AC_N' || B.NetName == '/AC_HOT') && !(A.NetName == '/AC_N' || A.NetName == '/AC_HOT'))")
+	(constraint clearance (min 6.4mm))
+	(constraint creepage (min 6.4mm)))

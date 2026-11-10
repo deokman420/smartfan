@@ -27,12 +27,23 @@ from playwright.sync_api import sync_playwright
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SHOTS = os.path.join(HERE, "screenshots")
-HA = os.environ.get("HA_URL", "https://ha.local.phbeks.com")
 DASH = "/bathroom-fan/main"
 HEADED = "--headed" in sys.argv
 
 env = io.open(os.path.join(ROOT, ".env"), encoding="utf-8").read()
 TOKEN = re.search(r'HASS_LLAT\s*=\s*"?([^"\s]+)', env).group(1)
+
+
+def _setting(name, default):
+    """From the environment, else a NAME=value line in .env, else default."""
+    m = re.search(r"^%s\s*=\s*\"?([^\"\s]+)" % name, env, re.M)
+    return os.environ.get(name) or (m.group(1) if m else default)
+
+
+# Where Home Assistant answers. homeassistant.local:8123 is what a fresh
+# install advertises; set HA_URL in .env for anything else.
+HA_URL = _setting("HA_URL", "http://homeassistant.local:8123").rstrip("/")
+HA = HA_URL
 
 
 def entity_state(eid):

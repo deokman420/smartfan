@@ -19,7 +19,7 @@ The connection is tested before the entry is created (`test-before-configure`)
 and the device's own DEVICE_ID becomes the entry's unique_id, so the same
 board cannot be added twice (`unique-config-entry`). That identifier comes
 from the firmware rather than from the host name on purpose: one board
-reached at `fan.local` and at `192.168.0.28` is one board.
+reached at `fan.local` and at its IP address is one board.
 """
 
 from __future__ import annotations
