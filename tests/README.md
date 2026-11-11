@@ -9,6 +9,7 @@ python tests/test_sht4x.py           # host only, the SHT4x driver and its CRC
 python tests/test_httpd.py           # host only, no board needed
 python tests/test_device_app.py      # host only, the app with no broker
 python tests/test_appicon.py         # host only, the tab icon and status bar
+node   tests/test_statusled.mjs      # host only, the tab icon's LED code
 python tests/test_theme.py           # host only, light / dark / system
 python tests/test_units.py           # host only, celsius / fahrenheit
 node   tests/test_dryrate.mjs        # host only, no browser at all
@@ -108,7 +109,7 @@ central claim and was quietly untrue: the typefaces came from
 `fonts.googleapis.com`, so opening the fan told Google about it. They are
 served by the device now, and this check is what keeps the claim honest.
 
-**`test_appicon.py` — 18 checks.** The spinning favicon and the status-bar
+**`test_appicon.py` — 27 checks.** The spinning favicon and the status-bar
 tint, which follow `fanRunning` out of `lib/link.js`. Needs only a build:
 the thing under test is a function of one boolean, so a real fan would add
 nothing but new ways to fail.
@@ -123,6 +124,18 @@ must drop the timer, and teardown must put the icon, the theme color and
 `data-fan` back exactly as `app.html` shipped them. A favicon is decoration,
 and decoration that leaks a 13 fps repaint into a tab nobody is looking at is
 worse than no decoration.
+
+The status LED in the icon's corner is the one exception to that, and the
+checks say so: it mirrors the board's green/red blink codes (a red double-blink when the
+app needs a look), and unlike the spin it keeps showing in a background tab,
+because the tab strip is where you see it. The LED checks read the corner
+pixel back off the favicon, so they test the color the tab would show. With
+`$lib/statusled.js` swapped for a blob of the real file, since a blob module
+cannot resolve the alias.
+
+**`test_statusled.mjs` — 23 checks.** Which code the LED shows for a
+reading: the board's five states and the VOC settle pulse, the two ways the
+app can be blind, and what outranks what. Pure Node, no browser.
 
 **`test_theme.py` — 18 checks.** Light, dark and system. Needs only a
 build; the scheme is a function of one saved string and one OS preference,

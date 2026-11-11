@@ -37,6 +37,7 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILD = os.path.join(ROOT, "app", "build")
 SRC = os.path.join(ROOT, "app", "src", "lib", "appicon.js")
+LED_SRC = os.path.join(ROOT, "app", "src", "lib", "statusled.js")
 SHOTS = os.path.join(ROOT, "tests", "screenshots")
 PORT = 8779
 HEADED = "--headed" in sys.argv
@@ -97,16 +98,28 @@ threading.Thread(target=httpd.serve_forever, daemon=True).start()
 # A fake store, so the test drives the one input the module has. Same shape
 # Svelte's own stores expose: subscribe(fn) -> unsubscribe, called at once
 # with the current value.
+#
+# appicon.js imports $lib/statusled.js, which a blob module cannot resolve,
+# so that one specifier is pointed at a blob of the real file -- still the
+# source as written, just reached by a different URL.
 HARNESS = """
-  const src = %s;
-  const url = URL.createObjectURL(new Blob([src], {type: 'text/javascript'}));
-  const mod = await import(url);
-  let on = false;
-  const subs = new Set();
-  window.__set = (v) => { on = v; subs.forEach((f) => f(on)); };
-  window.__release = mod.watchAppIcon({
-    subscribe(f) { subs.add(f); f(on); return () => subs.delete(f); }
-  });
+  const blob = (s) => URL.createObjectURL(new Blob([s], {type: 'text/javascript'}));
+  const ledUrl = blob(%s);
+  const src = %s.replace("'$lib/statusled.js'", JSON.stringify(ledUrl));
+  const mod = await import(blob(src));
+  const store = (init) => {
+    let v = init;
+    const subs = new Set();
+    return {
+      set(next) { v = next; subs.forEach((f) => f(v)); },
+      subscribe(f) { subs.add(f); f(v); return () => subs.delete(f); }
+    };
+  };
+  const fan = store(false);
+  const led = store(null);
+  window.__set = (v) => fan.set(v);
+  window.__led = (c) => led.set(c);
+  window.__release = mod.watchAppIcon(fan, led);
 """
 
 PROBE = """() => ({
@@ -136,7 +149,10 @@ with sync_playwright() as pw:
     page.goto("http://127.0.0.1:%d%s" % (PORT, HARNESS_PATH), wait_until="load")
 
     src = io.open(SRC, encoding="utf-8").read()
-    page.add_script_tag(type="module", content=HARNESS % json.dumps(src))
+    led_src = io.open(LED_SRC, encoding="utf-8").read()
+    page.add_script_tag(type="module",
+                        content=HARNESS % (json.dumps(led_src), json.dumps(src)))
+    page.wait_for_function("typeof window.__release === 'function'", timeout=10000)
 
     idle = page.evaluate(PROBE)
     check("starts on the shipped icon", idle["icon"].endswith("icon.svg"), idle["icon"])
@@ -183,7 +199,92 @@ with sync_playwright() as pw:
     check("fan off restores theme-color", off["theme"] == "#0c0f16", off["theme"])
     check("fan off clears data-fan", off["fan"] is None)
 
-    # Teardown from the running state, which is the case that can leak.
+    # -- the status LED ---------------------------------------------------
+    # Fan off throughout, so any change in the icon is the LED's doing.
+    ICON = "document.querySelector('link[rel=icon]').href"
+
+    def corner():
+        """The LED's pixel, read back off the favicon the tab would show."""
+        return page.evaluate("""async () => {
+          const img = new Image();
+          img.src = document.querySelector('link[rel=icon]').href;
+          await img.decode();
+          const c = document.createElement('canvas');
+          c.width = c.height = 64;
+          const x = c.getContext('2d');
+          x.drawImage(img, 0, 0, 64, 64);
+          return Array.from(x.getImageData(54, 54, 1, 1).data.slice(0, 3));
+        }""")
+
+    def hue(rgb):
+        # Green, red or dark: the board has nothing else, and anything else
+        # (a yellow creeping back in) comes out as "?" and fails its check.
+        r, g, b = rgb
+        if r > 180 and g < 110:
+            return "red"
+        if g > 140 and r < 80:
+            return "green"
+        if max(rgb) < 70:
+            return "off"
+        return "?%s" % (rgb,)
+
+    def sample(n=8, gap=0.2):
+        seen = set()
+        for _ in range(n):
+            seen.add(hue(corner()))
+            time.sleep(gap)
+        return seen
+
+    page.evaluate("window.__led('idle')")
+    page.wait_for_function(ICON + ".startsWith('data:')", timeout=10000)
+    check("idle LED is green, fan off", hue(corner()) == "green", str(corner()))
+
+    page.evaluate("window.__led('run')")
+    time.sleep(0.1)
+    check("run LED is red", hue(corner()) == "red", str(corner()))
+
+    # Red double-blink: two lit beats in six, so dark should dominate.
+    page.evaluate("window.__led('unseen')")
+    hits = []
+    for _ in range(15):
+        hits.append(hue(corner()))
+        time.sleep(0.2)
+    check("no current reading double-blinks red",
+          set(hits) == {"red", "off"} and hits.count("off") > hits.count("red"),
+          "%d red / %d dark" % (hits.count("red"), hits.count("off")))
+
+    page.evaluate("window.__led('fault')")
+    seen = sample()
+    check("fault alternates green and red", seen == {"green", "red"}, str(sorted(seen)))
+    page.screenshot(path=os.path.join(SHOTS, "appicon-fault.png"))
+
+    page.evaluate("window.__led('learn')")
+    seen = sample()
+    check("learn blinks green against dark", seen == {"green", "off"}, str(sorted(seen)))
+
+    # The whole point of the LED is the tab strip, which is a hidden tab.
+    page.evaluate(VISIBILITY, "hidden")
+    time.sleep(0.2)
+    check("a backgrounded tab keeps the LED", page.evaluate(ICON).startswith("data:"))
+    page.evaluate(VISIBILITY, "visible")
+
+    page.emulate_media(reduced_motion="reduce")
+    page.evaluate("window.__led('fault')")
+    seen = sample(6)
+    check("reduced motion holds fault steady red", seen == {"red"}, str(sorted(seen)))
+    page.evaluate("window.__led('attention')")
+    seen = sample(6)
+    check("reduced motion holds attention dark, not RUN red", seen == {"off"},
+          str(sorted(seen)))
+    page.emulate_media(reduced_motion="no-preference")
+
+    page.evaluate("window.__led(null)")
+    time.sleep(0.2)
+    check("no code puts the plain icon back", page.evaluate(ICON).endswith("icon.svg"))
+
+    # Teardown from the running state, which is the case that can leak --
+    # with the LED blinking too, so both timers are in play.
+    page.evaluate("window.__led('fault')")
     page.evaluate("window.__set(true)")
     page.wait_for_function(
         "document.querySelector('link[rel=icon]').href.startsWith('data:')",

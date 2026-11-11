@@ -1,7 +1,7 @@
 <script>
   import '../app.css';
   import { onMount, onDestroy } from 'svelte';
-  import { connect, disconnect, configured, fanRunning } from '$lib/link.js';
+  import { connect, disconnect, configured, fanRunning, statusLed } from '$lib/link.js';
   import { watchAppIcon } from '$lib/appicon.js';
   import { startTheme } from '$lib/theme.js';
   import { get } from 'svelte/store';
@@ -21,7 +21,7 @@
 
     // Browser-only, and it touches <head> tags that app.html owns, so it
     // starts here rather than at module scope.
-    releaseAppIcon = watchAppIcon(fanRunning);
+    releaseAppIcon = watchAppIcon(fanRunning, statusLed);
 
     // Only dial out once there is something to dial with. Connecting with
     // no credentials against a broker that requires them produces an

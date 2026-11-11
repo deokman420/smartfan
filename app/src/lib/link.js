@@ -21,6 +21,7 @@
  */
 import { writable, derived, get } from 'svelte/store';
 import { history, F } from '$lib/history.js';
+import { ledCode } from '$lib/statusled.js';
 
 const SETTINGS_KEY = 'smartfan.settings';
 
@@ -140,6 +141,16 @@ export const stale = derived([lastSeen, link], ([$seen, $link], set) => {
 export const fanRunning = derived(
   [telemetry, deviceOnline, stale],
   ([$t, $online, $stale]) => !!$t?.fan_on && $online && !$stale
+);
+
+/**
+ * The board's LED code for the tab icon, or null for nothing to say yet.
+ * See lib/statusled.js for the vocabulary.
+ */
+export const statusLed = derived(
+  [telemetry, link, deviceOnline, stale],
+  ([$t, $link, $online, $stale]) =>
+    ledCode({ t: $t, link: $link, online: $online, stale: $stale })
 );
 
 /** What a transport writes into. Deliberately small. */
