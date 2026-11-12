@@ -179,3 +179,88 @@ class Detector:
     def relearn(self, raw=None):
         """Drop the learned baseline. Pairs with the humidity Relearn."""
         self.base = float(raw) if raw is not None else None
+
+
+class Recent:
+    """The last few minutes of raw readings, for the visit tests in main.py.
+
+    The Detector above answers "is the air worse than this room's normal",
+    against a baseline that takes an hour to move. A visit asks something
+    narrower: is the air worse than it was a moment before somebody walked
+    in, and is it getting worse quickly. Both need the recent past, which
+    the EWMA has averaged away, so it is kept here as it was read.
+
+    No clock of its own, for the same reason as Detector: the caller hands
+    in the time with every reading and every question, so the tests can
+    drive it with plain integers. `diff` is time.ticks_diff on the device,
+    because ticks_ms wraps and a plain subtraction across the wrap is a
+    reading from the far future.
+    """
+
+    def __init__(self, span_ms, diff=None):
+        self.span_ms = span_ms
+        self._diff = diff or (lambda a, b: a - b)
+        self._t = []
+        self._v = []
+
+    def __len__(self):
+        return len(self._t)
+
+    def push(self, t, v):
+        """Add one reading, and forget the ones older than span_ms."""
+        self._t.append(t)
+        self._v.append(v)
+        while len(self._t) > 1 and self._diff(t, self._t[0]) > self.span_ms:
+            self._t.pop(0)
+            self._v.pop(0)
+
+    def clear(self):
+        self._t = []
+        self._v = []
+
+    def median(self, now, window_ms):
+        """Median of the readings no older than window_ms, or None."""
+        vals = [v for t, v in zip(self._t, self._v)
+                if self._diff(now, t) <= window_ms]
+        if not vals:
+            return None
+        vals.sort()
+        n = len(vals)
+        mid = n // 2
+        if n % 2:
+            return vals[mid]
+        # Whole ticks, as the sensor reports them: a float reference would
+        # reach "%d" formatting downstream, which MicroPython is stricter
+        # about than CPython.
+        return (vals[mid - 1] + vals[mid]) // 2
+
+    def at(self, now, age_ms):
+        """(t, v) of the newest reading at least age_ms old, or None.
+
+        None when the history does not reach that far back -- just after a
+        boot, say. A rate measured across less time than it claims is a
+        rate that is too high, so the question goes unanswered instead.
+        """
+        found = None
+        for t, v in zip(self._t, self._v):
+            if self._diff(now, t) >= age_ms:
+                found = (t, v)
+            else:
+                break
+        return found
+
+    def fall_per_min(self, now, window_ms, end_age_ms=0):
+        """How fast the raw count FELL across a window, in ticks a minute.
+
+        The window ends end_age_ms ago and is window_ms long. Positive means
+        the count fell, which for the VOC pixel means the air got worse.
+        None if the history does not cover the window.
+        """
+        end = self.at(now, end_age_ms)
+        start = self.at(now, end_age_ms + window_ms)
+        if end is None or start is None:
+            return None
+        span = self._diff(end[0], start[0])
+        if span <= 0:
+            return None
+        return (start[1] - end[1]) * 60000.0 / span
