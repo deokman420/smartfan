@@ -364,6 +364,57 @@ VOC_HOLD_MAX_S  = 7200
 VOC_REST_S      = 1200
 VOC_MAX_FAILS   = 10     # consecutive I2C failures before the path stands down
 
+# --- Odor is judged per visit ----------------------------------------
+# The level test above compares the air with a 67-minute baseline, so it
+# cannot tell "somebody just used the bathroom" from "the whole flat smells
+# different this evening". Measured on this unit from 7 to 11 Nov: the fan
+# ran 28.8 h, and 20.6 h of it was odor-only with the light off for half an
+# hour and the room dry -- nobody in there. In empty, dry air the excess sat
+# at or above the trigger of 80 for 47 % of the time.
+#
+# So odor now belongs to a VISIT. When the light comes on, the air of the
+# last two minutes is the reference, and a smell is a fast fall below that
+# reference while the visit lasts. Outside a visit only an extreme, sustained
+# fall may start the fan. docs/sgp41-odor-sensing.md holds the measurements
+# each number comes from:
+#
+#                     fastest 120 s fall    peak
+#   bathroom odor         444 /min         +899
+#   gas hob                73 /min         +504
+#   litter, disturbed   75-79 /min      +150-166
+#   quiet night            38 /min       <= +125
+#
+# False restores the level trigger exactly, VOC_RISE_ON and all.
+VISIT_ODOR      = True
+# How long a visit lasts after the light goes off. The 4 Nov bathroom event
+# stayed above +120 for 8.3 minutes, so a smell can still be arriving well
+# after the door closes.
+VISIT_TAIL_S    = 600
+# The walk-in reference is the median raw VOC count over this many seconds
+# before the light came on.
+VISIT_REF_S     = 120
+# Ticks below the walk-in reference that count as a smell. About 20 sd of a
+# stable room's short-window noise (7-8 ticks), and a sixth of the real event.
+VISIT_RISE_ON   = 150
+# The fall must also be fast: at least VISIT_RATE_ON ticks a minute across
+# VISIT_RATE_S. The real event clears it threefold; cooking and litter sit
+# at half of it.
+VISIT_RATE_S    = 120
+VISIT_RATE_ON   = 150
+# A dew point this far above its walk-in value makes the visit a shower, and
+# a shower's odor is not judged at all -- humidity already runs the fan, and
+# steam moves both pixels hard (+760 to +850 VOC ticks in the big showers of
+# 9 and 11 Nov). Cooking moved the dew point +0.7, the bathroom event -0.1.
+VISIT_SHOWER_DP = 1.0
+# Outside a visit the fan starts on odor only if the fall has run at this
+# rate or faster through BOTH halves of VISIT_RATE_S. That is a source in
+# the room with the light off, not the flat drifting; the real event's 60 s
+# rate was 894/min, cooking's 84.
+VISIT_BACKSTOP_RATE = 300
+# How much raw VOC history is kept in RAM for the two tests above. It must
+# cover VISIT_REF_S and VISIT_RATE_S; at 2 s samples this is 120 readings.
+VISIT_RING_S    = 240
+
 # --- Timing, seconds --------------------------------------------------
 SAMPLE_S     = 2     # DHT22 cannot be read faster than every 2 s
 # Seconds of unreachable network before the controller reboots itself.

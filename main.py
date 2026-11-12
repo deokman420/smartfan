@@ -293,6 +293,21 @@ class Controller:
         # on too long can be told from one that is still plausible. None
         # means the path is quiet and nothing is being held.
         self.voc_hold_since = None
+        # The visit, and the odor episode it may produce. See
+        # _update_visit(). The ring holds raw VOC ticks as read, because the
+        # walk-in reference and the rate are both questions about the last
+        # few minutes, which the hour-long baseline has averaged away.
+        self.vocring = voc.Recent(
+            getattr(cfg, "VISIT_RING_S", 240) * 1000, diff=time.ticks_diff)
+        self.visit_open = False     # someone is in, or left within the tail
+        self.visit_ref = None       # raw VOC just before the light came on
+        self.visit_dp0 = None       # dew point at the same moment
+        self.visit_shower = False   # this visit's dew point rose: a shower
+        self.visit_dark_at = None   # when the light went off on this visit
+        self._visit_light = False   # light_on as the visit tracker last saw it
+        self.odor_ref = None        # the reference an odor episode clears to
+        self.odor_since = None      # when that episode started
+        self.odor_kind = None       # "visit" or "backstop"
         if cfg.VOC_ENABLED:
             try:
                 import sgp41
@@ -523,7 +538,7 @@ class Controller:
             # runs exactly once per sample: a predicate that started its own
             # clock would restart it on every caller that asked, and the
             # tests ask.
-            if self._voc_quiet():
+            if self._voc_level_quiet():
                 self.voc_hold_since = None
             elif self.voc_hold_since is None:
                 self.voc_hold_since = time.ticks_ms()
@@ -557,6 +572,7 @@ class Controller:
                 self.voc_ready_since = time.ticks_ms()
 
             self._update_nox_trend()
+            self._update_visit(got[0])
 
             ready = self._nox_ready()
             if ready != self._nox_ready_logged:
@@ -915,6 +931,29 @@ class Controller:
 
         Returns True when the path is inert, so an absent or disabled sensor
         can never hold a run open or keep the maxed latch closed.
+
+        With VISIT_ODOR on, the objection belongs to an odor EPISODE, and the
+        episode is measured against its own reference -- the air as it was
+        before the smell arrived -- not against the hour-long baseline. The
+        baseline is what the flat's own drift moves, and asking it whether
+        the fan may stop held light-on runs open whenever the evening air
+        was a little worse than the afternoon's. No episode, no objection.
+        """
+        if not getattr(self.st, "VISIT_ODOR", False):
+            return self._voc_level_quiet()
+        if not self._voc_active() or self.odor_ref is None:
+            return True
+        raw = self.vocdet.raw
+        if raw is None:
+            return True
+        return self.odor_ref - raw <= self.st.VOC_FALL_OFF
+
+    def _voc_level_quiet(self):
+        """_voc_quiet() as the level path asks it: excess against baseline.
+
+        Kept apart because the baseline's own bookkeeping still needs it.
+        voc_hold_since asks how long the BASELINE has been refused, and that
+        is a question about the baseline's excess whatever starts the fan.
         """
         if not self._voc_active():
             return True
@@ -926,6 +965,153 @@ class Controller:
         if exc is None:
             return True
         return exc <= self.st.VOC_FALL_OFF
+
+    # -- the visit ----------------------------------------------------
+
+    def _update_visit(self, raw):
+        """One VOC sample through the visit tracker. Called by read_voc().
+
+        A visit opens when the light comes on and closes VISIT_TAIL_S after
+        it goes off. At the moment it opens, the median of the last
+        VISIT_REF_S of raw readings becomes the walk-in reference: the air
+        as it was before whoever came in could have changed it. A smell is
+        then a fall below that reference, which the flat's slow drift
+        cannot produce in the minutes a visit lasts.
+
+        An odor episode starts when a visit sees a fall of VISIT_RISE_ON
+        below its reference, falling at VISIT_RATE_ON a minute or faster,
+        with the dew point flat. Outside a visit it starts only on the
+        backstop: VISIT_BACKSTOP_RATE a minute through both halves of
+        VISIT_RATE_S. The episode keeps its own reference and ends when the
+        air is back within VOC_FALL_OFF of it, or after MAX_RUN_S whatever
+        the air says, so an episode can never outlive the run it asked for.
+
+        Runs every sample in every state, including Force off and a RUN the
+        light already started. The light starts the fan on its own; what the
+        episode decides is whether the fan stays on after the light goes
+        off, so it has to be judged while the fan is already running.
+        """
+        if raw is None:
+            return
+        st = self.st
+        now = time.ticks_ms()
+        lit = bool(self.light_on)
+        if lit and not self._visit_light:
+            # Before this reading joins the ring: the reference is the air
+            # BEFORE the visit, and this sample may already be the visit.
+            self.visit_ref = self.vocring.median(now, st.VISIT_REF_S * 1000)
+            self.visit_dp0 = self.dew_point()
+            self.visit_shower = False
+            self.visit_dark_at = None
+            self.visit_open = True
+            print("visit: open, reference %s" % (
+                "none yet" if self.visit_ref is None
+                else "%d ticks" % int(self.visit_ref)))
+        elif self._visit_light and not lit and self.visit_open:
+            self.visit_dark_at = now
+        self._visit_light = lit
+        self.vocring.push(now, raw)
+
+        if (self.visit_open and not lit and self.visit_dark_at is not None
+                and ms_since(self.visit_dark_at) / 1000.0 >= st.VISIT_TAIL_S):
+            self.visit_open = False
+            self.visit_ref = None
+            self.visit_dp0 = None
+            print("visit: closed")
+
+        if (self.visit_open and not self.visit_shower
+                and self.visit_dp0 is not None):
+            dp = self.dew_point()
+            if dp is not None and dp - self.visit_dp0 > st.VISIT_SHOWER_DP:
+                self.visit_shower = True
+                print("visit: dew point +%.1f C, a shower - odor not judged"
+                      % (dp - self.visit_dp0))
+
+        if self.odor_ref is not None:
+            left = self.odor_ref - raw
+            if left <= st.VOC_FALL_OFF:
+                self._end_odor("cleared, %+d against its reference"
+                               % int(left))
+            elif ms_since(self.odor_since) / 1000.0 >= st.MAX_RUN_S:
+                self._end_odor("gave up after %d min" % (st.MAX_RUN_S // 60))
+
+        if (self.odor_ref is None and getattr(st, "VISIT_ODOR", False)
+                and self._voc_active()):
+            found = self._odor_found(now, raw)
+            if found is not None:
+                kind, ref = found
+                self.odor_ref = ref
+                self.odor_since = now
+                self.odor_kind = kind
+                print("odor: %s episode, %+d below its reference"
+                      % (kind, int(ref - raw)))
+                # A new smell is a new event, so it may release a latch an
+                # earlier one left. The light-only cap is the case that
+                # matters: ten dry minutes on the seat latch the fan off,
+                # and the smell that follows must still be able to run it.
+                if self.maxed:
+                    self.maxed = False
+                    self._say("odor: a new episode, free to run again")
+
+    def _odor_found(self, now, raw):
+        """(kind, reference) if this sample starts an odor episode, else None.
+
+        The caller has already asked _voc_active(), so the combustion veto,
+        the NOx wait and an unarmed path all answer None before this runs.
+        """
+        st = self.st
+        win = st.VISIT_RATE_S * 1000
+        if self.visit_open:
+            if self.visit_shower or self.visit_ref is None:
+                return None
+            rate = self.vocring.fall_per_min(now, win)
+            if rate is None:
+                return None
+            if (self.visit_ref - raw >= st.VISIT_RISE_ON
+                    and rate >= st.VISIT_RATE_ON):
+                return "visit", self.visit_ref
+            return None
+        # Outside a visit. The post-steam window still applies here, as it
+        # does to the level path: drying a wet room moves the pixel too.
+        if not self._voc_armed():
+            return None
+        half = win // 2
+        early = self.vocring.fall_per_min(now, half, end_age_ms=half)
+        late = self.vocring.fall_per_min(now, half)
+        if early is None or late is None:
+            return None
+        bar = st.VISIT_BACKSTOP_RATE
+        if early >= bar and late >= bar:
+            start = self.vocring.at(now, win)
+            if start is None:
+                return None
+            return "backstop", start[1]
+        return None
+
+    def _end_odor(self, why):
+        if self.odor_ref is not None:
+            print("odor: %s episode ended, %s" % (self.odor_kind, why))
+        self.odor_ref = None
+        self.odor_since = None
+        self.odor_kind = None
+
+    def _odor_start(self):
+        """The reason odor starts the fan from IDLE, or None."""
+        if not getattr(self.st, "VISIT_ODOR", False):
+            if (self._voc_armed() and self.excess_voc is not None
+                    and self.excess_voc >= self.st.VOC_RISE_ON):
+                return "odor +%d" % self.excess_voc
+            return None
+        if self.odor_ref is None or not self._voc_active():
+            return None
+        return "odor %s +%d" % (self.odor_kind, self.odor_excess or 0)
+
+    @property
+    def odor_excess(self):
+        """How far below its episode's reference the air is, or None."""
+        if self.odor_ref is None or self.vocdet.raw is None:
+            return None
+        return int(self.odor_ref - self.vocdet.raw)
 
     # -- helpers ------------------------------------------------------
 
@@ -1205,13 +1391,13 @@ class Controller:
                           % (self.st.VOC_REST_S // 60))
             elif self.excess_rh >= self.st.RH_RISE_ON:
                 self.set_state(RUN, "humidity +%.1f%%" % self.excess_rh)
-            elif (self._voc_armed() and self.excess_voc is not None
-                    and self.excess_voc >= self.st.VOC_RISE_ON):
+            elif self._odor_start() is not None:
                 # Reached only with the light off and the room dry, which is
                 # exactly the gap this sensor was bought to close: air that
                 # needs clearing with nobody there to press Boost and no
-                # humidity to notice.
-                self.set_state(RUN, "odor +%d" % self.excess_voc)
+                # humidity to notice. _odor_start() holds both the level
+                # test and the visit one, and VISIT_ODOR picks between them.
+                self.set_state(RUN, self._odor_start())
             return
 
         # state == RUN
@@ -1241,6 +1427,11 @@ class Controller:
             # not "brief pause".
             self.maxed = True
             self.maxed_at = time.ticks_ms()
+            # The cap ends an odor episode too. Left running, a reference
+            # the air never returns to would keep _voc_quiet() False and
+            # the latch could only rest and retry, which is the level
+            # path's behavior and exactly the endless evening this replaces.
+            self._end_odor("the run hit its cap")
             self.set_state(IDLE, "max run time - latched until the room "
                                  "dries or the light comes back on")
             return
@@ -1325,7 +1516,8 @@ class Controller:
         if self.excess_rh > self.st.RH_FALL_OFF:
             why.append("humidity +%.1f%%" % self.excess_rh)
         if not self._voc_quiet():
-            exc = self.excess_voc
+            exc = (self.odor_excess if getattr(self.st, "VISIT_ODOR", False)
+                   else self.excess_voc)
             why.append("odor" if exc is None else "odor +%d" % exc)
         if not why:
             # Nothing about the room justifies the run; a timer does. Said

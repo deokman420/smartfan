@@ -15,6 +15,7 @@ python tests/test_units.py           # host only, celsius / fahrenheit
 node   tests/test_dryrate.mjs        # host only, no browser at all
 python tests/test_app.py             # the app, needs broker + device
 python tests/test_improv.py          # host only, no board needed
+python tests/test_visit.py           # host only, odor judged per visit
 python tests/test_provision.py       # host only, no board needed
 python tests/test_wifi.py            # host only, changing the wifi in-app
 python tests/test_device.py [COM5]   # hardware, needs the Pico attached

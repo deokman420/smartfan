@@ -632,6 +632,12 @@ check("then ends on the humidity, the way it always did",
 
 print("\n\nodor sensing: the driver, the detector, and the gates\n")
 
+# Everything from here down is the LEVEL path: odor judged against the
+# hour-long baseline, wherever the room's occupant is. VISIT_ODOR = False
+# restores it exactly, and these sections pin that it still does. The visit
+# path that replaced it as the default has its own file, tests/test_visit.py.
+cfg.VISIT_ODOR = False
+
 import sgp41                                         # noqa: E402
 import voc as vocmod                                 # noqa: E402
 
