@@ -283,6 +283,44 @@ Both VOC thresholds **ship at 0**, which `_voc_armed()` reads as "never
 trigger", so a reflash is never louder than the unit it replaced. The live
 values come from `settings.json`.
 
+## Odor is judged per visit — 12 Nov
+
+The device's own history from 7 to 11 Nov showed the level trigger running
+the fan for the flat rather than for the room: 28.8 h of running, 20.6 h of
+it on odor alone with the light off for half an hour and the room dry. In
+empty, dry air the excess sat at or above the live trigger of 80 for 47 %
+of the time, with a median of +66 and a 90th percentile of +430. That is the
+baseline problem above, seen from the fan's side.
+
+`VISIT_ODOR` (on by default) replaces the question. A visit opens when the
+light comes on and closes `VISIT_TAIL_S` (600 s) after it goes off. Its
+reference is the median raw count over the `VISIT_REF_S` (120 s) before the
+light, so slow drift cannot reach it in the minutes a visit lasts. A smell is
+a fall of `VISIT_RISE_ON` (150) below that reference, falling at
+`VISIT_RATE_ON` (150 a minute) or faster across `VISIT_RATE_S` (120 s). A dew
+point `VISIT_SHOWER_DP` (1.0 C) above its walk-in value makes the visit a
+shower, and a shower is not judged. Outside a visit only the backstop starts
+the fan: `VISIT_BACKSTOP_RATE` (300 a minute) through both halves of the
+120 s window.
+
+The rate test is the one refuted above for litter, and for the same reason
+it now works: litter and cooking both sit near 75 a minute while the
+bathroom event fell at 444, so a rate that cannot catch litter is exactly
+what keeps litter and cooking out. The combustion veto, the NOx wait and
+`VOC_RISE_ON` of 0 as the off switch all still apply.
+
+An episode keeps its own reference, so `_voc_quiet()` stays the stop
+condition but asks whether the air is back within `VOC_FALL_OFF` of the
+air before the smell, not of the baseline. The episode ends there, or at
+`MAX_RUN_S`. The baseline still learns as before and is still published.
+`VISIT_ODOR = False` restores the level trigger exactly, and
+`tests/test_control.py` pins that it does; `tests/test_visit.py` covers the
+visit path.
+
+All the thresholds come from one labeled bathroom event and the litter and
+hob events in the tables above. They are a starting point. Labeled visits at
+the 2 s cadence are what would set them properly.
+
 ## Open, in priority order
 
 1. **Temperature-compensate the VOC baseline.** The blocker for everything
