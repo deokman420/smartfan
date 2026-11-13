@@ -1649,7 +1649,13 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: calc(16px + env(safe-area-inset-top)) 18px 6px;
+    /* max(), not a sum. The top inset is not the height of the island: on
+       a Dynamic Island phone it already runs ~14px past the island's
+       bottom edge (62px on a 440x956 Pro Max), so adding the 16px a
+       notchless browser needs on top of it left ~30px of dead band between
+       the island and the brand -- the "room at the top". A few px past the
+       inset clears the island; 16px stays the floor where the inset is 0. */
+    padding: max(16px, calc(env(safe-area-inset-top) + 4px)) 18px 6px;
     background: color-mix(in srgb, var(--bg-card) 92%, transparent);
     backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--border);
@@ -2735,7 +2741,7 @@
     justify-content: center;
     gap: 12px;
     flex-wrap: wrap;
-    padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+    padding: max(10px, calc(env(safe-area-inset-top, 0px) + 4px)) 16px 10px;
     background: var(--accent-soft, var(--bg-card));
     border-bottom: 1px solid var(--border-strong);
     font-size: 0.88rem;
