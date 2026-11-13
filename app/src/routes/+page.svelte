@@ -1656,7 +1656,15 @@
        the island and the brand -- the "room at the top". A few px past the
        inset clears the island; 16px stays the floor where the inset is 0. */
     padding: max(16px, calc(env(safe-area-inset-top) + 4px)) 18px 6px;
-    background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+    /* Solid under the status bar, glass below it. At 92% with the blur,
+       whatever scrolled under the clock and the island showed through as a
+       frosted smear, and WebKit softens a blurred element's top edge on top
+       of that -- "the gap looks blurry". The strip is the inset's height,
+       so it is zero-height (and this is plain glass) without one. */
+    background:
+      linear-gradient(var(--bg-card), var(--bg-card)) top / 100%
+        env(safe-area-inset-top, 0px) no-repeat,
+      color-mix(in srgb, var(--bg-card) 92%, transparent);
     backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--border);
     max-width: 760px;
