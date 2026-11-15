@@ -17,7 +17,7 @@
  */
 import { record } from '$lib/history.js';
 import { loadHistory, canReachDevice, shouldTryBackfill,
-         BACKFILL_RETRY_MS } from './backfill.js';
+         BACKFILL_RETRY_MS, RESUME_GAP_MS } from './backfill.js';
 
 function topics(room) {
   return {
@@ -39,6 +39,21 @@ export function create(getSettings, sink) {
   let knewUpTo = 0;
   let backfillTries = 0;
   let backfillAt = 0;
+  // When the last reading arrived. The fan publishes every 30 s, so a much
+  // longer silence is a page that was frozen in the background (or a broker
+  // that went away) and the gap is worth asking the fan for again. See the
+  // same check in device.js.
+  let lastMsg = 0;
+
+  function resumed(now) {
+    if (lastMsg && now - lastMsg > RESUME_GAP_MS) {
+      knewUpTo = sink.newestSample();
+      backfilled = false;
+      backfillTries = 0;
+      backfillAt = 0;
+    }
+    lastMsg = now;
+  }
 
   /**
    * Ask the fan for its stored week, once, using the address it just
@@ -113,6 +128,7 @@ export function create(getSettings, sink) {
       backfilled = false;
       backfillTries = 0;
       backfillAt = 0;
+      lastMsg = 0;
       knewUpTo = sink.newestSample();
 
       sink.link.set('connecting');
@@ -160,6 +176,8 @@ export function create(getSettings, sink) {
         if (topic !== t.state) return;
         try {
           const parsed = JSON.parse(body);
+          // Before record(), for the same reason as in device.js.
+          resumed(Date.now());
           sink.telemetry.set(parsed);
           sink.lastSeen.set(Date.now());
           // Charts are fed from the same stream that drives the readings, so

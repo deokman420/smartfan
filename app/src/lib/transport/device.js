@@ -19,7 +19,7 @@
  */
 import { record } from '$lib/history.js';
 import { loadHistory as fetchHistory, shouldTryBackfill,
-         BACKFILL_RETRY_MS } from './backfill.js';
+         BACKFILL_RETRY_MS, RESUME_GAP_MS } from './backfill.js';
 
 const POLL_MS = 2000;
 const TIMEOUT_MS = 4000;
@@ -64,6 +64,9 @@ export function create(getSettings, sink) {
   // asking "what is newer than my newest row" a moment later asks for the
   // last ten minutes rather than for the week that is actually missing.
   let knewUpTo = 0;
+  // When the fan last answered. A long silence that ends in an answer is a
+  // page that was frozen, not a fan that was down: see resumed().
+  let lastOk = 0;
 
   function url(path) {
     return base(getSettings()) + path;
@@ -76,6 +79,7 @@ export function create(getSettings, sink) {
       const res = await ask(url('/api/state'));
       if (!res.ok) throw new Error(`the fan answered ${res.status}`);
       const payload = await res.json();
+      resumed(Date.now());
       misses = 0;
       sink.link.set('online');
       sink.linkError.set('');
@@ -108,6 +112,41 @@ export function create(getSettings, sink) {
     } finally {
       inflight = false;
     }
+  }
+
+  /**
+   * Treat an answer after a long silence as a fresh connect, for history.
+   *
+   * The backfill used to run once per connect(), and connect() runs once
+   * per page load. A home-screen app on iOS is not reloaded when it comes
+   * back from the background -- the frozen page simply resumes -- so the
+   * hours it spent frozen were never asked for: the charts showed "not
+   * enough data", then filled from the moment of return. A fresh tab was
+   * fine, which is what gave it away.
+   *
+   * Must run BEFORE record(): knewUpTo has to be the newest row from before
+   * the gap, or the request asks for the last ten minutes instead of the
+   * hours that are missing. backfill() merges by timestamp, so re-asking
+   * for an overlap cannot duplicate rows.
+   */
+  function resumed(now) {
+    if (lastOk && now - lastOk > RESUME_GAP_MS) {
+      knewUpTo = sink.newestSample();
+      backfilled = false;
+      backfillTries = 0;
+      backfillAt = 0;
+    }
+    lastOk = now;
+  }
+
+  // Poll at once when the page comes back rather than waiting out the
+  // interval, so the refetch starts the moment somebody is looking. poll()
+  // already refuses to overlap itself and to run once stopped.
+  function onVisible() {
+    if (document.visibilityState === 'visible') poll();
+  }
+  function onPageShow(e) {
+    if (e.persisted) poll();
   }
 
   function loadHistory() {
@@ -147,18 +186,28 @@ export function create(getSettings, sink) {
       backfillTries = 0;
       backfillAt = 0;
       misses = 0;
+      lastOk = 0;
       knewUpTo = sink.newestSample();
       sink.link.set('connecting');
       sink.linkError.set('');
       sink.authFailed.set(false);
       poll();
       timer = setInterval(poll, POLL_MS);
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', onVisible);
+        addEventListener('pageshow', onPageShow);
+      }
     },
 
     disconnect() {
       stopped = true;
       if (timer) clearInterval(timer);
       timer = null;
+      lastOk = 0;
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisible);
+        removeEventListener('pageshow', onPageShow);
+      }
       sink.link.set('idle');
       sink.deviceOnline.set(false);
     },

@@ -68,6 +68,17 @@ export const OVERLAP_S = 600;
 export const BACKFILL_TRIES = 5;
 export const BACKFILL_RETRY_MS = 60_000;
 
+/* A silence this long between two readings means the page was frozen --
+ * an iOS home-screen app resuming from the background -- and the gap it
+ * left is asked for again, as on a fresh connect.
+ *
+ * Three minutes, not one. A desktop browser throttles timers in a hidden
+ * tab to about once a minute, and a threshold at that cadence would
+ * re-fetch history every minute from a tab nobody is looking at. Anything
+ * shorter than GAP_MS is drawn joined up anyway, so nothing visible is lost.
+ */
+export const RESUME_GAP_MS = 3 * 60_000;
+
 /**
  * Should another backfill attempt be made right now?
  *
