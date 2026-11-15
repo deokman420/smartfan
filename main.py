@@ -288,6 +288,10 @@ class Controller:
         self._nox_ref_at = None    # when that reference was taken
         self._nox_decaying = False
         self.voc = None            # sgp41.SGP41, or None if absent/disabled
+        # The slow humidity reference the odor correction is measured from,
+        # and when it last moved. See _odor_comp().
+        self.odor_rh_ref = None
+        self._odor_rh_at = None
         self.voc_recover_until = None   # VOC_RECOVER_S after a steam event
         # When the odor path first went non-quiet, so a hold that has gone
         # on too long can be told from one that is still plausible. None
@@ -558,7 +562,12 @@ class Controller:
             # unchanged, because what may be LEARNED and what may ACT are
             # different questions.
             learning = self._voc_learning()
-            self.vocdet.update(got[0], learning and self.voc.settled_voc)
+            # The climate correction, VOC pixel only. The NOx detector, the
+            # visit ring and every episode reference below still see the
+            # raw count, so the veto and the visit tests are untouched: this
+            # moves only the hour-long baseline and the excess read off it.
+            self.vocdet.update(got[0], learning and self.voc.settled_voc,
+                               comp=self._odor_comp())
             # ...and the NOx pixel additionally refuses to learn while it is
             # itself reading combustion. Without that term the hob teaches
             # the NOx baseline that its own exhaust is normal -- measured
@@ -686,6 +695,63 @@ class Controller:
                 and self.excess_rh <= self.st.RH_FALL_OFF
                 and (self._voc_settled() or self._voc_hold_expired())
                 and self.voc is not None)
+
+    def _odor_comp(self):
+        """Ticks this sample's humidity is worth to the VOC pixel, or 0.
+
+        THE PROBLEM. Overnight 14-15 Nov the furnace ran 16 times, every
+        34-41 minutes for 7-9 minutes. Each burn warmed this room ~0.3 C and
+        dropped it ~2 %RH, and the raw VOC count rose and fell with it, so
+        the excess drew a sawtooth of ~190 ticks peak to peak and sat at or
+        above VOC_RISE_ON for 35 % of an empty night. Nothing in the air
+        had changed.
+
+        WHAT MOVES IT. Humidity, not temperature. Fitted on that night's
+        quiet air, %RH alone explains 75 % of the raw count's variance at
+        about -80 ticks per %RH; adding temperature explains 1 % more with a
+        coefficient whose sign changes from night to night. So this is an
+        RH correction, ODOR_COMP_K ticks per %RH.
+
+        AGAINST WHAT. Not an absolute humidity. Across 7-15 Nov the same
+        coefficient fitted day by day ranged from about -100 to about 0:
+        the pixel follows quick humidity swings but not the slow drift of a
+        week, so a fixed reference would turn every change of season into
+        a false excess. The reference is an EWMA of the humidity with time
+        constant ODOR_COMP_TAU_S -- long against a furnace burn, short
+        against the weather -- and the correction is K times the distance
+        from it, clamped to ODOR_COMP_MAX.
+
+        NOT DURING STEAM OR SMOKE. A shower or a pan moves the humidity
+        for reasons the furnace model knows nothing about, and correcting
+        for it there invents air quality in both directions. While the room
+        is humid (excess_rh above RH_FALL_OFF) or the NOx pixel reads more
+        than ODOR_COMP_NOX_GATE above its baseline, the correction is 0.
+
+        0 whenever ODOR_RH_COMP is off or there is no humidity reading, so
+        turning the flag off restores the old arithmetic exactly.
+        """
+        if not getattr(cfg, "ODOR_RH_COMP", False) or self.rh is None:
+            self.odor_rh_ref = None
+            self._odor_rh_at = None
+            return 0.0
+        now = time.ticks_ms()
+        if self.odor_rh_ref is None:
+            self.odor_rh_ref = float(self.rh)
+        else:
+            dt = time.ticks_diff(now, self._odor_rh_at) / 1000.0
+            a = dt / float(cfg.ODOR_COMP_TAU_S)
+            a = 0.0 if a < 0 else (1.0 if a > 1 else a)
+            self.odor_rh_ref += (self.rh - self.odor_rh_ref) * a
+        self._odor_rh_at = now
+        if self.excess_rh > self.st.RH_FALL_OFF:
+            return 0.0
+        gate = getattr(cfg, "ODOR_COMP_NOX_GATE", 0)
+        nox = self.noxdet.excess()
+        if gate and nox is not None and -nox > gate:
+            return 0.0
+        c = cfg.ODOR_COMP_K * (self.rh - self.odor_rh_ref)
+        cap = cfg.ODOR_COMP_MAX
+        return -cap if c < -cap else (cap if c > cap else c)
 
     def _odor_latch_rested(self):
         """May a latch held open only by odor let go and try again?

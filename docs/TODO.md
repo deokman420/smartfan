@@ -541,3 +541,36 @@ the vestigial `LIGHT_ON` / `LIGHT_OFF` in `config.py`. The measurements this
 was diagnosed from are in
 [`daylight-is-brighter-than-the-bulb.md`](daylight-is-brighter-than-the-bulb.md),
 whose size rule is withdrawn at the top of that section.
+
+## Odor baseline: humidity correction (built 2026-11-15, shipped OFF)
+
+config.py has said since the per-visit rewrite that the odor thresholds are
+sized against baseline error, and that temperature-compensating the baseline
+would remove it. Built on branch `odor-tempcomp` as `ODOR_RH_COMP`; shipped
+**off** because the replay was not clean enough to turn it on.
+
+What the data says (Home Assistant history 7-15 Nov, 10 s resampled):
+
+- The overnight sawtooth is the furnace. 16 burns on 14-15 Nov, every 34-41
+  min for 7-9 min; each one dried the room ~2 %RH and warmed it ~0.3 C.
+- It is humidity, not temperature. RH alone explains 75 % of the quiet-night
+  raw variance at ~ -80 ticks/%RH. Temperature adds 1 % and flips sign night
+  to night.
+- The coefficient is not stable. Fitted day by day on quiet air it ranges
+  from about -100 (furnace nights) to about 0 (8 Nov). Over the whole week
+  RH explains only ~14 % of quiet-air variance.
+
+Replay (tools/odor_comp_replay.py, real voc.Detector, K 80, tau 1800 s,
+clamp 300, gated off for steam and NOx > 150, fast-learn gate 50):
+
+| window, quiet air only | >=80 off | >=80 on | sd off | sd on |
+|---|---|---|---|---|
+| 14 Nov 19:30 - 15 Nov 04:30 | 35.1 % | 2.4 % | 68 | 34 |
+| whole week | 43.5 % | 36.4 % | 200 | 201 |
+| 8 Nov | 32.2 % | 40.6 % | | |
+| 9 Nov | 45.0 % | 50.1 % | | |
+
+So it fixes the night it was fitted on and makes two other days worse. The
+next step is to find what the furnace changes that 8 Nov did not -- most
+likely airflow (the burn pulls air through the room), which RH is only a
+proxy for -- before turning the flag on.
