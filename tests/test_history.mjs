@@ -278,6 +278,48 @@ console.log('\nthe seam between stored means and the live stream\n');
 
 Date.now = realNow;
 
+// Holes, named. The shape of 2026-11-17: a power cut drops one stored bucket,
+// and after the power-on the odor baseline stays null for a while.
+{
+  const { offline, learning, LEARNING } =
+    await import(pathToFileURL(join(root, 'app', 'src', 'lib', 'history.js')).href);
+  const B = 5 * MIN;
+  const row = (t, voc, vocBase) => {
+    const r = new Array(F.noxExc + 1).fill(1);
+    r[F.t] = t;
+    r[F.voc] = voc;
+    r[F.vocBase] = vocBase;
+    return r;
+  };
+  // Buckets 0..3 learned, bucket 4 missing (unplugged), 5..7 learning, 8.. learned.
+  const rows = [0, 1, 2, 3, 5, 6, 7, 8, 9].map((i) =>
+    row(i * B, 31000, i >= 5 && i <= 7 ? null : 31100));
+
+  const offs = offline(rows);
+  check('offline() finds the one missing bucket',
+        offs.length === 1 && offs[0].start === 3 * B && offs[0].end === 5 * B,
+        JSON.stringify(offs));
+  check('...and nothing in a complete run',
+        offline(rows.slice(0, 4)).length === 0);
+
+  const learns = learning(rows, [F.voc, F.vocBase]);
+  check('learning() finds the null-baseline stretch',
+        learns.length === 1 && learns[0].reason === LEARNING[F.vocBase],
+        JSON.stringify(learns));
+  // Starts at the restart's first row (the row before it is across the
+  // outage) and runs to the first row with a baseline again.
+  check('...bounded by the outage and the first learned row',
+        learns[0]?.start === 5 * B && learns[0]?.end === 8 * B,
+        JSON.stringify(learns[0]));
+
+  const absent = rows.map((r) => { const c = r.slice(); c[F.vocBase] = null; return c; });
+  check('a column null in every row is an absent sensor, not learning',
+        learning(absent, [F.vocBase]).length === 0);
+  check('a field with no learning meaning is never labelled',
+        learning(rows.map((r) => { const c = r.slice(); c[F.temp] = null; return c; }),
+                 [F.temp]).length === 0);
+}
+
 const failed = results.filter((ok) => !ok).length;
 console.log('\n%d/%d passed\n', results.length - failed, results.length);
 process.exit(failed ? 1 : 0);

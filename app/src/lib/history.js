@@ -344,3 +344,97 @@ export function segments(rows, field) {
   if (run.length > 1) out.push(run);
   return out;
 }
+
+/**
+ * The breaks, named. `segments` above decides WHERE a line stops; these say
+ * WHY, so a chart can label the hole instead of leaving a reader to guess
+ * whether the app is broken.
+ *
+ * Nothing here invents a reading. A hole stays a hole -- it just gets a
+ * caption.
+ */
+
+/**
+ * Every stretch with no row at all, as [last row before, first row after].
+ *
+ * The fan writes its record to its own flash whether or not Wi-Fi is up, so
+ * in device mode a gap here means the fan itself was not running: unplugged,
+ * or restarting. The bounds are the two readings either side, not the moment
+ * power went, which no row records -- so callers should word it as "no
+ * readings between", never as "off for N minutes".
+ */
+export function offline(rows) {
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1][F.t];
+    const b = rows[i][F.t];
+    if (b - a > GAP_MS) out.push({ start: a, end: b });
+  }
+  return out;
+}
+
+/**
+ * Columns where null means "not learned yet" rather than "no sensor". After
+ * a power-on the controller relearns its baselines before it will publish
+ * them -- the odor one took about two hours on 2026-11-17 -- and the row
+ * carries null until then (voc.py holds `base` at None until it has one).
+ */
+export const LEARNING = {
+  [F.base]: 'Humidity baseline learning',
+  [F.exc]: 'Humidity baseline learning',
+  [F.amb]: 'Ambient light learning',
+  [F.voc]: 'Odor sensor warming up',
+  [F.vocBase]: 'Odor baseline learning',
+  [F.vocExc]: 'Odor baseline learning',
+  [F.nox]: 'Odor sensor warming up',
+  [F.noxBase]: 'NOx baseline learning',
+  [F.noxExc]: 'NOx baseline learning'
+};
+
+/**
+ * Stretches where a row exists but one of `fields` is null for a learning
+ * reason. A field that is null in EVERY row is left alone: that is a fan
+ * without the sensor, not one still learning, and labelling a whole week
+ * "warming up" would be the very misreport this exists to prevent. Rows too
+ * short to carry the column predate it and are left alone for the same
+ * reason.
+ *
+ * A span starts at the last row that still had the value, so it meets the
+ * end of the drawn line instead of leaving a sliver of nothing between.
+ */
+export function learning(rows, fields) {
+  const watch = fields.filter(
+    (f) => f in LEARNING && rows.some((r) => r.length > f && r[f] !== null && r[f] !== undefined)
+  );
+  const out = [];
+  if (!watch.length) return out;
+  let cur = null;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const prev = i ? rows[i - 1] : null;
+    const gap = prev && r[F.t] - prev[F.t] > GAP_MS;
+    if (gap && cur) {
+      out.push(cur);
+      cur = null;
+    }
+    let reason = null;
+    for (const f of watch) {
+      if (r.length > f && (r[f] === null || r[f] === undefined)) {
+        reason = LEARNING[f];
+        break;
+      }
+    }
+    if (reason && cur && cur.reason === reason) {
+      cur.end = r[F.t];
+      continue;
+    }
+    if (cur) {
+      cur.end = r[F.t];
+      out.push(cur);
+      cur = null;
+    }
+    if (reason) cur = { reason, start: prev && !gap ? prev[F.t] : r[F.t], end: r[F.t] };
+  }
+  if (cur) out.push(cur);
+  return out;
+}

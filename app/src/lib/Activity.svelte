@@ -10,7 +10,7 @@
    * field existed leave a gap in the state lane rather than a guessed IDLE.
    */
   import { mode } from '$lib/link.js';
-  import { F, GAP_MS, STATE_NAME } from '$lib/history.js';
+  import { F, GAP_MS, STATE_NAME, offline } from '$lib/history.js';
   import { CAUSES, burning, odorAt, runDuration } from '$lib/runcause.js';
   import { clock as clockPref, fmtClock } from '$lib/units.js';
 
@@ -44,6 +44,15 @@
   let lightSegs = $derived(bits(F.lit, 'var(--purple)', 'Lights on'));
   let stateSegs = $derived(states());
   let odorSegs = $derived(odor());
+  /* Outages, hatched across every lane, so an empty stretch of track reads
+     as "nothing recorded" and not as "fan off, room dark". */
+  let offs = $derived(
+    offline(rows).map((h) => ({
+      ...h,
+      left: ((h.start - t0) / Math.max(t1 - t0, 1)) * 100,
+      width: Math.max(0.5, ((h.end - h.start) / Math.max(t1 - t0, 1)) * 100)
+    }))
+  );
   /* Only drawn when the history actually carries the column. Rows written
      before 2026-11-01 are 11 or 12 wide and have no odor at all, and an
      empty lane reads as "no smell" rather than "not recorded". */
@@ -74,6 +83,13 @@
       const faults = duration(F.st, (v) => v === 4);
       if (boosts >= 20_000) parts.push(`Boosted for ${fmtDur(boosts)}.`);
       if (faults >= 20_000) parts.push(`Faulted for ${fmtDur(faults)}.`);
+    }
+    /* A count, not a duration: a gap's bounds are the readings either side
+       of it, which overstate how long the fan was actually off. */
+    if (offs.length) {
+      const n = offs.length;
+      const who = $mode === 'device' ? 'Went offline' : 'Readings stopped';
+      parts.push(`${who} ${n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`}.`);
     }
     return parts.join(' ');
   });
@@ -196,6 +212,21 @@
     if (!(rect.width > 0) || !rows.length) return;
     const p = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const target = t0 + p * (t1 - t0);
+    const off = offs.find((h) => target > h.start && target < h.end);
+    if (off) {
+      hover = {
+        pct: p * 100,
+        clock: `${clock(off.start)} – ${clock(off.end)}`,
+        state: 'No readings',
+        fan:
+          $mode === 'device'
+            ? 'The fan was off or restarting.'
+            : 'The fan was off, or this app was closed.',
+        light: '',
+        odor: ''
+      };
+      return;
+    }
     let lo = 0;
     let hi = rows.length - 1;
     while (lo < hi) {
@@ -231,6 +262,11 @@
     </p>
   </div>
 {:else}
+  {#snippet gaps()}
+    {#each offs as h, i (i)}
+      <i class="off" style="left:{h.left}%; width:{h.width}%"></i>
+    {/each}
+  {/snippet}
   <div class="lanes">
     <div class="lane">
       <span class="name">Fan</span>
@@ -238,6 +274,7 @@
         {#each fanSegs as s, i (i)}
           <i style="left:{s.left}%; width:{s.width}%; background:{s.color}"></i>
         {/each}
+        {@render gaps()}
       </div>
     </div>
     <div class="lane">
@@ -246,6 +283,7 @@
         {#each lightSegs as s, i (i)}
           <i style="left:{s.left}%; width:{s.width}%; background:{s.color}"></i>
         {/each}
+        {@render gaps()}
       </div>
     </div>
     {#if hasOdor}
@@ -255,6 +293,7 @@
           {#each odorSegs as s, i (i)}
             <i style="left:{s.left}%; width:{s.width}%; background:{s.color}"></i>
           {/each}
+          {@render gaps()}
         </div>
       </div>
     {/if}
@@ -264,6 +303,7 @@
         {#each stateSegs as s, i (i)}
           <i style="left:{s.left}%; width:{s.width}%; background:{s.color}"></i>
         {/each}
+        {@render gaps()}
       </div>
     </div>
     {#if !compact}
@@ -284,7 +324,7 @@
             <b>{hover.clock}</b>
             <span>{hover.state}</span>
             <span>{hover.fan}</span>
-            <span>{hover.light}</span>
+            {#if hover.light}<span>{hover.light}</span>{/if}
             {#if hover.odor}<span>{hover.odor}</span>{/if}
           </div>
         {/if}
@@ -310,6 +350,7 @@
     <span><i style="background:var(--accent)"></i>Run</span>
     <span><i style="background:var(--warn)"></i>Boost</span>
     <span><i style="background:var(--bad)"></i>Fault</span>
+    {#if offs.length}<span><i class="off"></i>Offline</span>{/if}
     {#if !hasState}<span class="pending">State starts with the next readings</span>{/if}
   </div>
 
@@ -366,6 +407,15 @@
     position: absolute;
     top: 0;
     bottom: 0;
+  }
+  /* Same hatch as the charts' offline band. */
+  .track i.off,
+  .legend i.off {
+    background: repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--text-dim) 30%, transparent) 0 2px,
+      transparent 2px 6px
+    );
   }
 
   .overlay {

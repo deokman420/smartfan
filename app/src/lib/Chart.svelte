@@ -16,7 +16,7 @@
    * be stretched with it.
    */
   import { mode } from '$lib/link.js';
-  import { F, segments, stats, GAP_MS } from '$lib/history.js';
+  import { F, segments, stats, GAP_MS, offline, learning } from '$lib/history.js';
   import { clock as clockPref, fmtClock } from '$lib/units.js';
 
   let {
@@ -184,6 +184,64 @@
     }))
   );
 
+  /* Holes, captioned. A break in the line used to be the whole story, and a
+     reader could not tell an unplugged fan from a broken app. Each hole now
+     gets a band behind the lines saying which it was. The readings are not
+     filled in: the band is the honest replacement for them. */
+  let offs = $derived(offline(data));
+  let learns = $derived(learning(data, series.map((s) => s.field)));
+  let offText = $derived(
+    $mode === 'device'
+      ? 'The fan was off or restarting, so it recorded nothing.'
+      : 'Nothing reached this app: the fan was off, or the app was closed.'
+  );
+
+  let holes = $derived(
+    [
+      ...offs.map((h) => ({ ...h, kind: 'off', tag: 'Offline', note: offText })),
+      ...learns.map((h) => ({
+        ...h,
+        kind: 'learn',
+        tag: 'Learning',
+        note: `${h.reason}. Nothing to draw until it settles, usually after a restart.`
+      }))
+    ].map((h) => {
+      const left = x(h.start) / 10;
+      const width = Math.max(0.5, (x(h.end) - x(h.start)) / 10);
+      return { ...h, left, width };
+    })
+  );
+
+  /* A faint dotted bridge across an outage, from the last reading to the
+     next, so the eye can follow the series without mistaking the join for
+     data. Only for outages: across a learning hole there is no value at
+     either end to join. */
+  let bridges = $derived.by(() => {
+    const out = [];
+    for (const s of series) {
+      for (let i = 1; i < data.length; i++) {
+        const a = data[i - 1];
+        const b = data[i];
+        if (b[F.t] - a[F.t] <= GAP_MS) continue;
+        const va = a[s.field];
+        const vb = b[s.field];
+        if (!Number.isFinite(va) || !Number.isFinite(vb)) continue;
+        out.push({
+          color: s.color,
+          d: `M${x(a[F.t]).toFixed(1)} ${y(va).toFixed(1)} L${x(b[F.t]).toFixed(1)} ${y(vb).toFixed(1)}`
+        });
+      }
+    }
+    return out;
+  });
+
+  function holeAt(t) {
+    // Outages first: inside one there is no row at all, so nothing else applies.
+    for (const h of holes) if (h.kind === 'off' && t > h.start && t < h.end) return h;
+    for (const h of holes) if (h.kind === 'learn' && t >= h.start && t <= h.end) return h;
+    return null;
+  }
+
   let refMarks = $derived.by(() => {
     const marks = refValues
       .filter((r) => Number.isFinite(r.value))
@@ -330,6 +388,19 @@
     if (!(rect.width > 0)) return;
     const p = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const target = t0 + p * (t1 - t0);
+    const hole = holeAt(target);
+    if (hole && hole.kind === 'off') {
+      // Snapping to the nearest row here would show a reading from one edge
+      // of the outage as if it were taken inside it.
+      hover = {
+        pct: p * 100,
+        clock: `${clock(hole.start)} – ${clock(hole.end)}`,
+        values: [],
+        band: '',
+        note: `No readings. ${hole.note}`
+      };
+      return;
+    }
     let lo = 0;
     let hi = data.length - 1;
     while (lo < hi) {
@@ -358,7 +429,8 @@
           ? ''
           : row[bands] === 1
             ? bandOn || 'On'
-            : bandOff || 'Off'
+            : bandOff || 'Off',
+      note: hole ? hole.note : ''
     };
   }
 
@@ -476,6 +548,11 @@
     </div>
 
     <div class="stage">
+    {#each holes as h, i (i)}
+      <div class="hole {h.kind}" style="left:{h.left}%; width:{h.width}%" title="{h.tag}: {h.note}">
+        {#if !compact && h.width > 9}<span>{h.tag}</span>{/if}
+      </div>
+    {/each}
     <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
       {#each scale.ticks as v (v)}
         <line x1="0" y1={y(v)} x2="1000" y2={y(v)} class="grid" class:axis={Math.abs(v) < 1e-6} />
@@ -504,6 +581,10 @@
         {#if Number.isFinite(r.value)}
           <line x1="0" y1={y(r.value)} x2="1000" y2={y(r.value)} class="ref" />
         {/if}
+      {/each}
+
+      {#each bridges as b, i (i)}
+        <path d={b.d} class="line bridge" style="stroke:{b.color}" />
       {/each}
 
       {#each lines as s (s.field)}
@@ -553,6 +634,7 @@
           <span><i style="background:{v.color}"></i>{v.label} {v.text}</span>
         {/each}
         {#if hover.band}<span class="band">{hover.band}</span>{/if}
+        {#if hover.note}<span class="note">{hover.note}</span>{/if}
       </div>
     {/if}
     </div>
@@ -582,6 +664,8 @@
     {#if bands !== null && bands !== undefined}
       <span><i class="swatch-run" style="background:{bandColor}"></i>{bandOn || 'on'}</span>
     {/if}
+    {#if offs.length}<span><i class="swatch-hole off"></i>Offline</span>{/if}
+    {#if learns.length}<span><i class="swatch-hole learn"></i>Learning</span>{/if}
     {#if unit}<span class="unit">{unit}</span>{/if}
   </div>
 
@@ -668,6 +752,55 @@
   }
   .line.dash {
     stroke-dasharray: 5 4;
+  }
+  /* Fainter and finer than any real series, dashed or not, so it cannot be
+     read as one. */
+  .line.bridge {
+    stroke-width: 1.25;
+    stroke-dasharray: 1 4;
+    opacity: 0.55;
+  }
+
+  /* Hatched rather than filled: a solid band reads as a value. Gray for
+     "nothing recorded", blue for learning -- the same blue as LEARN in the
+     state lane above. */
+  .hole,
+  .swatch-hole {
+    --hatch: var(--text-dim);
+    background: repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--hatch) 22%, transparent) 0 2px,
+      transparent 2px 6px
+    );
+  }
+  .hole.learn,
+  .swatch-hole.learn {
+    --hatch: var(--blue);
+  }
+  .hole {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-inline: 1px dashed color-mix(in srgb, var(--hatch) 35%, transparent);
+  }
+  .hole span {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: var(--text-dim);
+    background: var(--bg-card);
+    padding: 0 3px;
+    border-radius: 3px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .legend .swatch-hole {
+    height: 8px;
+    border-radius: 2px;
+    outline: 1px solid color-mix(in srgb, var(--hatch) 40%, transparent);
   }
 
   /* Thresholds. text-dim, not the brand muted gray: that one disappears
@@ -774,6 +907,13 @@
   .tip .band {
     color: var(--text-dim);
     font-size: 0.7rem;
+  }
+  .tip .note {
+    display: block;
+    max-width: 200px;
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    line-height: 1.3;
   }
 
   .rail {
