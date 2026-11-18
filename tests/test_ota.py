@@ -80,7 +80,23 @@ class FakeRequests:
         return FakeResponse("", 404)
 
 
-def install_requests(routes):
+import ota  # noqa: E402  (after sys.path)
+
+# Every update is signed now (audit NV-2/NV-3). The planning and download
+# tests below are about other things, so they sign with a test key the
+# updater is handed directly; the signing tests at the end use the real
+# ota.key file path.
+TEST_KEY = b"k" * 32
+_real_load_key = ota.load_key
+ota.load_key = lambda: TEST_KEY
+
+
+def install_requests(routes, sign=True):
+    routes = dict(routes)
+    if sign and ota.MANIFEST in routes and ota.SIG not in routes:
+        body = routes[ota.MANIFEST]
+        body = body if isinstance(body, bytes) else body.encode()
+        routes[ota.SIG] = ota.sign(TEST_KEY, body)
     fake = FakeRequests(routes)
     mod = types.ModuleType("requests")
     mod.get = fake.get
@@ -88,12 +104,9 @@ def install_requests(routes):
     return fake
 
 
-import ota  # noqa: E402  (after sys.path)
-
-
-def manifest(files):
+def manifest(files, seq=100):
     import json
-    return json.dumps({"files": files})
+    return json.dumps({"seq": seq, "files": files})
 
 
 def drive(up, limit=12):
@@ -134,8 +147,8 @@ drive(up)
 check("a batch larger than free flash is refused",
       up.done and not up.ok, "%s / %s" % (up.done, up.ok))
 check("...before a single body is downloaded",
-      len(req.asked) == 1 and req.asked[0].endswith(ota.MANIFEST),
-      "asked for %d url(s)" % len(req.asked))
+      all(u.endswith((ota.MANIFEST, ota.SIG)) for u in req.asked),
+      "asked for %s" % req.asked)
 check("...and the refusal names both numbers",
       "60000" in up.status and "30000" in up.status, up.status)
 
@@ -364,7 +377,7 @@ def published(bodies):
         raw = body if isinstance(body, bytes) else body.encode()
         files[name] = {"sha": _hashlib.sha256(raw).hexdigest(), "size": len(raw)}
         routes[name] = raw
-    routes[ota.MANIFEST] = _json.dumps({"files": files})
+    routes[ota.MANIFEST] = _json.dumps({"seq": 100, "files": files})
     return install_requests(routes)
 
 
@@ -409,7 +422,7 @@ os.chdir(tempfile.mkdtemp())
 full = b"abcdefghij" * 50
 routes = {
     "cut.py": full[:120],                      # the server lies about length
-    ota.MANIFEST: _json.dumps({"files": {
+    ota.MANIFEST: _json.dumps({"seq": 100, "files": {
         "cut.py": {"sha": _hashlib.sha256(full).hexdigest(), "size": len(full)},
     }}),
 }
@@ -427,7 +440,7 @@ check("...leaving nothing staged to be installed later",
 
 # A 404 mid-batch must fail cleanly rather than stage a page of HTML.
 os.chdir(tempfile.mkdtemp())
-install_requests({ota.MANIFEST: _json.dumps({"files": {
+install_requests({ota.MANIFEST: _json.dumps({"seq": 100, "files": {
     "gone.py": {"sha": "0" * 64, "size": 10},
 }})})
 up = ota.Updater("http://host:8000", log=lambda *a: None)
@@ -435,6 +448,139 @@ drive(up, limit=40)
 check("a missing file fails the batch", up.done and not up.ok,
       "done=%s ok=%s" % (up.done, up.ok))
 check("...and installs nothing", not os.path.exists("gone.py"))
+
+
+# -- who may update the device (audit NV-2 / NV-3) -------------------------
+#
+# The manifest's sha256s used to be the only check, and they came from the
+# same unauthenticated server as the files. So whoever answered that request
+# -- or published `update <url>`, which any broker account that can press
+# Boost may do -- chose the code. Now the manifest needs an HMAC under
+# ota.key, which an update can neither replace nor read.
+
+import hmac as _hmac  # noqa: E402
+
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import ota_publish  # noqa: E402
+
+probe = b'{"seq": 1, "files": {}}'
+check("ota.py's hand-made HMAC equals the stdlib's",
+      ota.sign(TEST_KEY, probe)
+      == _hmac.new(TEST_KEY, ota.SIG_DOMAIN + probe, "sha256").hexdigest())
+check("...and equals what the publisher signs with",
+      ota.sign(TEST_KEY, probe) == ota_publish.sign(TEST_KEY, probe))
+check("...for a key longer than one block too",
+      ota.sign(b"L" * 100, probe) == ota_publish.sign(b"L" * 100, probe))
+check("the device and the publisher use the same domain tag",
+      ota.SIG_DOMAIN == ota_publish.SIG_DOMAIN)
+
+EVIL = b"print('not the owner')\n"
+
+
+def evil_routes(sig=None, seq=100, extra=None):
+    files = {"main.py": {"sha": _hashlib.sha256(EVIL).hexdigest(),
+                         "size": len(EVIL)}}
+    files.update(extra or {})
+    body = _json.dumps({"seq": seq, "files": files})
+    routes = {ota.MANIFEST: body, "main.py": EVIL}
+    if sig is not None:
+        routes[ota.SIG] = sig
+    return routes
+
+
+def attempt(routes, sign=False, key_present=True, installed_seq=None):
+    os.chdir(tempfile.mkdtemp())
+    with open("main.py", "w") as f:
+        f.write("print('owner')\n")
+    if installed_seq is not None:
+        ota._write_json(ota.SEQ_FILE, {"seq": installed_seq})
+    ota.load_key = (lambda: TEST_KEY) if key_present else (lambda: None)
+    req = install_requests(routes, sign=sign)
+    said = []
+    up = ota.Updater("http://host:8000", log=lambda *a: said.append(a))
+    drive(up, limit=40)
+    ota.load_key = lambda: TEST_KEY
+    return up, req, open("main.py").read()
+
+
+up, req, now = attempt(evil_routes())
+check("an unsigned manifest is refused", up.done and not up.ok, up.status)
+check("...and its files are never fetched",
+      not any(u.endswith("/main.py") for u in req.asked), str(req.asked))
+check("...and main.py is untouched", "owner" in now, now.strip())
+
+up, _, now = attempt(evil_routes(sig="0" * 64))
+check("a forged signature is refused", not up.ok and "signature" in up.status,
+      up.status)
+
+body = evil_routes()[ota.MANIFEST]
+up, _, now = attempt(evil_routes(sig=ota.sign(b"x" * 32, body.encode())))
+check("a manifest signed with another key is refused",
+      not up.ok and "owner" in now, up.status)
+
+# A signature for one manifest does not carry over to an edited one.
+good = ota.sign(TEST_KEY, body.encode())
+tampered = evil_routes(sig=good)
+tampered[ota.MANIFEST] = body.replace('"seq": 100', '"seq": 101')
+up, _, now = attempt(tampered)
+check("an edited manifest no longer matches its signature",
+      not up.ok and "owner" in now, up.status)
+
+up, _, now = attempt(evil_routes(), sign=True, key_present=False)
+check("with no ota.key the device refuses, not falls open",
+      not up.ok and "ota.key" in up.status and "owner" in now, up.status)
+
+up, _, now = attempt(evil_routes(), sign=True)
+check("a correctly signed manifest still installs",
+      up.done and up.ok and "not the owner" in now, up.status)
+check("...and records its build number", ota.last_seq() == 100,
+      str(ota.last_seq()))
+
+# Replay: an older signed build, captured from plain HTTP, offered later.
+up, _, now = attempt(evil_routes(seq=99), sign=True, installed_seq=100)
+check("an older signed build is refused (no replay)",
+      not up.ok and "older" in up.status and "owner" in now, up.status)
+up, _, _ = attempt(evil_routes(seq=100), sign=True, installed_seq=100)
+check("...while the same build may be pushed again",
+      up.ok, up.status)
+
+# seq must be present and signed: a signed manifest without one is refused.
+os.chdir(tempfile.mkdtemp())
+up, _, _ = attempt({ota.MANIFEST: _json.dumps({"files": {}})}, sign=True)
+check("a signed manifest with no seq is refused", not up.ok, up.status)
+
+# Even a signed manifest cannot reach the recovery path or the key itself,
+# or a name that leaves the root.
+up, _, _ = attempt(evil_routes(extra={
+    n: {"sha": "0" * 64, "size": 1}
+    for n in ("ota.py", "ota.key", "ota_seq", "boot.py", "../x.py",
+              "lib/x.py", ".hidden")}), sign=True)
+check("a signed manifest still cannot touch the recovery path or the key",
+      up.ok and not any(os.path.exists(n + ".new") for n in
+                        ("ota.py", "ota.key", "ota_seq", "boot.py")),
+      up.status)
+
+# A manifest the size of the heap is not read into it.
+os.chdir(tempfile.mkdtemp())
+up, _, _ = attempt({ota.MANIFEST: "x" * (ota.MANIFEST_MAX + 1),
+                    ota.SIG: "0" * 64})
+check("an oversized manifest is refused before it is buffered",
+      not up.ok and "larger" in up.status, up.status)
+
+# The real key loader: hex text in ota.key, too-short keys rejected.
+ota.load_key = _real_load_key
+os.chdir(tempfile.mkdtemp())
+check("no ota.key file reads as no key", ota.load_key() is None)
+with open(ota.KEY_FILE, "w") as f:
+    f.write("ab" * 32 + "\n")
+check("a 32-byte hex key loads", ota.load_key() == b"\xab" * 32)
+with open(ota.KEY_FILE, "w") as f:
+    f.write("abcd\n")
+check("a short key is refused, not used", ota.load_key() is None)
+with open(ota.KEY_FILE, "w") as f:
+    f.write("not hex at all\n")
+check("a garbled key is refused, not used", ota.load_key() is None)
+os.chdir(ROOT)
 
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))

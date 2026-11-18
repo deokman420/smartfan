@@ -95,6 +95,46 @@ srv.server_close()
 shutil.rmtree(folder, ignore_errors=True)
 shutil.rmtree(proj, ignore_errors=True)
 
+# -- signing (audit NV-2 / NV-3) -------------------------------------------
+# What the publisher signs must be exactly what the device verifies, and the
+# signature must reach the device: staged, listed and served.
+
+print("\nota_publish signs what it serves\n")
+sys.path.insert(0, ROOT)
+import ota                                           # noqa: E402
+
+proj = tempfile.mkdtemp(prefix="ota-sign-")
+for name in ota_publish.SHIP:
+    io.open(os.path.join(proj, name), "w", newline="").write("# %s\n" % name)
+key = b"\x11" * 32
+man = ota_publish.build_manifest(key, root=proj)
+raw = open(os.path.join(proj, "manifest.json"), "rb").read()
+sig = open(os.path.join(proj, "manifest.sig")).read()
+check("the manifest carries a build number", isinstance(man.get("seq"), int),
+      str(man.get("seq")))
+check("its signature verifies on the device's code",
+      ota.verify(key, raw, sig))
+check("...and not under another key", not ota.verify(b"\x22" * 32, raw, sig))
+names = ota_publish.served_names(man, proj)
+check("the signature is staged and served with the manifest",
+      "manifest.sig" in names and "manifest.sig" in
+      os.listdir(ota_publish.stage(man, root=proj)), str(names[:3]))
+ota_publish.build_manifest(None, root=proj)
+check("an unsigned rebuild leaves no stale signature behind",
+      not os.path.exists(os.path.join(proj, "manifest.sig")))
+kp = os.path.join(proj, "ota.key")
+ota_publish.new_key(kp)
+check("--new-key writes a 32-byte key the device can load",
+      ota_publish.load_key(kp) is not None
+      and len(ota_publish.load_key(kp)) == 32)
+try:
+    ota_publish.new_key(kp)
+    check("...and refuses to overwrite one", False)
+except SystemExit:
+    check("...and refuses to overwrite one", True)
+check("ota.key is never in what ships", "ota.key" not in ota_publish.SHIP)
+shutil.rmtree(proj, ignore_errors=True)
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)

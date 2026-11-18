@@ -98,6 +98,8 @@ for name, why in sorted(EXCLUDED.items()):
 prot = names_in("ota.py", "PROTECTED")
 check("ota.py protects boot.py at runtime", "boot.py" in prot, str(sorted(prot)))
 check("ota.py protects secrets.py at runtime", "secrets.py" in prot)
+check("ota.py protects itself, its key and its build record",
+      {"ota.py", "ota.key", "ota_seq"} <= prot, str(sorted(prot)))
 
 passed = sum(1 for _, ok, _ in results if ok)
 print("\n%d/%d passed" % (passed, len(results)))

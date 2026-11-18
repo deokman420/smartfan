@@ -555,10 +555,35 @@ python tools/ota_publish.py --dry-run    # what would change
 python tools/ota_publish.py              # serve, and tell the device to pull
 ```
 
-Builds a manifest, serves this directory over HTTP, and publishes
-`update <url>` to the device. It downloads each changed file, verifies its
-sha256, and installs **only once every file has verified** — a half-applied
-update is never a state the device can reach.
+Builds and **signs** a manifest, copies it and the files it lists into a
+temporary folder, serves only that folder on this machine's LAN address, and
+publishes `update <url>` to the device. The device checks the manifest's
+signature, downloads each changed file, verifies its sha256, and installs
+**only once every file has verified** — a half-applied update is never a
+state the device can reach.
+
+### Only your build machine can update it
+
+The manifest carries an HMAC-SHA256 made with `ota.key`, a secret that only
+this machine and the fan hold. Without a valid signature the fan installs
+nothing, whoever sent the `update` command and whatever server it names. Each
+manifest also carries a build number (`seq`), and the fan refuses any build
+older than the last one it installed, so a captured old update can't be
+replayed. If `ota.key` is missing on the fan, it refuses every update rather
+than falling back to unsigned ones.
+
+Set it up once:
+
+```bash
+python tools/ota_publish.py --new-key    # writes ota.key (gitignored)
+```
+
+Then copy `ota.key` **and** `ota.py` to the fan's root over USB, the same way
+as `boot.py` (see the flash procedure). `ota.py` is the recovery path and
+never travels over the air, so the code that checks signatures and the key
+arrive together. Treat `ota.key` like `secrets.py`: anyone who has it can
+install code on the fan. A new key locks the fan out of updates until the
+key is copied over USB again, so `--new-key` refuses to overwrite one.
 
 ### It cannot brick the device
 

@@ -16,8 +16,10 @@ cannot import.
 """
 
 import argparse
+import binascii
 import functools
 import hashlib
+import hmac
 import http.server
 import io
 import json
@@ -50,7 +52,43 @@ EXCLUDE_REASON = {
     "secrets.py": "device-specific credentials",
     "settings.json": "device's own runtime settings",
     "identity.py": "the room this unit was named at setup",
+    "ota.key": "the signing key -- USB only, never served",
 }
+
+# The key that signs every manifest, and the only thing that lets this
+# machine update the fan (security audit 2026-11-18, NV-2/NV-3). Hex text,
+# gitignored, and copied to the device's root over USB alongside ota.py.
+# Anyone holding it can install code on the fan, so it is handled exactly
+# like secrets.py.
+KEY_PATH = os.path.join(ROOT, "ota.key")
+SIG_DOMAIN = b"smartfan-ota-v1\n"      # must match ota.SIG_DOMAIN
+
+
+def load_key(path=KEY_PATH):
+    try:
+        with open(path) as f:
+            k = binascii.unhexlify(f.read().strip())
+    except (OSError, ValueError, binascii.Error):
+        return None
+    return k if len(k) >= 16 else None
+
+
+def new_key(path=KEY_PATH):
+    """Write a fresh 32-byte key, refusing to replace an existing one."""
+    if os.path.exists(path):
+        raise SystemExit("%s already exists; a new key would lock the fan "
+                         "out of every update until it is re-flashed" % path)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(binascii.hexlify(os.urandom(32)).decode() + "\n")
+    return path
+
+
+def sign(key, manifest_bytes):
+    """The stdlib's HMAC, on purpose: ota.py does its own by hand, and the
+    tests hold the two to the same answer."""
+    return hmac.new(key, SIG_DOMAIN + manifest_bytes,
+                    hashlib.sha256).hexdigest()
 
 
 def sha256(path):
@@ -112,19 +150,39 @@ def device_build(host="fan.local"):
         return None
 
 
-def build_manifest():
+def build_manifest(key=None, root=ROOT):
     files = {}
     for name in SHIP:
-        p = os.path.join(ROOT, name)
+        p = os.path.join(root, name)
         if not os.path.exists(p):
             print("  WARNING %s is missing, skipping" % name)
             continue
         files[name] = {"sha": sha256(p), "size": os.path.getsize(p)}
-    man = {"built": time.strftime("%Y-%m-%dT%H:%M:%S"), "files": files}
-    with io.open(os.path.join(ROOT, "manifest.json"), "w",
-                 encoding="utf-8", newline="\n") as f:
-        json.dump(man, f, indent=1, sort_keys=True)
+    # seq orders builds, so a captured old one cannot be replayed: the
+    # device refuses a seq below the last it installed.
+    man = {"built": time.strftime("%Y-%m-%dT%H:%M:%S"),
+           "seq": int(time.time()), "files": files}
+    # Written as bytes and signed as those same bytes: the device checks
+    # the signature before it parses, so there is no canonical-JSON
+    # question to get wrong.
+    raw = json.dumps(man, indent=1, sort_keys=True).encode("utf-8")
+    with open(os.path.join(root, "manifest.json"), "wb") as f:
+        f.write(raw)
+    sig_path = os.path.join(root, "manifest.sig")
+    if key is not None:
+        with open(sig_path, "w", newline="\n") as f:
+            f.write(sign(key, raw) + "\n")
+    elif os.path.exists(sig_path):
+        os.remove(sig_path)             # never leave a stale one beside it
     return man
+
+
+def served_names(man, root=ROOT):
+    """manifest.json, its signature if there is one, and the files."""
+    names = ["manifest.json"]
+    if os.path.exists(os.path.join(root, "manifest.sig")):
+        names.append("manifest.sig")
+    return names + sorted(man["files"])
 
 
 def local_ip():
@@ -202,7 +260,7 @@ def stage(man, root=ROOT):
     the project. Only what the device is about to install goes in here.
     """
     d = tempfile.mkdtemp(prefix="ota-publish-")
-    for name in ["manifest.json"] + sorted(man["files"]):
+    for name in served_names(man, root):
         shutil.copyfile(os.path.join(root, name), os.path.join(d, name))
     return d
 
@@ -245,6 +303,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--serve-only", action="store_true")
     ap.add_argument("--seconds", type=int, default=120)
+    ap.add_argument("--new-key", action="store_true",
+                    help="create ota.key (once), then copy it to the "
+                         "device root over USB together with ota.py")
     ap.add_argument("--probe-usb", action="store_true",
                     help="per-file diff over USB. HALTS THE CONTROLLER: "
                          "mpremote takes the REPL, so the update that "
@@ -252,8 +313,23 @@ def main():
                          "the build line, which comes over HTTP.")
     args = ap.parse_args()
 
+    if args.new_key:
+        print("wrote %s -- copy it to the device root over USB, with ota.py"
+              % new_key())
+        return 0
+
+    key = load_key()
+    if key is None and not args.dry_run:
+        print("no usable %s, so nothing can be signed, and a device running "
+              "the signing ota.py refuses an unsigned update.\n"
+              "create one with --new-key and copy it to the device over USB."
+              % KEY_PATH)
+        return 1
+
     print("building manifest from %s\n" % ROOT)
-    man = build_manifest()
+    man = build_manifest(key)
+    print("  signed    %s" % ("yes, seq %d" % man["seq"] if key else
+                              "NO -- no ota.key (dry run only)"))
     for name, reason in sorted(EXCLUDE_REASON.items()):
         print("  excluded  %-16s %s" % (name, reason))
     print()
@@ -296,12 +372,11 @@ def main():
     ip = local_ip()
     url = "http://%s:%d" % (ip, args.port)
     folder = stage(man)
-    httpd = make_server(ip, args.port, folder,
-                        ["manifest.json"] + list(man["files"]))
+    httpd = make_server(ip, args.port, folder, served_names(man))
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
     print("\nserving %d files from %s on %s"
-          % (len(man["files"]) + 1, folder, url))
+          % (len(served_names(man)), folder, url))
 
     if args.serve_only:
         print("send this yourself:")

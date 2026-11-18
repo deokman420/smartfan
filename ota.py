@@ -4,6 +4,8 @@ Transferring files is the easy half. The half that matters is not bricking a
 device you need a ladder to reach, so the whole design is shaped by one
 question: what happens when the code we just installed does not come up?
 
+    0. Verify manifest.json against manifest.sig (HMAC with ota.key, which
+       only arrives over USB) and refuse a build older than the last one.
     1. Download each file to <name>.new and verify its sha256.
     2. Only once ALL files verify, swap them in, keeping <name>.bak.
     3. Write ota_pending and reset.
@@ -69,7 +71,105 @@ CHUNK = 512
 # recovery path and the credentials; settings.json and identity.py are what
 # this particular device is -- its tuning and its name -- as opposed to what
 # the product is.
-PROTECTED = ("boot.py", "secrets.py", "settings.json", "identity.py", PENDING)
+PROTECTED = ("boot.py", "secrets.py", "settings.json", "identity.py", PENDING,
+             "ota.py", "ota.key", "ota_seq")
+
+# -- who may update this device ---------------------------------------------
+#
+# The manifest used to be trusted because it arrived. It names a sha256 for
+# every file, but it comes from the same plain-HTTP server as the files, so
+# whoever could answer that request -- or publish `update <url>` on the
+# command topic, which every broker account that can press Boost can do --
+# chose the code this device runs. (Security audit 2026-11-18, NV-2/NV-3.)
+#
+# Now the manifest must carry an HMAC-SHA256 made with a key only the owner's
+# build machine and this device hold. The key is ota.key, a file that is
+# copied over USB and that an update can neither replace nor read out: it is
+# PROTECTED, it is not in the static root, and nothing serves it. Without it
+# this device refuses every update rather than accepting unsigned ones,
+# because "verify unless the key is missing" is a check an attacker turns off
+# by deleting a file.
+#
+# HMAC rather than a public-key signature on purpose: Ed25519 in pure
+# MicroPython takes long enough to starve the 8 s watchdog, hashlib.sha256 is
+# built in, and the only party that signs is the same machine that already
+# holds secrets.py. A stolen build machine is game over either way.
+#
+# `seq` stops a replay. Signed builds are still served over plain HTTP, so an
+# old one can be captured and offered again later; a manifest whose seq is
+# below the last one installed is refused. ota_seq is PROTECTED for the same
+# reason ota.key is.
+KEY_FILE = "ota.key"
+SEQ_FILE = "ota_seq"
+SIG = "manifest.sig"
+SIG_DOMAIN = b"smartfan-ota-v1\n"      # a key signs nothing else by accident
+MANIFEST_MAX = 16384                    # the real one is ~2 kB
+
+
+def _hmac_sha256(key, msg):
+    """RFC 2104 by hand; MicroPython ships hashlib but not hmac."""
+    import hashlib
+    if len(key) > 64:
+        key = hashlib.sha256(key).digest()
+    key = key + b"\x00" * (64 - len(key))
+    inner = hashlib.sha256(bytes(b ^ 0x36 for b in key))
+    inner.update(msg)
+    outer = hashlib.sha256(bytes(b ^ 0x5C for b in key))
+    outer.update(inner.digest())
+    return outer.digest()
+
+
+def _same(a, b):
+    """Compare without stopping at the first differing byte."""
+    if len(a) != len(b):
+        return False
+    d = 0
+    for x, y in zip(a, b):
+        d |= x ^ y
+    return d == 0
+
+
+def load_key():
+    """The device's OTA key as bytes, or None if it was never installed."""
+    import binascii
+    try:
+        with open(KEY_FILE) as f:
+            k = binascii.unhexlify(f.read().strip())
+    except (OSError, ValueError):
+        return None
+    return k if len(k) >= 16 else None
+
+
+def sign(key, manifest_bytes):
+    """Hex signature over the exact manifest bytes. Shared with the host."""
+    import binascii
+    return binascii.hexlify(
+        _hmac_sha256(key, SIG_DOMAIN + manifest_bytes)).decode()
+
+
+def verify(key, manifest_bytes, sig_hex):
+    try:
+        want = sign(key, manifest_bytes).encode()
+        got = sig_hex.strip().lower().encode() if isinstance(sig_hex, str) \
+            else bytes(sig_hex).strip().lower()
+    except Exception:
+        return False
+    return _same(want, got)
+
+
+def last_seq():
+    d = _read_json(SEQ_FILE)
+    try:
+        return int(d["seq"]) if d else 0
+    except (KeyError, TypeError, ValueError):
+        return 0
+
+
+def _plain_name(name):
+    """A bare file name in the root: no directories, no tricks."""
+    return (isinstance(name, str) and name and "/" not in name
+            and "\\" not in name and ".." not in name
+            and not name.startswith("."))
 
 
 def _exists(name):
@@ -229,6 +329,31 @@ class Updater:
         self._staged = []
         self.need = 0          # bytes this batch will stage
         self.free = None       # bytes free when it was planned
+        self.seq = None        # the verified build number
+
+    def _fetch_small(self, requests, name):
+        """A small file, streamed and capped. None (after _fail) on error.
+
+        Streamed like the big ones, so nothing here asks for an allocation
+        the server chose the size of.
+        """
+        r = requests.get("%s/%s" % (self.base, name), timeout=10)
+        if r.status_code != 200:
+            r.close()
+            self._fail("%s http %d" % (name, r.status_code))
+            return None
+        buf = b""
+        while True:
+            b = r.raw.read(CHUNK)
+            if not b:
+                break
+            buf += b
+            if len(buf) > MANIFEST_MAX:
+                r.close()
+                self._fail("%s larger than %d B" % (name, MANIFEST_MAX))
+                return None
+        r.close()
+        return buf
 
     def _fail(self, why):
         self.status = why
@@ -250,15 +375,40 @@ class Updater:
         if self._queue is None:
             self.status = "fetching manifest"
             self._log("ota: %s from %s" % (self.status, self.base))
-            r = requests.get(self.base + "/" + MANIFEST, timeout=10)
-            if r.status_code != 200:
-                return self._fail("manifest http %d" % r.status_code)
-            man = r.json()
-            r.close()
+            # The key is checked before the radio is spent: with no key,
+            # there is no manifest this device could accept.
+            key = load_key()
+            if key is None:
+                return self._fail("refused: no %s on the device, so no "
+                                  "manifest can be verified (copy it over "
+                                  "USB with ota.py)" % KEY_FILE)
+
+            raw = self._fetch_small(requests, MANIFEST)
+            if raw is None:
+                return False
+            sig = self._fetch_small(requests, SIG)
+            if sig is None:
+                return False
+            # Verified as bytes, before json ever sees them: what is parsed
+            # is exactly what was signed.
+            if not verify(key, raw, sig.decode("utf-8", "replace")):
+                return self._fail("refused: manifest signature does not "
+                                  "match this device's key")
+            man = json.loads(raw)
+            del raw
+            try:
+                seq = int(man["seq"])
+            except (KeyError, TypeError, ValueError):
+                return self._fail("refused: signed manifest has no seq")
+            if seq < last_seq():
+                return self._fail("refused: build %d is older than the "
+                                  "installed %d" % (seq, last_seq()))
+            self.seq = seq
 
             want = []
             for name, meta in man.get("files", {}).items():
-                if name in PROTECTED or name.endswith((".bak", ".new")):
+                if name in PROTECTED or not _plain_name(name) \
+                        or name.endswith((".bak", ".new")):
                     continue
                 if _sha(name) != meta["sha"]:
                     want.append((name, meta))
@@ -279,6 +429,8 @@ class Updater:
                         % (self.need, self.free,
                            self.need + MIN_FREE - self.free))
             if not want:
+                if self.seq > last_seq():
+                    _write_json(SEQ_FILE, {"seq": self.seq})
                 self.status = "already up to date"
                 self.done, self.ok = True, True
                 self._log("ota: %s" % self.status)
@@ -358,6 +510,11 @@ class Updater:
         # nothing left able to rescue it. That is a cable job on a device
         # whose whole point is not needing one.
         self.status = "installing"
+        # Recorded before the swap, and kept even if this build rolls back:
+        # a build that failed is not one to be talked into again by
+        # whoever captured it. The owner's next publish has a higher seq.
+        if self.seq is not None and self.seq > last_seq():
+            _write_json(SEQ_FILE, {"seq": self.seq})
         _write_json(PENDING, {"tries": 0, "files": self._staged,
                               "swapping": True})
         for name in self._staged:
