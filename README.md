@@ -468,7 +468,9 @@ screen buys little. What does exist: writes need POST, so no link or
 prefetch can boost the fan; CORS is reflected only for local origins, so a
 page on the internet cannot drive it; and `update` — the one command that
 changes what the device runs — is refused over HTTP and stays on the MQTT
-path, which has credentials. If that trade is wrong for you, set
+path, which has credentials. It is also refused while the button window is
+open, because the window is what lets someone change the broker, and one
+change that works closes the window. If that trade is wrong for you, set
 `HTTP_ENABLED = False`.
 
 Push the app to a board with:

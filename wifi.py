@@ -132,8 +132,21 @@ class Provisioner:
 
     @property
     def is_open(self):
+        # A change that worked spends the press. OK used to keep the door
+        # open for the rest of the 180 s, so after the owner's change anyone
+        # on the LAN could make a second one -- including pointing the fan at
+        # their own broker. A failure leaves it open for a retry.
         return self.state in (OPEN, TRYING) or (
-            self.state in (OK, FAILED) and self.seconds_left > 0)
+            self.state == FAILED and self.seconds_left > 0)
+
+    @property
+    def changing_broker(self):
+        """True while a broker is being tried, or the window could start one.
+
+        main.py refuses OTA while this holds: a broker on trial, or one that
+        could be swapped in, is not the authenticated channel OTA relies on.
+        """
+        return self.is_open or (self.state == TRYING and self.kind == BROKER)
 
     @property
     def seconds_left(self):

@@ -3116,6 +3116,25 @@ c.on_command("fan/bathroom/cmd", b"")
 c.on_command("fan/bathroom/cmd", b"   ")
 check("an empty command is ignored, not a crash", c.updater is None)
 
+# The setup window lets anyone on the LAN choose the broker, so while it is
+# open, or a broker is on trial, 'update' is refused even over MQTT.
+
+
+class FakeProv:
+    def __init__(self, changing):
+        self.changing_broker = changing
+        self.is_open = changing
+
+
+c = build()
+c.prov = FakeProv(True)
+c.on_command("fan/bathroom/cmd", ("update" + URL).encode())
+check("MQTT 'update' is refused while the setup window is open",
+      c.updater is None)
+c.prov = FakeProv(False)
+c.on_command("fan/bathroom/cmd", ("update" + URL).encode())
+check("...and works again once it has shut", c.updater is not None)
+
 # The other verbs still work through the same door.
 c = build()
 r = post_cmd(c, "boost")

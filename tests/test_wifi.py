@@ -426,6 +426,45 @@ check("strongest first", names == sorted(names, key=lambda s: -dict(
 check("an open network is marked open",
       [n for n in nets if n["ssid"] == "cafe"][0]["secure"] is False)
 
+# --- one press, one change ---------------------------------------------------
+# An audit finding: OK kept the window open for the rest of the 180 s, so
+# after the owner's change anybody on the LAN could make a second one --
+# including pointing the fan at their own broker, which can then send
+# 'update'. A change that works now spends the press.
+link, prov = fresh(tmp)
+prov.open("test")
+prov.start_broker("10.254.0.7", 1883, "u", "p")
+check("a broker on trial counts as changing the broker", prov.changing_broker)
+link.online = True
+prov.poll()
+check("a broker change that works shuts the window",
+      prov.state == wifi.OK and not prov.is_open and prov.seconds_left > 0)
+check("...so a second broker is refused",
+      prov.start_broker("10.254.0.66", 1883, "x", "y") == (False, "the window is closed"))
+check("...and a wifi change is refused too",
+      prov.start("evil-net", "pw")[0] is False)
+check("...and nothing is still being changed", not prov.changing_broker)
+prov.open("test")
+check("holding the button again opens a fresh window", prov.is_open)
+
+link, prov = fresh(tmp)
+prov.open("test")
+prov.start("next-net", "pw")
+link.wifi_ok = True
+prov.poll()
+check("a wifi change that works shuts the window too",
+      prov.state == wifi.OK and not prov.is_open)
+
+link, prov = fresh(tmp)
+prov.open("test")
+prov.start_broker("10.254.0.9", 1883, "u", "p")
+prov._started_at = wifi._now() - (wifi.BROKER_TRY_S + 1) * 1000
+prov.poll()
+check("a failed change leaves the window open for a retry",
+      prov.state == wifi.FAILED and prov.is_open)
+check("...which still counts as able to change the broker",
+      prov.changing_broker)
+
 os.chdir(here)
 failed = [n for n, ok, _ in results if not ok]
 print("\n%d/%d passed" % (len(results) - len(failed), len(results)))

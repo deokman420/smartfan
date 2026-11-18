@@ -1778,6 +1778,12 @@ class Controller:
             if from_http:
                 print("ota: refused, update is MQTT-only")
                 return
+            # The setup window lets anyone on the LAN pick the broker, so
+            # while it is open or a new broker is on trial, an 'update' may
+            # be coming from a broker nobody vouched for.
+            if self.prov is not None and self.prov.changing_broker:
+                print("ota: refused while the setup window is open")
+                return
             if self.updater is not None:
                 print("ota: already running")
                 return
