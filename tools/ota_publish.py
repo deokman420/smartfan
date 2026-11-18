@@ -4,8 +4,9 @@
     python tools/ota_publish.py --dry-run    # show what would change
     python tools/ota_publish.py --serve-only # serve, trigger it yourself
 
-Builds manifest.json from the repo's Python files, serves the directory over
-HTTP on this machine, and publishes an `update <url>` command to the
+Builds manifest.json from the repo's Python files, copies those files and
+the manifest into a temporary folder, serves only that folder over HTTP on
+this machine's LAN address, and publishes an `update <url>` command to the
 device's MQTT topic. The device pulls what it needs, verifies each file's
 sha256, and installs only once every file has verified.
 
@@ -15,17 +16,21 @@ cannot import.
 """
 
 import argparse
+import functools
 import hashlib
 import http.server
 import io
 import json
 import os
 import re
+import shutil
 import socket
 import socketserver
 import sys
+import tempfile
 import threading
 import time
+from urllib.parse import unquote, urlsplit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -189,10 +194,49 @@ def publish_command(url):
         client_id="ota-publisher")
 
 
+def stage(man, root=ROOT):
+    """Copy the manifest and the files it lists into a fresh temp folder.
+
+    The server used to serve ROOT itself, so while it ran anyone on the LAN
+    could fetch .env (the Home Assistant token), secrets.py and the rest of
+    the project. Only what the device is about to install goes in here.
+    """
+    d = tempfile.mkdtemp(prefix="ota-publish-")
+    for name in ["manifest.json"] + sorted(man["files"]):
+        shutil.copyfile(os.path.join(root, name), os.path.join(d, name))
+    return d
+
+
 class Quiet(http.server.SimpleHTTPRequestHandler):
+    """Serves the staged folder, and only the names it was given.
+
+    The folder already holds nothing else; the name check is the second
+    lock, so no path trick or directory listing reaches past it.
+    """
+
+    allowed = frozenset()
+
+    def send_head(self):
+        name = unquote(urlsplit(self.path).path).lstrip("/")
+        if name not in self.allowed:
+            self.send_error(404)
+            return None
+        return super().send_head()
+
     def log_message(self, fmt, *a):
         sys.stdout.write("  served %s\n" % (a[0] if a else fmt))
         sys.stdout.flush()
+
+
+class _Server(socketserver.TCPServer):
+    allow_reuse_address = True      # must be set before bind, so on the class
+
+
+def make_server(ip, port, folder, names):
+    """A server on `ip` only, not 0.0.0.0, handing out `names` from `folder`."""
+    class Only(Quiet):
+        allowed = frozenset(names)
+    return _Server((ip, port), functools.partial(Only, directory=folder))
 
 
 def main():
@@ -251,12 +295,13 @@ def main():
 
     ip = local_ip()
     url = "http://%s:%d" % (ip, args.port)
-    os.chdir(ROOT)
-    httpd = socketserver.TCPServer(("", args.port), Quiet)
-    httpd.allow_reuse_address = True
+    folder = stage(man)
+    httpd = make_server(ip, args.port, folder,
+                        ["manifest.json"] + list(man["files"]))
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
-    print("\nserving %s on %s" % (ROOT, url))
+    print("\nserving %d files from %s on %s"
+          % (len(man["files"]) + 1, folder, url))
 
     if args.serve_only:
         print("send this yourself:")
@@ -278,6 +323,8 @@ def main():
     except KeyboardInterrupt:
         pass
     httpd.shutdown()
+    httpd.server_close()
+    shutil.rmtree(folder, ignore_errors=True)
     print("\nstopped serving")
     return 0
 
