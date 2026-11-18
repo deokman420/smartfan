@@ -478,12 +478,15 @@ class Api:
         # the one command that can change what the device runs. Over MQTT it
         # arrives from an authenticated broker client; here it would arrive
         # from anyone on the LAN. Refused rather than accepted quietly -- the
-        # OTA path stays on the channel that has credentials.
+        # OTA path stays on the channel that has credentials. This check only
+        # gives the app a clear answer; from_http=True is what enforces it,
+        # in on_command, on the same verb the dispatcher acts on.
         if cmd.split(None, 1)[0].lower() == "update":
             return text_response(403, "OTA is MQTT-only; see tools/ota_publish.py")
 
         before = self.c.state
-        self.c.on_command("fan/%s/cmd" % self.room, cmd.encode())
+        self.c.on_command("fan/%s/cmd" % self.room, cmd.encode(),
+                          from_http=True)
         return json_response({"ok": True, "was": before, "state": self.c.state,
                               "fan_on": bool(self.c.fan.value())})
 

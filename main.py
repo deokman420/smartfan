@@ -1740,12 +1740,16 @@ class Controller:
             self.led_ok.value(1)
             self.led_run.value(0)
 
-    def on_command(self, topic, payload):
+    def on_command(self, topic, payload, from_http=False):
         """Inbound MQTT command. Runs on the main thread via link.poll().
 
         Must be fast and must never raise: it is called from inside the MQTT
         reader, and an exception here would tear down the link. Unknown
         commands are logged and ignored rather than guessed at.
+
+        webapi.py calls this too, with from_http=True. That flag, not a
+        string check at the door, is what keeps OTA off the HTTP path: the
+        decision is made here, on the verb this method actually dispatches.
         """
         try:
             raw = payload.decode().strip()
@@ -1766,7 +1770,14 @@ class Controller:
                 print("set: rejected %s=%r (%s)" % (name, cmd, result))
             return
 
-        if cmd.startswith("update"):
+        # The verb is the first word, matched exactly. A prefix test let
+        # 'updatex <url>' start an OTA after the HTTP door had refused only
+        # the exact word 'update'.
+        verb = cmd.split(None, 1)[0] if cmd else ""
+        if verb == "update":
+            if from_http:
+                print("ota: refused, update is MQTT-only")
+                return
             if self.updater is not None:
                 print("ota: already running")
                 return

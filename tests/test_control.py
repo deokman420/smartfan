@@ -3042,6 +3042,86 @@ finally:
     telemetry.time.time = _real_time
 
 
+# -- OTA: the exact verb, and only over MQTT ------------------------------
+#
+# The audit's one high finding. The HTTP door refused only the exact word
+# 'update', the dispatcher started an OTA for anything that merely began
+# with it, so 'updatex http://H' from anyone on the LAN installed firmware
+# from H. These run the real on_command behind the real webapi.Api, so the
+# door and the dispatcher are tested together, not one stub each.
+
+print("\nOTA is the exact verb 'update', and never from HTTP\n")
+
+import httpd                                         # noqa: E402
+import webapi                                        # noqa: E402
+
+URL = " http://10.0.0.9:8000"
+NEAR = ["update", "UPDATE", "Update", "updatex", "UPDATEX", "updates",
+        "update_", "update-now", "update.", "updateupdate", "update\t",
+        " update", "update  ", "\tupdate\t", "\nupdate"]
+
+
+def post_cmd(c, body):
+    req = httpd.Request("POST", "/api/cmd", {}, {}, body.encode())
+    return webapi.Api(c, cfg, None).handle(req)
+
+
+let_through = []
+for verb in NEAR:
+    for body in (verb + URL, verb.strip() + URL):
+        c = build()
+        post_cmd(c, body)
+        if c.updater is not None:
+            let_through.append(body)
+check("no near-miss of 'update' starts OTA over HTTP",
+      not let_through, "%r" % let_through)
+
+c = build()
+r = post_cmd(c, "updatex" + URL)
+check("...and 'updatex' is answered, not run", c.updater is None
+      and r.status in (200, 403), "status %s" % r.status)
+
+# The flag alone must hold, so a door that forgets its own check is still
+# safe: this skips webapi and calls the dispatcher the way it does.
+leaked = []
+for verb in NEAR:
+    c = build()
+    c.on_command("fan/bathroom/cmd", (verb + URL).encode(), from_http=True)
+    if c.updater is not None:
+        leaked.append(verb)
+check("from_http=True refuses OTA without the door's help",
+      not leaked, "%r" % leaked)
+
+# MQTT still has its one way in, and only the exact verb.
+c = build()
+c.on_command("fan/bathroom/cmd", ("update" + URL).encode())
+check("MQTT 'update <url>' still starts OTA",
+      c.updater is not None and c.updater.base == URL.strip(),
+      "%r" % (c.updater and c.updater.base))
+c = build()
+c.on_command("fan/bathroom/cmd", ("  UPDATE\t" + URL).encode())
+check("...whatever its case and spacing", c.updater is not None)
+
+wrong = []
+for verb in ("updatex", "updates", "update_", "update-now", "updateupdate"):
+    c = build()
+    c.on_command("fan/bathroom/cmd", (verb + URL).encode())
+    if c.updater is not None:
+        wrong.append(verb)
+check("MQTT ignores verbs that only start with 'update'",
+      not wrong, "%r" % wrong)
+
+c = build()
+c.on_command("fan/bathroom/cmd", b"")
+c.on_command("fan/bathroom/cmd", b"   ")
+check("an empty command is ignored, not a crash", c.updater is None)
+
+# The other verbs still work through the same door.
+c = build()
+r = post_cmd(c, "boost")
+check("HTTP 'boost' still boosts", r.status == 200 and c.state == main.BOOST,
+      "%s / %s" % (r.status, c.state))
+
 failed = results.count(False)
 print("\n%d/%d passed\n" % (len(results) - failed, len(results)))
 sys.exit(1 if failed else 0)

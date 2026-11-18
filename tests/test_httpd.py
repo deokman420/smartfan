@@ -183,8 +183,9 @@ class FakeController:
         return -55
 
     # the one command path, as main.py exposes it
-    def on_command(self, topic, payload):
+    def on_command(self, topic, payload, from_http=False):
         self.commands.append((topic, payload.decode()))
+        self.from_http = from_http
         cmd = payload.decode().strip().lower()
         if cmd == "boost":
             self.state = "BOOST"
@@ -496,6 +497,8 @@ def test_server(tmp):
               "status %d" % st)
         check("the command went in on the topic MQTT would have used",
               c.commands[-1][0] == "fan/bathroom/cmd")
+        check("...and says it came from HTTP, so OTA can refuse it",
+              c.from_http is True)
         check("the answer reports what the fan actually did",
               json.loads(body)["fan_on"] is True)
 
