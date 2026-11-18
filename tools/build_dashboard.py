@@ -343,6 +343,17 @@ CONFIG = {
                     # noise or the gauge cries wolf all day.
                     "min": -500, "max": 3000, "needle": True,
                     "severity": {"green": -500, "yellow": 700, "red": 1500},
+                    # Hidden while there is no baseline to be below. Every
+                    # boot clears it until the pixel settles (up to two
+                    # hours), and a gauge bound to an unknown state draws
+                    # "Entity is non-numeric" in its place -- a warning
+                    # triangle on a fan that is fine. The settle card below
+                    # takes the slot and says when the number will exist.
+                    "visibility": [{
+                        "condition": "state",
+                        "entity": E["voc_exc"],
+                        "state_not": ["unknown", "unavailable"],
+                    }],
                 },
                 tile(E["voc"], "Raw"),
                 tile(E["voc_base"], "Baseline"),
