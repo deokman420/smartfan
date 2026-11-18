@@ -364,6 +364,29 @@ VOC_HOLD_MAX_S  = 7200
 VOC_REST_S      = 1200
 VOC_MAX_FAILS   = 10     # consecutive I2C failures before the path stands down
 
+# --- Odor: humidity correction to the VOC baseline (2026-11-15) -------
+# The furnace sawtooth. Every burn dries this room ~2 %RH for a few
+# minutes and the raw VOC count rises ~160 ticks with it, so the excess read
+# off the hour-long baseline swung ~190 ticks every 37 minutes all night and
+# sat above VOC_RISE_ON for 35 % of an empty night (14-15 Nov). See
+# main.Controller._odor_comp() for the fit and why it is humidity, not
+# temperature.
+#
+# Off by default. The 7-15 Nov replay (tools/odor_comp_replay.py) shows it
+# fixes furnace nights cleanly -- 35 % of the night above 80 down to ~3 %,
+# swing halved -- but on other days the pixel's humidity coefficient ranged
+# from -100 to about 0, and on 8 and 9 Nov the corrected excess sat above 80
+# MORE than the uncorrected one. Turn it on when that is understood, not
+# before. It touches only the VOC baseline and the published excess: the
+# visit tests, the episode references and the NOx veto all read raw ticks.
+ODOR_RH_COMP       = False
+ODOR_COMP_K        = 80     # ticks per %RH above the slow reference
+ODOR_COMP_TAU_S    = 1800   # the reference's time constant, s
+ODOR_COMP_MAX      = 300    # clamp on the correction, ticks
+ODOR_COMP_NOX_GATE = 150    # NOx rise above which the correction is 0
+ODOR_COMP_UP_GATE  = 50     # |correction| above which the baseline may not
+                            # take its fast step toward clean air
+
 # --- Odor is judged per visit ----------------------------------------
 # The level test above compares the air with a 67-minute baseline, so it
 # cannot tell "somebody just used the bathroom" from "the whole flat smells

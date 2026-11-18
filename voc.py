@@ -111,8 +111,27 @@ class Detector:
         # with the VOC direction is a silent, plausible-looking wrong
         # answer. Pass it explicitly to override.
         self.clean_is_high = (name != "nox") if clean_is_high is None             else clean_is_high
-        self.base = None     # learned baseline in raw ticks; None until seeded
+        # The baseline is held in COMPENSATED ticks: raw + comp, where comp
+        # is whatever main.py says this sample's climate is worth (0 unless
+        # cfg.ODOR_RH_COMP is on). `base` below is the same number seen from
+        # the raw side -- what clean air would read at this moment's
+        # humidity -- so every caller that reads or writes `base` and `raw`
+        # keeps meaning exactly what it meant, and excess() is still
+        # `base - raw`. With comp at 0 nothing here differs from before.
+        self._cbase = None   # learned baseline in compensated ticks
+        self.comp = 0.0      # ticks this sample's climate is worth
         self.raw = None      # last raw reading, for the log and telemetry
+
+    @property
+    def base(self):
+        """The learned baseline in raw ticks at the current climate, or None."""
+        if self._cbase is None:
+            return None
+        return self._cbase - self.comp
+
+    @base.setter
+    def base(self, v):
+        self._cbase = None if v is None else float(v) + self.comp
 
     def excess(self, raw=None):
         """How far the air sits the wrong way from baseline, in ticks.
@@ -140,7 +159,7 @@ class Detector:
             return None
         return int(self.base - raw)
 
-    def update(self, raw, learning):
+    def update(self, raw, learning, comp=None):
         """One sample. Returns the excess for this reading.
 
         `learning` is the controller's judgement that the room is quiet
@@ -148,12 +167,20 @@ class Detector:
         sample and tracked by EWMA after, which mirrors the humidity path
         exactly -- including that it does not learn while the room is busy,
         or the event teaches the baseline to ignore itself.
+
+        `comp`, when given, is this sample's climate correction in ticks
+        (see main.Controller._odor_comp). It is added to the raw reading
+        before the baseline learns from it, so a reading that moved only
+        because the humidity did is not learned as a change in the air.
+        None leaves the last correction in place; 0 is no correction.
         """
+        if comp is not None:
+            self.comp = float(comp)
         if raw is None:
             return self.excess()
         self.raw = raw
         if learning:
-            if self.base is None:
+            if self._cbase is None:
                 self.base = float(raw)
                 self._log("%s: baseline seeded at %d ticks" % (self.name, raw))
             else:
@@ -170,10 +197,20 @@ class Detector:
                 # restart the element's clean level climbed 249 counts in
                 # four hours, the baseline never caught up, and a real event
                 # read as cleaner than normal. See VOC_BASELINE_UP.
-                toward_clean = (raw > self.base) if self.clean_is_high                     else (raw < self.base)
-                if toward_clean:
+                rc = raw + self.comp
+                toward_clean = (rc > self._cbase) if self.clean_is_high \
+                    else (rc < self._cbase)
+                # ...but not quickly on a move the correction itself made.
+                # The correction is a model and is sometimes wrong -- steam
+                # from a pan moves the humidity without moving the pixel the
+                # way the furnace does -- and a fast step toward "clean" on a
+                # wrong correction leaves a baseline the slow weight then
+                # takes an hour to walk back. Measured in the 7-15 Nov
+                # replay: see ODOR_COMP_UP_GATE in config.py.
+                gate = getattr(cfg, "ODOR_COMP_UP_GATE", None)
+                if toward_clean and (gate is None or abs(self.comp) <= gate):
                     a = min(1.0, a * getattr(cfg, "VOC_BASELINE_UP", 1))
-                self.base = (1 - a) * self.base + a * raw
+                self._cbase = (1 - a) * self._cbase + a * rc
         return self.excess(raw)
 
     def relearn(self, raw=None):
