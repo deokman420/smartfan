@@ -59,7 +59,14 @@ function loadSettings() {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       hadSaved = true;
-      return { ...DEFAULTS, ...JSON.parse(raw) };
+      const loaded = { ...DEFAULTS, ...JSON.parse(raw) };
+      const clean = persistable(loaded);
+      // A copy saved before the rule above may still hold a password while
+      // in device mode. Clear it from storage on the way in.
+      if (clean.password !== loaded.password) {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(clean));
+      }
+      return clean;
     }
   } catch {
     /* fall through to defaults */
@@ -85,7 +92,19 @@ export const settings = writable(loadSettings());
  */
 export const configured = writable(hadSaved || servedByDevice());
 
+/**
+ * What may be written to localStorage. The broker password is kept only
+ * while the app is in broker mode, where it is needed on every launch; once
+ * the app is back on the device, which has no account, it is dropped
+ * instead of sitting in storage on a plain-http origin indefinitely
+ * (audit NV-7). Switching back to broker mode asks for it again.
+ */
+export function persistable(next) {
+  return next.mode === 'broker' ? next : { ...next, password: '' };
+}
+
 export function saveSettings(next) {
+  next = persistable(next);
   settings.set(next);
   configured.set(true);
   try {

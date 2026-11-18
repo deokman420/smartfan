@@ -442,6 +442,12 @@ function verdictFor(d) {
   return { cls:'warn', h:'Decoded', p:['No specific signature matched. Check the field table above.'] };
 }
 
+// Pasted log text is data, never markup. The firmware logs incoming command
+// text, so a line in the paste may carry whatever someone sent the fan
+// (audit NV-10). Everything taken from the paste goes through this.
+const esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
+
 function decode() {
   const raw = $('#logInput').value.trim();
   const out = $('#decodeOut');
@@ -455,7 +461,7 @@ function decode() {
   let html = '';
   if (transitions.length) {
     html += '<h3 style="font-family:var(--cond);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin:0 0 8px">State changes seen</h3><ul style="margin:0 0 16px;padding-left:18px;font-family:var(--mono);font-size:12px;color:var(--ink-mid)">';
-    transitions.slice(-6).forEach(t => { html += '<li>' + t.replace(/^state:\s*/, '') + '</li>'; });
+    transitions.slice(-6).forEach(t => { html += '<li>' + esc(t.replace(/^state:\s*/, '')) + '</li>'; });
     html += '</ul>';
     const loop = transitions.filter(t => /-> FAULT/.test(t)).length;
     if (loop >= 2)
@@ -470,7 +476,7 @@ function decode() {
   const rows = rowsFor(d);
   html += '<div class="tablewrap"><table><thead><tr><th>Field</th><th>Value</th><th>Verdict</th></tr></thead><tbody>';
   rows.forEach(r => {
-    html += '<tr><td class="k">' + r.k + '</td><td class="v">' + r.v +
+    html += '<tr><td class="k">' + r.k + '</td><td class="v">' + esc(r.v) +
             '</td><td><span class="pill ' + r.cls + '">' + r.label + '</span>' +
             (r.note ? '<div class="n" style="margin-top:4px">' + r.note + '</div>' : '') + '</td></tr>';
   });

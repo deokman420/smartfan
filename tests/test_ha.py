@@ -21,6 +21,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.request
 
 import websocket
@@ -55,26 +56,37 @@ def check(name, ok, detail=""):
 
 
 def _scheme():
-    """http or https, whichever this HA answers WITHOUT redirecting.
+    """The scheme HA_URL names, and only that one.
 
-    This host moved behind TLS. urllib follows an http->https redirect for
-    a GET, so every read kept working and the move went unnoticed -- but on
-    a 302 it also turns a POST into a GET, so every service call arrived as
-    405 Method Not Allowed. The suite looked broken when the host had
-    simply moved, which is why the scheme is settled once, up front, rather
-    than left to a redirect to paper over.
+    This used to try https and then http, carrying the token both times.
+    Anything that made TLS fail -- including someone on the LAN who wanted
+    it to -- turned into the token being sent again in cleartext (audit
+    NV-8). Now the scheme is the one you configured. The redirect problem it
+    was written for still gets a clear answer: when an http HA_URL is
+    redirected to https, the suite stops and says so. That probe carries no
+    token.
+
+    (Why the redirect matters: urllib follows http->https for a GET, so
+    reads kept working, but on a 302 it turns a POST into a GET and every
+    service call came back 405.)
     """
-    for scheme in ("https", "http"):
+    scheme = HA_URL.split("://", 1)[0].lower() if "://" in HA_URL else "http"
+    if scheme not in ("http", "https"):
+        sys.exit("HA_URL must start with http:// or https://, not %r" % HA_URL)
+    if scheme == "http":
         try:
-            r = urllib.request.Request(
-                "%s://%s/api/" % (scheme, HA_HOST),
-                headers={"Authorization": "Bearer " + TOKEN})
-            with urllib.request.urlopen(r, timeout=12) as f:
-                if f.status == 200 and f.url.startswith(scheme + "://"):
-                    return scheme
+            with urllib.request.urlopen("http://%s/api/" % HA_HOST,
+                                        timeout=12) as f:
+                moved = f.url.startswith("https://")
+        except urllib.error.HTTPError as e:
+            moved = e.url.startswith("https://") if e.url else False
         except Exception:
-            pass
-    return "http"
+            moved = False
+        if moved:
+            sys.exit("Home Assistant redirects http to https. Set HA_URL to "
+                     "https://%s in .env; the suite will not send the token "
+                     "over http to find out." % HA_HOST)
+    return scheme
 
 
 SCHEME = _scheme()
@@ -258,18 +270,14 @@ for key in ("link_reconnects", "last_outage", "last_boot_reason", "build"):
 
 # --- dashboard integrity --------------------------------------------------
 def ha_websocket():
-    """Open HA's websocket, over TLS if that is how this host answers.
+    """Open HA's websocket: wss if HA_URL is https, ws if it is http.
 
-    This asked for ws:// unconditionally. The HA in front of us now
-    redirects the handshake to https, and websocket-client follows that
-    redirect and then refuses its own target with "scheme https is
-    invalid" -- a failure that reads like a library bug and is really
-    "this host is TLS now". Trying wss first and falling back keeps the
-    suite working against a plain HA and a fronted one alike.
+    Never both. Trying wss and falling back to ws sent the token in
+    cleartext whenever TLS failed, for whatever reason (audit NV-8).
     """
     errs = []
-    for url in ("wss://%s/api/websocket" % HA_HOST,
-                "ws://%s/api/websocket" % HA_HOST):
+    for url in ("%s://%s/api/websocket"
+                % ("wss" if SCHEME == "https" else "ws", HA_HOST),):
         try:
             return websocket.create_connection(url, timeout=15)
         except Exception as e:
