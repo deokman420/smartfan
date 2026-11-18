@@ -14,6 +14,10 @@
  * person can change in Thresholds are given as "by default", because the
  * fan on the wall may well have been tuned.
  *
+ * A topic's go: [...] lists the PLACES it talks about. The sheet shows
+ * them as "Open in the app" buttons under the summary, so a topic that says
+ * "on the Health screen" takes you there.
+ *
  * Block kinds:
  *   { p: 'text' }                    a paragraph
  *   { steps: ['…', '…'] }            numbered steps
@@ -22,6 +26,32 @@
  *   { note: 'text' }                 a callout for the thing people get wrong
  *   { see: ['topic-id', …] }         links to related topics
  */
+
+/**
+ * Places in the app a topic can send you to.
+ *
+ * view is the tab (the page's VIEWS ids); sheet: 'settings' opens the
+ * Settings sheet instead. anchor is the id of the element to scroll to and
+ * highlight; tests/test_help.mjs checks that every anchor here really exists
+ * in the page or WifiPanel source, so renaming one cannot quietly turn a
+ * link into a jump to the top of the wrong screen.
+ */
+export const PLACES = {
+  status: { view: 'status', label: 'Status' },
+  'status-control': { view: 'status', anchor: 'place-control', label: 'Status › Control' },
+  readings: { view: 'readings', label: 'Readings' },
+  charts: { view: 'charts', label: 'Charts' },
+  'tune-humidity': { view: 'tuning', anchor: 'place-tune-humidity', label: 'Thresholds › Humidity' },
+  'tune-light': { view: 'tuning', anchor: 'place-tune-light', label: 'Thresholds › Light' },
+  'tune-odor': { view: 'tuning', anchor: 'place-tune-odor', label: 'Thresholds › Odor' },
+  'tune-timing': { view: 'tuning', anchor: 'place-tune-timing', label: 'Thresholds › Timing' },
+  'tune-mode': { view: 'tuning', anchor: 'place-tune-mode', label: 'Thresholds › Mode and reset' },
+  'health-link': { view: 'health', anchor: 'place-health-link', label: 'Health › Link' },
+  'health-device': { view: 'health', anchor: 'place-health-device', label: 'Health › Device' },
+  'settings-connection': { sheet: 'settings', anchor: 'place-connection', label: 'Settings › Connection' },
+  'settings-network': { sheet: 'settings', anchor: 'place-network', label: 'Settings › Network' },
+  'settings-broker': { sheet: 'settings', anchor: 'place-broker', label: 'Settings › Broker' }
+};
 
 export const SECTIONS = [
   { id: 'start', title: 'Getting started' },
@@ -58,6 +88,7 @@ export const TOPICS = [
     title: 'Reading the Status screen',
     summary: 'The big gauge, the state, and what the fan is doing right now.',
     keywords: 'gauge hero dashboard home screen above baseline excess',
+    go: ['status'],
     blocks: [
       {
         p: 'The gauge shows how far the humidity is **above the room’s normal level** (its baseline), not the humidity itself. A bathroom at 55 % that normally sits at 50 % reads +5 %.'
@@ -84,6 +115,7 @@ export const TOPICS = [
     title: 'The lights on the box',
     summary: 'What the green and red lights mean.',
     keywords: 'led leds blink blinking flashing green red alternating indicator',
+    go: ['health-device'],
     blocks: [
       { p: 'The box has a green light and a red one. Together they say what the fan is doing:' },
       {
@@ -133,6 +165,7 @@ export const TOPICS = [
     title: 'Boost',
     summary: 'Run the fan now, for a set time, whatever the sensors say.',
     keywords: 'manual run override on demand cancel timer',
+    go: ['status-control', 'tune-timing'],
     blocks: [
       {
         p: '**Boost** on the Status screen (or a short press of the button) runs the fan for the boost length, 15 minutes by default. The time left counts down under the state.'
@@ -150,6 +183,7 @@ export const TOPICS = [
     title: 'Auto, Force on and Force off',
     summary: 'Overrides that hold until you change them back.',
     keywords: 'mode force on force off auto override always off always on disable',
+    go: ['status-control', 'tune-mode'],
     blocks: [
       {
         rows: [
@@ -173,6 +207,7 @@ export const TOPICS = [
     title: 'Relearning the baseline',
     summary: 'When and how to reset what the fan thinks is normal.',
     keywords: 'baseline relearn reset normal calibrate recalibrate learn',
+    go: ['status-control'],
     blocks: [
       {
         p: 'The baseline is the room’s normal humidity (and normal air, for the odor sensor). The fan learns it by itself and only updates it while the room is quiet, so a shower cannot teach it that steam is normal.'
@@ -204,6 +239,7 @@ export const TOPICS = [
     title: 'What the states mean',
     summary: 'LEARN, IDLE, RUN, BOOST and FAULT.',
     keywords: 'state learn idle run boost fault controller',
+    go: ['status'],
     blocks: [
       {
         rows: [
@@ -223,6 +259,7 @@ export const TOPICS = [
     title: 'What the readings mean',
     summary: 'Humidity, dew point, light, odor, NOx and fan speed.',
     keywords: 'readings humidity temperature dew point light lux voc nox odor rpm speed sensor',
+    go: ['readings'],
     blocks: [
       {
         rows: [
@@ -247,6 +284,7 @@ export const TOPICS = [
     title: 'Charts and history',
     summary: 'A week of readings, stored on the fan itself.',
     keywords: 'charts history graph week past trend',
+    go: ['charts'],
     blocks: [
       {
         p: 'The fan keeps about a week of readings in its own memory, one row every 5 minutes, so the charts work without Home Assistant and survive the app being closed. While the app is open it also records the live readings, which fills in the detail.'
@@ -264,6 +302,7 @@ export const TOPICS = [
     title: 'Humidity thresholds',
     summary: 'When a shower starts the fan, and when it is dry enough to stop.',
     keywords: 'humidity start stop rise fall threshold shower steam rh',
+    go: ['tune-humidity'],
     blocks: [
       {
         rows: [
@@ -291,6 +330,7 @@ export const TOPICS = [
     title: 'Light thresholds',
     summary: 'How the fan spots the light switch, and how long light alone may run it.',
     keywords: 'light switch lamp bulb step rise threshold daylight',
+    go: ['tune-light'],
     blocks: [
       {
         p: 'The fan does not look at how bright the room is. It looks for the **jump** a light switch makes, measured against the room’s learned ambient light. That way sunlight through a window does not count as somebody in the room.'
@@ -318,6 +358,7 @@ export const TOPICS = [
     title: 'Odor thresholds',
     summary: 'Letting the air-quality sensor run the fan.',
     keywords: 'odor smell voc nox veto threshold air quality sensor gas',
+    go: ['tune-odor', 'readings'],
     blocks: [
       {
         p: 'Odor is measured in sensor ticks away from the room’s clean-air level. What matters is the size of the change, not an absolute smell scale. Quiet air wanders under about 40 ticks; a real event in a bathroom reads around 100.'
@@ -348,6 +389,7 @@ export const TOPICS = [
     title: 'Timing',
     summary: 'Minimum and maximum run, after lights out, and boost length.',
     keywords: 'timing minimum maximum max run min run boost length after lights out timer cap',
+    go: ['tune-timing'],
     blocks: [
       {
         rows: [
@@ -372,6 +414,7 @@ export const TOPICS = [
     title: 'Changing and resetting values',
     summary: 'How changes are checked, and how to undo them.',
     keywords: 'reset defaults change value rejected range save',
+    go: ['tune-mode'],
     blocks: [
       {
         p: 'Use the − and + buttons or type a value. The fan checks every value against its own safe range and refuses anything outside it. A change only counts once it shows up in the next reading, so if a number snaps back, the fan rejected it.'
@@ -390,6 +433,7 @@ export const TOPICS = [
     title: 'Setting up a new fan',
     summary: 'Joining it to your Wi-Fi with a phone, from the box’s own setup network.',
     keywords: 'first setup install new provision wifi network label smartfan-xxxx captive portal room country',
+    go: ['settings-connection'],
     blocks: [
       {
         steps: [
@@ -416,6 +460,7 @@ export const TOPICS = [
     title: 'Connecting the app to the fan',
     summary: 'The fan itself, or through an MQTT broker.',
     keywords: 'connect connection address fan.local settings broker device mode',
+    go: ['settings-connection'],
     blocks: [
       { p: 'Open **Settings** at the top. There are two ways to reach the fan:' },
       {
@@ -439,6 +484,7 @@ export const TOPICS = [
     title: 'Changing the fan’s Wi-Fi',
     summary: 'Moving the fan to a new network or password from the app.',
     keywords: 'change wifi new router password network ssid move',
+    go: ['settings-network'],
     blocks: [
       {
         steps: [
@@ -463,6 +509,7 @@ export const TOPICS = [
     title: 'Home Assistant and MQTT',
     summary: 'Getting the fan into Home Assistant through a broker.',
     keywords: 'home assistant ha mqtt mosquitto broker add-on entities 1883 1884 websocket login account',
+    go: ['settings-broker', 'settings-connection'],
     blocks: [
       {
         p: 'A broker is optional. With one, the fan appears in Home Assistant by itself, with its readings, controls and thresholds as entities. Without one, the fan and this app still work fully.'
@@ -494,6 +541,7 @@ export const TOPICS = [
     title: 'Updates',
     summary: 'Keeping the app and the fan’s firmware current.',
     keywords: 'update upgrade firmware new version reload stale ota',
+    go: ['health-device'],
     blocks: [
       {
         p: 'The fan serves this app from its own memory. When a newer app is on the fan than the one your browser loaded, a bar at the top says so. Tap **Reload** to get it.'
@@ -514,6 +562,7 @@ export const TOPICS = [
     title: 'The app cannot reach the fan',
     summary: 'Stuck on Connecting, or an error at the top.',
     keywords: 'cannot connect connecting error waiting first reading not loading unreachable fan.local',
+    go: ['settings-connection'],
     blocks: [
       { p: 'Work down this list:' },
       {
@@ -535,6 +584,7 @@ export const TOPICS = [
     title: '“Fan offline” or “No update”',
     summary: 'The app connected, but readings have stopped.',
     keywords: 'offline no update stale stopped reporting not responding',
+    go: ['health-link'],
     blocks: [
       {
         p: 'This is a reporting problem, not a fan problem. The fan keeps running on its own logic whether or not anything can hear it.'
@@ -557,6 +607,7 @@ export const TOPICS = [
     title: 'The fan shows FAULT',
     summary: 'What each fault means and what to do.',
     keywords: 'fault error alternating lights clear fault health',
+    go: ['health-device', 'status-control'],
     blocks: [
       {
         p: 'A fault switches the fan off and makes the lights alternate. The Health screen, under **Fault**, gives the reason. Once the cause is fixed, clear it with **Clear fault** on the Status screen or a short press of the button.'
@@ -572,6 +623,7 @@ export const TOPICS = [
     title: 'Fault: fan stalled',
     summary: 'The fan was switched on but did not turn.',
     keywords: 'stalled stall 0 rpm zero rpm not spinning not turning latched seized',
+    go: ['readings', 'status-control'],
     blocks: [
       {
         p: 'The controller switched the fan on and measured no speed (or too little). It turns the fan off, waits 5 minutes and tries again. After 3 stalls in a row it stops trying and shows **LATCHED**.'
@@ -596,6 +648,7 @@ export const TOPICS = [
     title: 'Fault: fan still running after it was switched off',
     summary: 'The controller cannot turn the fan off.',
     keywords: 'stuck still running wont stop cannot turn off wiring ground',
+    go: ['health-device'],
     blocks: [
       {
         p: 'The fan kept turning more than 12 seconds after it was told to stop. That means the switch in the controller is not in control of the fan, which is almost always a wiring mistake: the fan’s ground (black) wire is connected somewhere that bypasses the switch.'
@@ -612,6 +665,7 @@ export const TOPICS = [
     title: 'Fault: humidity sensor not responding',
     summary: 'The fan cannot read the humidity, so it stops guessing.',
     keywords: 'sensor dht22 humidity sensor not responding no reading failed',
+    go: ['status-control', 'health-device'],
     blocks: [
       {
         p: 'After several failed readings in a row the controller stops trusting the humidity and raises a fault, rather than run the fan on guesswork.'
@@ -632,6 +686,7 @@ export const TOPICS = [
     title: 'Fault: fan did not turn at power-on',
     summary: 'The start-up fan test failed.',
     keywords: 'self test selftest power on startup test failed fan test',
+    go: ['health-device', 'status-control'],
     blocks: [
       {
         p: 'Every time the fan gets power, it runs the fan for a few seconds to check it turns. If no speed comes back, it raises this fault, so a dead fan is found while somebody is nearby, not days later at the next shower.'
@@ -651,6 +706,7 @@ export const TOPICS = [
     title: 'The fan runs too long, or will not stop',
     summary: 'Usually a baseline learned in the wrong conditions, or a mode left on.',
     keywords: 'runs too long wont stop always on never stops keeps running',
+    go: ['status', 'tune-mode', 'tune-humidity'],
     blocks: [
       {
         steps: [
@@ -670,6 +726,7 @@ export const TOPICS = [
     title: 'The fan does not run when it should',
     summary: 'A shower, and nothing happens.',
     keywords: 'never runs doesnt start does not run not starting no fan shower',
+    go: ['status-control', 'tune-humidity'],
     blocks: [
       {
         steps: [
@@ -689,6 +746,7 @@ export const TOPICS = [
     title: 'The fan runs on odor when nothing smells',
     summary: 'Tuning or relearning the air-quality sensor.',
     keywords: 'odor false trigger smell voc runs for no reason cooking',
+    go: ['tune-odor', 'readings'],
     blocks: [
       {
         list: [
@@ -707,6 +765,7 @@ export const TOPICS = [
     title: 'Weak Wi-Fi or frequent reconnects',
     summary: 'Reading the Link panel on the Health screen.',
     keywords: 'wifi weak signal rssi dbm reconnects outage dropouts router',
+    go: ['health-link'],
     blocks: [
       {
         rows: [
@@ -729,6 +788,7 @@ export const TOPICS = [
     title: 'Getting more help',
     summary: 'What to note down before asking whoever built or installed it.',
     keywords: 'support contact more help diagnostics report version',
+    go: ['health-device', 'status'],
     blocks: [
       { p: 'Before asking for help, note:' },
       {

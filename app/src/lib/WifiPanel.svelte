@@ -163,7 +163,7 @@
   const bars = (rssi) => (rssi >= -55 ? 4 : rssi >= -67 ? 3 : rssi >= -78 ? 2 : 1);
 </script>
 
-<h3 class="section">Network</h3>
+<h3 class="section" id="place-network">Network</h3>
 
 {#if !api}
   <p class="sub">
@@ -268,7 +268,7 @@
     <p class="sub tone-bad">{note}</p>
   {/if}
 
-  <h3 class="section">Broker</h3>
+  <h3 class="section" id="place-broker">Broker</h3>
   <p class="sub">
     Optional. With one, the fan appears in Home Assistant; without, everything
     here still works — the fan, this app and its history are all local either

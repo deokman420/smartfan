@@ -23,7 +23,7 @@ const root = dirname(here);
 const libRoot = pathToFileURL(join(root, 'app', 'src', 'lib') + '/').href;
 register('./lib_alias_hook.mjs', import.meta.url, { data: { libRoot } });
 
-const { SECTIONS, TOPICS, BY_ID, search, runs, faultTopic, TUNE_TOPIC } = await import(
+const { SECTIONS, TOPICS, BY_ID, PLACES, search, runs, faultTopic, TUNE_TOPIC } = await import(
   '$lib/help.js'
 );
 
@@ -87,6 +87,46 @@ check(
 // An odd number of markers leaves the rest of a sentence bold.
 const unbalanced = TOPICS.filter((t) => JSON.stringify(t.blocks).split('**').length % 2 === 0);
 check('every **strong** marker is closed', unbalanced.length === 0, unbalanced.map((t) => t.id).join(' '));
+
+// --- links into the app ---------------------------------------------------
+// A place whose anchor is gone would still "work" -- it would switch tab and
+// land at the top -- so check the ids against the source they live in.
+const page = readFileSync(join(root, 'app', 'src', 'routes', '+page.svelte'), 'utf8');
+const wifi = readFileSync(join(root, 'app', 'src', 'lib', 'WifiPanel.svelte'), 'utf8');
+const views = [...page.matchAll(/\{ id: '([a-z]+)', label: '[^']+', icon:/g)].map((m) => m[1]);
+check('found the page tabs', views.length === 5, views.join(' '));
+const dynamicTune = page.includes('id="place-tune-{group.title.toLowerCase()}"');
+const anchorExists = (a) =>
+  page.includes(`id="${a}"`) ||
+  wifi.includes(`id="${a}"`) ||
+  (dynamicTune && /^place-tune-(humidity|light|odor|timing)$/.test(a));
+for (const [id, p] of Object.entries(PLACES)) {
+  check(`place ${id} has a label`, typeof p.label === 'string' && p.label.length > 0);
+  check(`place ${id} goes to a tab or Settings`, views.includes(p.view) || p.sheet === 'settings', p.view ?? p.sheet);
+  if (p.anchor) check(`place ${id} anchor #${p.anchor} exists`, anchorExists(p.anchor));
+}
+const badGo = [];
+for (const t of TOPICS) for (const g of t.go ?? []) if (!PLACES[g]) badGo.push(`${t.id}→${g}`);
+check('every "open in the app" link resolves', badGo.length === 0, badGo.join(' '));
+// A topic that sends you to a screen in words should also take you there.
+const MENTIONS = [
+  [/\bHealth screen\b/, 'health-'],
+  [/\bReadings screen\b/, 'readings'],
+  [/\bStatus screen\b/, 'status'],
+  [/\bunder (Humidity|Timing)\b|\bin Thresholds\b/, 'tune-'],
+  [/\bOpen \*\*Settings\*\*|\bIn Settings\b|\bthe Connection settings\b/, 'settings-']
+];
+const unlinked = [];
+for (const t of TOPICS) {
+  const body = JSON.stringify(t.blocks);
+  for (const [re, prefix] of MENTIONS)
+    if (re.test(body) && !(t.go ?? []).some((g) => g.startsWith(prefix))) unlinked.push(`${t.id}:${prefix}`);
+}
+check('every screen a topic names is linked', unlinked.length === 0, unlinked.join(' '));
+check(
+  'the Thresholds groups have their anchors',
+  Object.values(TUNE_TOPIC).every((tid) => (BY_ID[tid].go ?? []).includes(tid))
+);
 
 // --- fault sentences, as check_fan_health() builds them -------------------
 const MIN_RPM = cfg('MIN_RPM');

@@ -16,9 +16,11 @@
    * Everything renders through ordinary elements -- see help.js -- so no raw
    * HTML insertion and no injection surface, even though the content is ours.
    */
-  import { SECTIONS, TOPICS, BY_ID, search, runs } from '$lib/help.js';
+  import { SECTIONS, TOPICS, BY_ID, PLACES, search, runs } from '$lib/help.js';
 
-  let { topic = $bindable(null), onClose } = $props();
+  // onGo(placeId) leaves help for a place in the app; the page owns the
+  // switching, scrolling and the way back.
+  let { topic = $bindable(null), onClose, onGo } = $props();
 
   let query = $state('');
   let trail = $state([]);
@@ -69,6 +71,17 @@
       <p class="eyebrow">{SECTIONS.find((s) => s.id === current.section)?.title}</p>
       <h3 id="help-title">{current.title}</h3>
       <p class="summary">{current.summary}</p>
+
+      {#if onGo && current.go?.length}
+        <div class="go" role="group" aria-label="Open in the app">
+          {#each current.go.filter((id) => PLACES[id]) as id (id)}
+            <button type="button" class="go-btn" onclick={() => onGo(id)}>
+              <span>{PLACES[id].label}</span>
+              <span class="go-arrow" aria-hidden="true">→</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
 
       {#each current.blocks as b, i (i)}
         {#if b.p}
@@ -369,6 +382,32 @@
     border-left: 3px solid var(--accent);
     background: var(--accent-dim);
     border-radius: 0 var(--radius) var(--radius) 0;
+  }
+  /* Places in the app: pills that wrap, accent-colored because they are
+     the one thing on the page that leaves it. */
+  .go {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .go-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--accent-soft, var(--accent));
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .go-btn:hover {
+    border-color: var(--accent);
+  }
+  .go-arrow {
+    font-weight: 400;
   }
   .see {
     display: grid;

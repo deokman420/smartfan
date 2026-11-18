@@ -45,7 +45,8 @@
   import { learnTau, timeToOff, runContext } from '$lib/dryrate.js';
   import WifiPanel from '$lib/WifiPanel.svelte';
   import HelpSheet from '$lib/HelpSheet.svelte';
-  import { faultTopic, TUNE_TOPIC } from '$lib/help.js';
+  import { faultTopic, TUNE_TOPIC, PLACES, BY_ID } from '$lib/help.js';
+  import { tick } from 'svelte';
   import { sheetDrag } from '$lib/sheetdrag.js';
   import { onMount } from 'svelte';
   import { updated } from '$app/state';
@@ -61,6 +62,48 @@
     detail = null;
     helpTopic = id;
     showHelp = true;
+    helpReturn = null;
+  }
+
+  // Leaving help for the place a topic talks about: switch to its tab (or
+  // open Settings), scroll the section into view under the sticky header,
+  // and flash it so the eye lands on it. helpReturn keeps the topic so a
+  // pill can take you straight back to where you were reading.
+  let helpReturn = $state(null);
+  let returnTimer = null;
+  async function goToPlace(id) {
+    const p = PLACES[id];
+    if (!p) return;
+    const from = helpTopic;
+    showHelp = false;
+    detail = null;
+    if (p.sheet === 'settings') openSettings();
+    else {
+      showSettings = false;
+      view = p.view;
+    }
+    helpReturn = from;
+    clearTimeout(returnTimer);
+    returnTimer = setTimeout(() => (helpReturn = null), 20000);
+    await tick();
+    requestAnimationFrame(() => {
+      const el = p.anchor ? document.getElementById(p.anchor) : null;
+      const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!el) {
+        if (!p.sheet) window.scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' });
+        return;
+      }
+      el.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+      el.classList.remove('place-flash');
+      void el.offsetWidth; // restart the animation if it is already running
+      el.classList.add('place-flash');
+      setTimeout(() => el.classList.remove('place-flash'), 1800);
+    });
+  }
+  function backToHelp() {
+    const id = helpReturn;
+    clearTimeout(returnTimer);
+    openHelp(id);
   }
   let draft = $state({ ...DEFAULTS });
   let view = $state('status');
@@ -938,7 +981,7 @@
               </div>
             </section>
 
-            <section class="dock card">
+            <section class="dock card" id="place-control">
               <h2>Control</h2>
               <div class="controls">
                 <button class="primary boost" type="button" onclick={() => command('boost')} disabled={!live}>
@@ -1190,7 +1233,11 @@
           </div>
           <div class="tune-groups">
             {#each TUNE_GROUPS as group (group.title)}
-              <section class="card tune-group" class:wide={group.keys.length > 2}>
+              <section
+                class="card tune-group"
+                class:wide={group.keys.length > 2}
+                id="place-tune-{group.title.toLowerCase()}"
+              >
                 <div class="head-row">
                   <h3>{group.title}</h3>
                   {#if TUNE_TOPIC[group.title]}
@@ -1251,7 +1298,7 @@
               </section>
             {/each}
           </div>
-          <section class="card tune-mode">
+          <section class="card tune-mode" id="place-tune-mode">
             {@render modeControl('mode-t-label')}
 
             <div class="quiet-row reset-row">
@@ -1354,7 +1401,7 @@
 
         {#if view === 'health'}
           <div class="health">
-            <section class="panel card">
+            <section class="panel card" id="place-health-link">
               <h2>Link</h2>
               <div class="link-hero">
                 <div>
@@ -1380,7 +1427,7 @@
               </div>
             </section>
 
-            <section class="panel card" class:faulty={t.fault}>
+            <section class="panel card" class:faulty={t.fault} id="place-health-device">
               <h2>Device</h2>
               <div class="link-hero">
                 <div>
@@ -1566,7 +1613,7 @@
            none above 560px, where this is a centered dialog rather than a
            bottom sheet. -->
       <div class="grabber" data-sheet-handle aria-hidden="true"></div>
-      <h3>Connection</h3>
+      <h3 id="place-connection">Connection</h3>
       <p class="sub">
         Nothing leaves the network either way. The difference is what has to be
         running.
@@ -1701,7 +1748,18 @@
       aria-label="Help"
       use:sheetDrag={() => (showHelp = false)}
     >
-      <HelpSheet bind:topic={helpTopic} onClose={() => (showHelp = false)} />
+      <HelpSheet bind:topic={helpTopic} onClose={() => (showHelp = false)} onGo={goToPlace} />
+    </div>
+  {/if}
+
+  {#if helpReturn && !showHelp && BY_ID[helpReturn]}
+    <!-- The way back from a help link. Above the tab bar, out of the
+         content, and gone after 20 s or as soon as help opens again. -->
+    <div class="help-return" class:over-sheet={showSettings}>
+      <button type="button" class="help-return-btn" onclick={backToHelp}>
+        <span aria-hidden="true">‹</span> Back to help: {BY_ID[helpReturn].title}
+      </button>
+      <button type="button" class="help-return-x" aria-label="Dismiss" onclick={() => (helpReturn = null)}>✕</button>
     </div>
   {/if}
 </div>
@@ -2890,6 +2948,89 @@
     text-underline-offset: 2px;
     cursor: pointer;
   }
+  /* Help destinations. scroll-margin keeps a section from landing under
+     the sticky header; the flash is global because the ids also live in
+     WifiPanel, and the class is added from script, not from markup. */
+  :global([id^='place-']) {
+    scroll-margin-top: calc(96px + env(safe-area-inset-top));
+  }
+  /* Inside a sheet there is no sticky header to clear. */
+  :global(.sheet [id^='place-']) {
+    scroll-margin-top: 12px;
+  }
+  :global(.place-flash) {
+    animation: place-flash 1.8s ease-out;
+  }
+  @keyframes place-flash {
+    0%,
+    35% {
+      box-shadow: 0 0 0 3px var(--accent);
+    }
+    100% {
+      box-shadow: 0 0 0 3px transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.place-flash) {
+      animation: none;
+      box-shadow: 0 0 0 3px var(--accent);
+    }
+  }
+
+  /* The way back to the topic you left. Sits just above the tab bar; when
+     the destination was inside Settings it moves to the top, into the strip
+     the sheet leaves free, and above the sheet's scrim so it can be tapped. */
+  .help-return {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(78px + env(safe-area-inset-bottom));
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    max-width: calc(100% - 32px);
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow);
+  }
+  .help-return.over-sheet {
+    bottom: auto;
+    top: calc(12px + env(safe-area-inset-top));
+    z-index: 32;
+  }
+  .help-return-btn {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: transparent;
+    border: 0;
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 8px 6px 8px 12px;
+    min-height: 36px;
+  }
+  .help-return-x {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 999px;
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+  }
+  @media (min-width: 960px) {
+    .help-return {
+      bottom: 24px;
+      left: calc(50% + 124px);
+    }
+  }
+
   .head-row {
     display: flex;
     align-items: center;
