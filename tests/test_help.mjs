@@ -23,9 +23,10 @@ const root = dirname(here);
 const libRoot = pathToFileURL(join(root, 'app', 'src', 'lib') + '/').href;
 register('./lib_alias_hook.mjs', import.meta.url, { data: { libRoot } });
 
-const { SECTIONS, TOPICS, BY_ID, PLACES, search, runs, faultTopic, TUNE_TOPIC } = await import(
-  '$lib/help.js'
-);
+const {
+  SECTIONS, TOPICS, BY_ID, PLACES, search, runs, faultTopic, TUNE_TOPIC,
+  REPO_URL, LINK_HOSTS
+} = await import('$lib/help.js');
 
 let pass = 0;
 let fail = 0;
@@ -48,6 +49,7 @@ function text(t) {
     if (b.note) out.push(b.note);
     out.push(...(b.steps ?? []), ...(b.list ?? []));
     for (const r of b.rows ?? []) out.push(...r);
+    for (const l of b.links ?? []) out.push(l.label, l.note ?? '');
   }
   return out.join(' ').replace(/\*\*/g, '');
 }
@@ -188,7 +190,68 @@ check(
   search('stalled').map((t) => t.id).join(' ')
 );
 check('"0 rpm" finds the stall fault', search('0 rpm').some((t) => t.id === 'fix-fault-stall'));
-check('"home assistant" finds the HA topic', first('home assistant') === 'ha', first('home assistant'));
+check(
+  '"home assistant" finds an HA topic first',
+  ['ha', 'ha-choose', 'ha-integration'].includes(first('home assistant')),
+  first('home assistant')
+);
+check('"hacs" finds the integration topic', first('hacs') === 'ha-integration', first('hacs'));
+
+// --- links out of the app, against the integration they install ----------
+const manifest = JSON.parse(
+  readFileSync(join(root, 'custom_components', 'smartfan', 'manifest.json'), 'utf8')
+);
+const hacs = JSON.parse(readFileSync(join(root, 'hacs.json'), 'utf8'));
+const allLinks = TOPICS.flatMap((t) => t.blocks.flatMap((b) => (b.links ?? []).map((l) => [t.id, l])));
+check('there are links out', allLinks.length >= 5, String(allLinks.length));
+const badLinks = allLinks.filter(([, l]) => {
+  try {
+    const u = new URL(l.href);
+    return u.protocol !== 'https:' || !LINK_HOSTS.includes(u.hostname) || !l.label;
+  } catch {
+    return true;
+  }
+});
+check('every link is https to an allowed host', badLinks.length === 0, badLinks.map(([id, l]) => `${id}:${l.href}`).join(' '));
+check(
+  'REPO_URL is the repo the integration names',
+  manifest.documentation.startsWith(REPO_URL + '/') && manifest.issue_tracker.startsWith(REPO_URL + '/'),
+  REPO_URL
+);
+const [, owner, name] = new URL(REPO_URL).pathname.split('/');
+const hrefs = allLinks.map(([, l]) => l.href);
+check(
+  'the HACS link names this repo as an integration',
+  hrefs.some((h) => h.includes(`hacs_repository/?owner=${owner}&repository=${name}&category=integration`))
+);
+check(
+  'the add-integration link uses the manifest domain',
+  hrefs.some((h) => h.endsWith(`config_flow_start/?domain=${manifest.domain}`)),
+  manifest.domain
+);
+check('HACS installs from custom_components/, not the root', hacs.content_in_root === false);
+check(
+  'the topic names the folder HACS and a hand install use',
+  text(BY_ID['ha-integration']).includes(`custom_components/${manifest.domain}`)
+);
+check(
+  'the poll interval quoted is the integration\'s',
+  text(BY_ID['ha-choose']).includes(
+    `every ${readFileSync(join(root, 'custom_components', 'smartfan', 'const.py'), 'utf8').match(/SCAN_INTERVAL = timedelta\(seconds=(\d+)\)/)[1]} seconds`
+  )
+);
+const strings = JSON.parse(readFileSync(join(root, 'custom_components', 'smartfan', 'strings.json'), 'utf8'));
+for (const err of ['cannot_connect', 'unsupported_api'])
+  check(`integration error "${err}" still exists`, !!strings.config.error[err]);
+check(
+  'the topic quotes the integration\'s own error text',
+  text(BY_ID['ha-integration']).includes('Nothing answered at that address')
+    && strings.config.error.cannot_connect.startsWith('Nothing answered at that address')
+);
+check(
+  'the link opens in a new tab without a referrer',
+  readFileSync(join(root, 'app', 'src', 'lib', 'HelpSheet.svelte'), 'utf8').includes('rel="noopener noreferrer"')
+);
 
 // --- emphasis runs --------------------------------------------------------
 const r = runs('a **b** c');
