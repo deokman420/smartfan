@@ -218,7 +218,19 @@ class Provisioner:
         # wipe the credential every time somebody corrected a typo in the
         # hostname, and the wipe would only show up as a broker that stopped
         # accepting the fan.
+        #
+        # Kept only for the same broker, though. Kept for any host, it let
+        # whoever changed the broker during the window receive the saved
+        # password: point the fan at your own host, leave the box blank, and
+        # the fan logs in to you with it. A new host or port needs the
+        # password typed again.
         if password is None:
+            same = (host.lower() == str(self.link.broker("MQTT_HOST", "")
+                                        or "").strip().lower()
+                    and port == int(self.link.broker("MQTT_PORT", 1883)
+                                    or 1883))
+            if host and not same:
+                return False, "a new broker address needs its password"
             password = self.link.broker("MQTT_PASS", "") or ""
         if len(user or "") > 120 or len(password) > 120:
             return False, "credentials too long"

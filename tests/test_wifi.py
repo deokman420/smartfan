@@ -426,6 +426,51 @@ check("strongest first", names == sorted(names, key=lambda s: -dict(
 check("an open network is marked open",
       [n for n in nets if n["ssid"] == "cafe"][0]["secure"] is False)
 
+# --- the saved password stays with its broker --------------------------------
+# An audit finding: a blank password box kept the saved password for ANY
+# host, so whoever changed the broker in the window had the fan send it the
+# real one. It is kept now only when host and port are unchanged.
+def pass_kept_for(host, port, user="u"):
+    link, prov = fresh(tmp)
+    link._broker = {"MQTT_HOST": "10.0.0.9", "MQTT_PORT": 1883,
+                    "MQTT_USER": "u", "MQTT_PASS": "keep-this-one"}
+    prov.open("test")
+    ok, why = prov.start_broker(host, port, user)
+    sent = (link.try_broker_args or {}).get("MQTT_PASS")
+    return ok, why, sent
+
+
+ok, why, sent = pass_kept_for("10.254.0.66", 1883)
+check("a new host with a blank password is refused",
+      not ok and "password" in why, why)
+check("...and the saved password goes nowhere", sent is None, repr(sent))
+ok, why, sent = pass_kept_for("10.0.0.9", 8883)
+check("a new port with a blank password is refused", not ok, why)
+ok, why, sent = pass_kept_for("10.0.0.9", "1883", "new-user")
+check("the same host and port keep it, even as a string port",
+      ok and sent == "keep-this-one", "%s %r" % (why, sent))
+ok, why, sent = pass_kept_for(" 10.0.0.9 ", 1883)
+check("...and with stray spaces round the host", ok, why)
+
+link, prov = fresh(tmp)
+link._broker = {"MQTT_HOST": "10.0.0.9", "MQTT_PASS": "keep-this-one"}
+prov.open("test")
+ok, why = prov.start_broker("10.0.0.9", "", "u")
+check("an unset port in secrets.py counts as 1883", ok, why)
+
+link, prov = fresh(tmp)
+link._broker = {"MQTT_HOST": "10.0.0.9", "MQTT_PORT": 1883,
+                "MQTT_PASS": "keep-this-one"}
+prov.open("test")
+ok, why = prov.start_broker("10.254.0.66", 1883, "u", "typed-again")
+check("a new host with its password typed is accepted",
+      ok and link.try_broker_args["MQTT_PASS"] == "typed-again", why)
+link, prov = fresh(tmp)
+link._broker = {"MQTT_HOST": "10.0.0.9", "MQTT_PASS": "keep-this-one"}
+prov.open("test")
+check("turning the broker off needs no password",
+      prov.start_broker("", None, "")[0])
+
 # --- one press, one change ---------------------------------------------------
 # An audit finding: OK kept the window open for the rest of the 180 s, so
 # after the owner's change anybody on the LAN could make a second one --
