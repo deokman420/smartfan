@@ -44,12 +44,67 @@
   import { history, since, stats, F } from '$lib/history.js';
   import { learnTau, timeToOff, runContext } from '$lib/dryrate.js';
   import WifiPanel from '$lib/WifiPanel.svelte';
+  import HelpSheet from '$lib/HelpSheet.svelte';
+  import { faultTopic, TUNE_TOPIC, PLACES, BY_ID } from '$lib/help.js';
+  import { tick } from 'svelte';
   import { sheetDrag } from '$lib/sheetdrag.js';
   import { onMount } from 'svelte';
   import { updated } from '$app/state';
   import { version as loadedBuild } from '$app/environment';
 
   let showSettings = $state(false);
+  // The help center. helpTopic is the open topic, or null for the index;
+  // every "?" in the app opens the sheet straight at its own topic.
+  let showHelp = $state(false);
+  let helpTopic = $state(null);
+  function openHelp(id = null) {
+    showSettings = false;
+    detail = null;
+    helpTopic = id;
+    showHelp = true;
+    helpReturn = null;
+  }
+
+  // Leaving help for the place a topic talks about: switch to its tab (or
+  // open Settings), scroll the section into view under the sticky header,
+  // and flash it so the eye lands on it. helpReturn keeps the topic so a
+  // pill can take you straight back to where you were reading.
+  let helpReturn = $state(null);
+  let returnTimer = null;
+  async function goToPlace(id) {
+    const p = PLACES[id];
+    if (!p) return;
+    const from = helpTopic;
+    showHelp = false;
+    detail = null;
+    if (p.sheet === 'settings') openSettings();
+    else {
+      showSettings = false;
+      view = p.view;
+    }
+    helpReturn = from;
+    clearTimeout(returnTimer);
+    returnTimer = setTimeout(() => (helpReturn = null), 20000);
+    await tick();
+    requestAnimationFrame(() => {
+      const el = p.anchor ? document.getElementById(p.anchor) : null;
+      const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!el) {
+        if (!p.sheet) window.scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' });
+        return;
+      }
+      el.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+      el.classList.remove('place-flash');
+      void el.offsetWidth; // restart the animation if it is already running
+      el.classList.add('place-flash');
+      setTimeout(() => el.classList.remove('place-flash'), 1800);
+    });
+  }
+  function backToHelp() {
+    const id = helpReturn;
+    clearTimeout(returnTimer);
+    openHelp(id);
+  }
   let draft = $state({ ...DEFAULTS });
   let view = $state('status');
   let detail = $state(null);
@@ -599,6 +654,7 @@
   onkeydown={(e) => {
     if (e.key !== 'Escape') return;
     if (detail) detail = null;
+    else if (showHelp) showHelp = false;
     else if (showSettings) showSettings = false;
   }}
 />
@@ -661,6 +717,10 @@
       {:else}
         <span class="pill tone-dim"><i class="dot"></i>Connecting</span>
       {/if}
+      <button class="icon help-btn" type="button" onclick={() => openHelp()} aria-label="Help">
+        <svg viewBox="0 0 16 16" aria-hidden="true">{@html ICONS.help}</svg>
+        <span>Help</span>
+      </button>
       <button class="icon" type="button" onclick={openSettings} aria-label="Settings">
         <svg viewBox="0 0 16 16" aria-hidden="true">{@html ICONS.sliders}</svg>
         <span>Settings</span>
@@ -690,7 +750,12 @@
       <button onclick={openSettings}>Open settings</button>
     </div>
   {:else if $linkError}
-    <p class="banner bad">{$linkError}</p>
+    <p class="banner bad">
+      {$linkError}
+      <button type="button" class="help-text" onclick={() => openHelp('fix-cant-connect')}>
+        What to check
+      </button>
+    </p>
   {:else if $link === 'online' && !$deviceOnline}
     <p class="banner bad">
       {#if $mode === 'broker'}
@@ -701,6 +766,9 @@
         The fan stopped answering. It keeps running on its own logic either
         way — this is a reporting problem, not a fan problem.
       {/if}
+      <button type="button" class="help-text" onclick={() => openHelp('fix-offline')}>
+        What to check
+      </button>
     </p>
   {:else if $stale}
     <p class="banner warn">
@@ -718,6 +786,12 @@
         server in between either way.
       </p>
       <button class="primary setup" onclick={openSettings}>Set up connection</button>
+      <p class="sub">
+        New fan?
+        <button type="button" class="help-text" onclick={() => openHelp('setup-first')}>
+          How to set one up
+        </button>
+      </p>
     </div>
   {:else if !t}
     <div class="card empty">
@@ -730,6 +804,11 @@
           The fan is asked every 2 seconds. If nothing arrives, check the
           address in Settings.
         {/if}
+      </p>
+      <p class="sub">
+        <button type="button" class="help-text" onclick={() => openHelp('fix-cant-connect')}>
+          The app cannot reach the fan
+        </button>
       </p>
     </div>
   {:else}
@@ -772,6 +851,11 @@
                 <p class="eyebrow">Controller</p>
                 <p class="state tone-{tone}">{state}</p>
                 <p class="blurb">{stateBlurb(state, t.why)}</p>
+                {#if t.fault}
+                  <button type="button" class="help-text blurb" onclick={() => openHelp(faultTopic(t.reason))}>
+                    What does this mean?
+                  </button>
+                {/if}
                 {#if state === 'BOOST' && t.boost_left > 0}
                   <p class="blurb tone-active">{dur(t.boost_left * 60)} remaining</p>
                   <div class="boost-bar" aria-hidden="true"><i style="width: {boostPct}%"></i></div>
@@ -897,7 +981,7 @@
               </div>
             </section>
 
-            <section class="dock card">
+            <section class="dock card" id="place-control">
               <h2>Control</h2>
               <div class="controls">
                 <button class="primary boost" type="button" onclick={() => command('boost')} disabled={!live}>
@@ -1149,8 +1233,24 @@
           </div>
           <div class="tune-groups">
             {#each TUNE_GROUPS as group (group.title)}
-              <section class="card tune-group" class:wide={group.keys.length > 2}>
-                <h3>{group.title}</h3>
+              <section
+                class="card tune-group"
+                class:wide={group.keys.length > 2}
+                id="place-tune-{group.title.toLowerCase()}"
+              >
+                <div class="head-row">
+                  <h3>{group.title}</h3>
+                  {#if TUNE_TOPIC[group.title]}
+                    <button
+                      type="button"
+                      class="help-link"
+                      aria-label="Help with {group.title.toLowerCase()} thresholds"
+                      onclick={() => openHelp(TUNE_TOPIC[group.title])}
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true">{@html ICONS.help}</svg>
+                    </button>
+                  {/if}
+                </div>
                 <p class="sub">{group.blurb}</p>
                 {#if group.title === 'Humidity'}
                   <div class="meter slim" aria-hidden="true">
@@ -1198,7 +1298,7 @@
               </section>
             {/each}
           </div>
-          <section class="card tune-mode">
+          <section class="card tune-mode" id="place-tune-mode">
             {@render modeControl('mode-t-label')}
 
             <div class="quiet-row reset-row">
@@ -1301,7 +1401,7 @@
 
         {#if view === 'health'}
           <div class="health">
-            <section class="panel card">
+            <section class="panel card" id="place-health-link">
               <h2>Link</h2>
               <div class="link-hero">
                 <div>
@@ -1327,7 +1427,7 @@
               </div>
             </section>
 
-            <section class="panel card" class:faulty={t.fault}>
+            <section class="panel card" class:faulty={t.fault} id="place-health-device">
               <h2>Device</h2>
               <div class="link-hero">
                 <div>
@@ -1369,6 +1469,9 @@
                     <span class="v small-v tone-warn">Never run</span>
                   {:else if t.selftest === 'failed'}
                     <span class="v small-v tone-bad">Failed</span>
+                    <button type="button" class="help-text small-v" onclick={() => openHelp('fix-fault-selftest')}>
+                      What to do
+                    </button>
                   {:else if t.selftest === 'passed'}
                     <span class="v small-v tone-ok">Passed</span>
                   {:else if t.selftest === 'running'}
@@ -1385,6 +1488,9 @@
                   <span class="k">Fault</span>
                   {#if t.fault}
                     <span class="v small-v tone-bad">{t.reason || 'Yes'}</span>
+                    <button type="button" class="help-text small-v" onclick={() => openHelp(faultTopic(t.reason))}>
+                      What to do
+                    </button>
                   {:else}
                     <span class="v">None</span>
                   {/if}
@@ -1507,7 +1613,7 @@
            none above 560px, where this is a centered dialog rather than a
            bottom sheet. -->
       <div class="grabber" data-sheet-handle aria-hidden="true"></div>
-      <h3>Connection</h3>
+      <h3 id="place-connection">Connection</h3>
       <p class="sub">
         Nothing leaves the network either way. The difference is what has to be
         running.
@@ -1622,6 +1728,38 @@
         <button onclick={() => (showSettings = false)}>Cancel</button>
         <button class="primary" onclick={applySettings}>Save and reconnect</button>
       </div>
+    </div>
+  {/if}
+
+  {#if showHelp}
+    <!-- A button and not a div, for the iOS reason above the chart sheet.
+         The help sheet is the tall one, so it uses the full height the
+         phone allows rather than settling at its content. -->
+    <button
+      type="button"
+      class="scrim"
+      aria-hidden="true"
+      tabindex="-1"
+      onclick={() => (showHelp = false)}
+    ></button>
+    <div
+      class="sheet card help-sheet"
+      role="dialog"
+      aria-label="Help"
+      use:sheetDrag={() => (showHelp = false)}
+    >
+      <HelpSheet bind:topic={helpTopic} onClose={() => (showHelp = false)} onGo={goToPlace} />
+    </div>
+  {/if}
+
+  {#if helpReturn && !showHelp && BY_ID[helpReturn]}
+    <!-- The way back from a help link. Above the tab bar, out of the
+         content, and gone after 20 s or as soon as help opens again. -->
+    <div class="help-return" class:over-sheet={showSettings}>
+      <button type="button" class="help-return-btn" onclick={backToHelp}>
+        <span aria-hidden="true">‹</span> Back to help: {BY_ID[helpReturn].title}
+      </button>
+      <button type="button" class="help-return-x" aria-label="Dismiss" onclick={() => (helpReturn = null)}>✕</button>
     </div>
   {/if}
 </div>
@@ -2736,6 +2874,168 @@
   }
   .sheet.wide {
     width: min(760px, 100%);
+  }
+  /* Help holds a fixed height rather than following its content, so moving
+     from the index to a short topic does not make the sheet jump. */
+  .sheet.help-sheet {
+    width: min(560px, 100%);
+    height: 88dvh;
+  }
+  @media (min-width: 560px) {
+    .sheet.help-sheet {
+      height: min(720px, 88dvh);
+    }
+  }
+
+  /* The header is already full at phone width (brand, link pill,
+     Settings), so Help is the icon alone there. aria-label carries the
+     name, and the rail on wide screens has room for the word. */
+  @media (max-width: 559px) {
+    header button.help-btn {
+      padding: 7px 9px;
+    }
+    header button.help-btn span {
+      display: none;
+    }
+  }
+  /* On the narrowest phones Settings loses its word too: measured at 360px
+     the link pill otherwise slid under "Smartfan". Both buttons keep their
+     names through aria-label. */
+  @media (max-width: 419px) {
+    header button.icon {
+      padding: 7px 9px;
+    }
+    header button.icon span {
+      display: none;
+    }
+  }
+
+  /* The small "?" that opens help at one topic. Quiet on purpose: it sits
+     beside headings that already say what the section is. */
+  .help-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    flex: none;
+  }
+  .help-link:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .help-link svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .help-text {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--accent);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  /* Help destinations. scroll-margin keeps a section from landing under
+     the sticky header; the flash is global because the ids also live in
+     WifiPanel, and the class is added from script, not from markup. */
+  :global([id^='place-']) {
+    scroll-margin-top: calc(96px + env(safe-area-inset-top));
+  }
+  /* Inside a sheet there is no sticky header to clear. */
+  :global(.sheet [id^='place-']) {
+    scroll-margin-top: 12px;
+  }
+  :global(.place-flash) {
+    animation: place-flash 1.8s ease-out;
+  }
+  @keyframes place-flash {
+    0%,
+    35% {
+      box-shadow: 0 0 0 3px var(--accent);
+    }
+    100% {
+      box-shadow: 0 0 0 3px transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.place-flash) {
+      animation: none;
+      box-shadow: 0 0 0 3px var(--accent);
+    }
+  }
+
+  /* The way back to the topic you left. Sits just above the tab bar; when
+     the destination was inside Settings it moves to the top, into the strip
+     the sheet leaves free, and above the sheet's scrim so it can be tapped. */
+  .help-return {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(78px + env(safe-area-inset-bottom));
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    max-width: calc(100% - 32px);
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow);
+  }
+  .help-return.over-sheet {
+    bottom: auto;
+    top: calc(12px + env(safe-area-inset-top));
+    z-index: 32;
+  }
+  .help-return-btn {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: transparent;
+    border: 0;
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 8px 6px 8px 12px;
+    min-height: 36px;
+  }
+  .help-return-x {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 999px;
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+  }
+  @media (min-width: 960px) {
+    .help-return {
+      bottom: 24px;
+      left: calc(50% + 124px);
+    }
+  }
+
+  .head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
   }
 
   /* A bar, not a toast: it must survive being ignored, because the thing
