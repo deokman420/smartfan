@@ -34,9 +34,11 @@ There is no authentication, and that is a deliberate, documented choice
 rather than an oversight: this is a LAN device whose physical control is a
 button on the wall, and the alternative -- a password on a device with no
 screen and no clock -- is a support burden that buys very little. The
-protection that does exist is that writes need POST, and that CORS is
-reflected only for local origins (see httpd._lan_origin), so a random page
-on the internet cannot drive it. Anyone already on the network can. If that
+protection that does exist is that writes need POST, that a write whose
+Origin is not local is refused outright, and that CORS is reflected only for
+local origins (see httpd._lan_origin and httpd.Server._dispatch), so a random
+page on the internet can neither drive it nor read it. CORS alone was never
+enough: it hides the reply, while a plain-text POST still landed. Anyone already on the network can. If that
 is not acceptable, do not expose the port; the MQTT path with broker
 credentials is still there.
 

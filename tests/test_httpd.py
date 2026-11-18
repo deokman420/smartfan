@@ -545,6 +545,40 @@ def test_server(tmp):
         check("preflight is answered", st == 204 and
               "POST" in hdr.get("Access-Control-Allow-Methods", ""))
 
+        # -- cross-site writes (audit NV-1) -------------------------------
+        # CORS hides the reply, not the request: a public page's text/plain
+        # POST needs no preflight and used to boost the fan regardless.
+        n = len(c.commands)
+        before_boost = c.st.BOOST_S
+        hostile = ("https://evil.example", "http://evil.example", "null",
+                   "http://192.168.0.9.evil.example", "file://")
+        through = []
+        for o in hostile:
+            st1, _, _ = get(port, "/api/cmd", "POST", b"boost",
+                            headers={"Origin": o,
+                                     "Content-Type": "text/plain"})
+            st2, _, _ = get(port, "/api/set/boost_s", "POST", b"300",
+                            headers={"Origin": o})
+            if st1 != 403 or st2 != 403:
+                through.append((o, st1, st2))
+        check("a write from a non-local Origin is refused", not through,
+              str(through))
+        check("...and reaches neither the controller nor the settings",
+              len(c.commands) == n and c.st.BOOST_S == before_boost,
+              "commands %d->%d" % (n, len(c.commands)))
+        st, _, _ = get(port, "/api/state", headers={
+            "Origin": "https://evil.example"})
+        check("...while a read from it is still answered (CORS hides it)",
+              st == 200, "status %d" % st)
+        allowed = []
+        for o in ("http://fan.local", "http://192.168.0.9:5173",
+                  "http://localhost:5173", None):
+            hdrs = {"Origin": o} if o else {}
+            st, _, _ = get(port, "/api/cmd", "POST", b"cancel", headers=hdrs)
+            allowed.append((o, st))
+        check("the app, the LAN dev server and Origin-less clients still write",
+              all(st == 200 for _, st in allowed), str(allowed))
+
         # -- limits -------------------------------------------------------
         st, _, _ = get(port, "/api/cmd", "POST", b"x" * (httpd.BODY_MAX + 64))
         check("an oversized body is refused, not buffered", st == 413,

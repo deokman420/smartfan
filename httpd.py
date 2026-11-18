@@ -551,6 +551,19 @@ class Server:
                 "Access-Control-Allow-Headers": "Content-Type",
                 "Access-Control-Max-Age": "600",
             })
+        elif (req.method not in ("GET", "HEAD") and req.origin
+              and not _lan_origin(req.origin)):
+            # A write from a page that is not on the LAN. CORS only decides
+            # whether a browser may READ the answer; a plain-text POST needs
+            # no preflight, so without this a public page open on any phone
+            # in the house could boost the fan or switch extraction off, and
+            # never see the reply it did not need. Browsers always send
+            # Origin on a cross-site POST (as "null" when a page hides it),
+            # so refusing a foreign one closes that. A client with no Origin
+            # at all -- curl, Home Assistant's aiohttp -- is not a browser
+            # page and is unaffected. The same check refuses a DNS-rebound
+            # page, whose Origin is the attacker's name, not this device's.
+            resp = text_response(403, "cross-site write refused")
         elif self.handler:
             try:
                 resp = self.handler(req)
