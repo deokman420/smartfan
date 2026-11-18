@@ -21,6 +21,23 @@ import config as cfg
 
 FILE = "settings.json"
 
+# The shortest spacing between two rewrites of settings.json. A slider
+# dragged in Home Assistant, or a client hammering /api/set, now costs at
+# most one flash write per gap instead of one per message.
+SAVE_GAP_MS = 10000
+
+
+def _ms():
+    import time
+    t = getattr(time, "ticks_ms", None)
+    return t() if t else int(time.time() * 1000)
+
+
+def _since(start):
+    import time
+    d = getattr(time, "ticks_diff", None)
+    return d(_ms(), start) if d else _ms() - start
+
 # name -> (kind, lo, hi, step, unit, label, icon)
 # Ranges are what the hardware and the logic can actually honour, not what
 # seems reasonable -- they are the last line of defense.
@@ -78,7 +95,21 @@ class Settings:
     def __init__(self, log=None):
         self._over = {}
         self._log = log or (lambda *a: None)
+        # Flash wear (audit NV-6). Every accepted write used to rewrite
+        # settings.json, unchanged values included, with no limit -- and
+        # /api/set is open to the whole LAN. _saved is what is on flash, so
+        # a write that changes nothing writes nothing; _last_ms spaces real
+        # writes SAVE_GAP_MS apart, with flush() catching up from the loop.
+        self._saved = None
+        self._dirty = False
+        self._last_ms = None
+        self._loading = True
         self._load()
+        self._loading = False
+        if self._saved is None:
+            self._saved = {}        # no file: defaults, nothing to write
+        if self._saved != self._over:
+            self._save()            # once, if load clamped or dropped a key
 
     # -- reading -----------------------------------------------------------
 
@@ -186,6 +217,7 @@ class Settings:
             return                                  # absent or corrupt: defaults
         if not isinstance(data, dict):
             return
+        self._saved = dict(data)
         # Re-validate on load. A file edited by hand, or half-written when the
         # power went, must not put the controller somewhere it could not have
         # reached through set().
@@ -195,6 +227,33 @@ class Settings:
         self._log("settings: loaded %d overrides" % len(self._over))
 
     def _save(self):
+        """Persist, unless nothing changed or the last write was too recent.
+
+        A deferred write is not lost: the value is already live in _over,
+        and flush() writes it from the control loop once the gap has passed.
+        What a power cut inside the gap costs is that one change.
+        """
+        if self._loading:
+            return
+        if self._saved is not None and self._over == self._saved:
+            self._dirty = False
+            return
+        if self._last_ms is not None and _since(self._last_ms) < SAVE_GAP_MS:
+            self._dirty = True
+            return
+        self._write()
+
+    def flush(self, force=False):
+        """Write a deferred change once the gap allows. Call every pass."""
+        if not self._dirty:
+            return
+        if force or self._last_ms is None or _since(self._last_ms) >= SAVE_GAP_MS:
+            self._write()
+
+    def _write(self):
+        self._last_ms = _ms()
+        self._dirty = False
+        self._saved = dict(self._over)
         try:
             tmp = FILE + ".tmp"
             with open(tmp, "w") as f:

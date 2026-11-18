@@ -1756,7 +1756,10 @@ class Controller:
         except Exception:
             return
         cmd = raw if "/set/" in topic else raw.lower()
-        print("cmd: %s -> %s" % (topic.rsplit("/", 2)[-1], cmd))
+        # %r, not %s: the text is whatever a client sent, and a newline in
+        # it would print a line of its own -- one that can pass for a
+        # 'state:' line when the log is pasted into troubleshoot.html.
+        print("cmd: %s -> %r" % (topic.rsplit("/", 2)[-1], cmd))
 
         # fan/<room>/set/<PARAM> carries a value; the command topic carries
         # a verb. Split on the topic so a value can never be read as a verb.
@@ -1928,11 +1931,15 @@ class Controller:
             if self.http is None:
                 self.api = webapi.Api(self, cfg, self.snap, self.hist,
                                       log=print)
+                name = getattr(cfg, "HOSTNAME", None)
+                names = list(getattr(cfg, "HTTP_HOSTS", ()) or ())
+                if name:
+                    names += [name, name + ".local"]
                 self.http = httpd.Server(
                     handler=self.api.handle,
                     root=getattr(cfg, "WWW_ROOT", "www"),
                     port=getattr(cfg, "HTTP_PORT", 80),
-                    log=print)
+                    log=print, names=names)
                 if not self.http.start():
                     self.http = None
                     self._web_retry_at = time.ticks_add(time.ticks_ms(), 5000)
@@ -2043,6 +2050,9 @@ class Controller:
                     " (trial boot: boot_check already armed one)"
                     if self._ota_pending else ""))
 
+            # A settings change deferred by the flash-write gap lands here.
+            self.st.flush()
+
             # One OTA step per pass. A download that hangs stops the loop and
             # the watchdog resets us, which for an update is the right
             # outcome -- the staged files are discarded and the old code
@@ -2058,6 +2068,7 @@ class Controller:
                     if reset_needed:
                         self.set_fan(False)
                         self.drive_outputs()
+                        self.st.flush(force=True)
                         time.sleep_ms(400)      # let the last publish leave
                         import machine
                         machine.reset()
@@ -2156,6 +2167,10 @@ class Controller:
         print("net: unreachable for %d s, resetting" % down)
         try:
             net.mark_netstall()       # survives the reset; published retained
+        except Exception:
+            pass
+        try:
+            self.st.flush(force=True)
         except Exception:
             pass
         try:

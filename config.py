@@ -573,6 +573,14 @@ WWW_ROOT       = "www"  # the built app, gzipped, pushed by tools/build_www.py
 # It is the DHCP hostname too, so the router's client list is readable.
 HOSTNAME = "fan"
 
+# Other names the web server answers to. HOSTNAME, HOSTNAME.local, any IP
+# address and localhost are always accepted; any other Host header gets a
+# 421, because that is what a DNS-rebinding page looks like. Add the name
+# here if you reach the fan another way -- your router's DNS (e.g.
+# "fan.lan", "fan.fritz.box") or a reverse proxy. A refused name is logged
+# once on the serial console.
+HTTP_HOSTS = ()
+
 # --- Local time -------------------------------------------------------
 # The RTC runs on UTC after NTP, and MicroPython has no timezone support, so
 # anything that means "today" needs these. Today that is only the daily

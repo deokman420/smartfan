@@ -314,12 +314,40 @@ def test_server(tmp):
     api = webapi.Api(c, Cfg, snap, hist)
 
     port = free_port()
+    # Named the way main.py names it: HOSTNAME, HOSTNAME.local, HTTP_HOSTS.
     server = httpd.Server(handler=api.handle, root=root, port=port,
-                          log=lambda *a: None)
+                          log=lambda *a: None,
+                          names=["fan", "fan.local", "fan.lan"])
     check("server binds", server.start())
     pump = Pump(server)
     pump.start()
     try:
+        # -- Host names (audit NV-5, DNS rebinding) -----------------------
+        # A rebound page is same-origin with the device, so CORS cannot
+        # stop it reading; its Host header still names the attacker.
+        n = len(c.commands)
+        ok_hosts = ("fan.local", "FAN.local:80", "fan", "fan.lan",
+                    "fan.local.", "192.168.0.42", "127.0.0.1:8080",
+                    "localhost:5173", "[::1]:80")
+        bad_hosts = ("evil.example", "fan.local.evil.example",
+                     "fan.evil.example", "192.168.0.42.evil.example",
+                     "1.2.3.4.5", "localhost.evil.example")
+        wrong = [h for h in ok_hosts
+                 if get(port, "/api/state", headers={"Host": h})[0] != 200]
+        check("the device's own names and any IP literal are served",
+              not wrong, str(wrong))
+        leaked = []
+        for h in bad_hosts:
+            st, _, body = get(port, "/api/state", headers={"Host": h})
+            st2, _, _ = get(port, "/api/cmd", "POST", b"boost",
+                            headers={"Host": h})
+            if st != 421 or st2 != 421 or b"rh" in body:
+                leaked.append((h, st, st2))
+        check("any other Host name is refused, reads and writes alike",
+              not leaked, str(leaked))
+        check("...and a refused write never reaches the controller",
+              len(c.commands) == n, "commands %d->%d" % (n, len(c.commands)))
+
         # -- static -------------------------------------------------------
         st, hdr, body = get(port, "/")
         check("GET / serves the shell", st == 200 and gunzip(body) == INDEX,

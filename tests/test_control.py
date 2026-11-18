@@ -181,6 +181,10 @@ def build(boot="watchdog or reset", mode=None, selftest_s=0):
     pre.reset()                               # a known file, not the last test's
     if mode:
         pre.set("MODE", mode)
+    # Writes are spaced SAVE_GAP_MS apart now (audit NV-6), and this hands
+    # the file to a second Settings -- the Controller's -- which the device
+    # never does. Flush so the handoff sees what was set.
+    pre.flush(force=True)
     c = main.Controller()
     c.state = main.IDLE
     c.entered_at = CLOCK[0]

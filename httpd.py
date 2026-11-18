@@ -294,7 +294,11 @@ class Server:
     """
 
     def __init__(self, handler=None, root="www", port=80, log=None,
-                 max_conns=4, spa="index.html"):
+                 max_conns=4, spa="index.html", names=()):
+        # Host names this device answers to, besides IP literals and
+        # localhost, which are always accepted. See _host_ok.
+        self.names = frozenset(n.lower().rstrip(".") for n in names if n)
+        self._refused_hosts = set()
         self.handler = handler
         self.root = root
         self.port = port
@@ -541,9 +545,52 @@ class Server:
 
     # -- routing -----------------------------------------------------------
 
+    def _host_ok(self, host):
+        """Is this Host header one of this device's own names?
+
+        DNS rebinding (audit NV-5): a page on evil.example re-points its own
+        name at this device's LAN address, and from then on the browser
+        treats the device as same-origin with that page -- CORS no longer
+        applies, and it can read everything. The one thing the attacker
+        cannot change is the Host header, which still says evil.example.
+
+        An IP literal cannot be rebound, so any is fine: the address moves
+        with DHCP, and the app and Home Assistant are often pointed at it.
+        So is localhost. Names must be on the list: the hostname, its .local
+        form, and config.HTTP_HOSTS for a router's own DNS name (fan.lan,
+        fan.fritz.box) or a reverse proxy. A missing Host -- HTTP/1.0 --
+        is not a browser and is let through.
+        """
+        if not host:
+            return True
+        h = host.strip().lower()
+        if h.startswith("["):
+            return "]" in h                     # an IPv6 literal
+        h = h.rsplit(":", 1)[0] if ":" in h else h
+        h = h.rstrip(".")
+        if h == "localhost":
+            return True
+        parts = h.split(".")
+        if len(parts) == 4 and all(p.isdigit() and len(p) <= 3 and int(p) < 256
+                                   for p in parts):
+            return True
+        return h in self.names
+
     def _dispatch(self, c, req):
         self.requests += 1
         resp = None
+        host = req.headers.get("host", "")
+        if not self._host_ok(host):
+            # Logged once per name, so a misconfigured client is visible on
+            # the serial console without flooding it.
+            if host not in self._refused_hosts and len(self._refused_hosts) < 8:
+                self._refused_hosts.add(host)
+                self._log("http: refused Host %r -- if that is a name you use "
+                          "for this fan, add it to HTTP_HOSTS in config.py"
+                          % host)
+            self._respond(c, text_response(
+                421, "unknown host name; add it to HTTP_HOSTS in config.py"))
+            return
         if req.method == "OPTIONS":
             # Preflight, which the dev server's cross-origin POSTs trigger.
             resp = Response(204, b"", "text/plain", {
