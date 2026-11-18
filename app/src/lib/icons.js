@@ -28,6 +28,7 @@ export const ICONS = {
     '<path d="M8 1.8v5.4"/><path d="M12.2 3.9a5.9 5.9 0 1 1-8.4 0"/>',
   chart:
     '<path d="M2 2v12h12"/><path d="M4.6 10.8 7 7.4l2.3 2 3.1-4.6"/>',
+  help: '<circle cx="8" cy="8" r="6.4"/><path d="M6.1 6.2a2 2 0 0 1 3.9.6c0 1.3-2 1.7-2 3"/><circle cx="8" cy="11.7" r=".35"/>',
   expand:
     '<path d="M9.6 2.4H13.6V6.4"/><path d="M6.4 13.6H2.4V9.6"/><path d="M13.6 2.4 9 7M2.4 13.6 7 9"/>'
 };

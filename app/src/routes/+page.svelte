@@ -44,12 +44,24 @@
   import { history, since, stats, F } from '$lib/history.js';
   import { learnTau, timeToOff, runContext } from '$lib/dryrate.js';
   import WifiPanel from '$lib/WifiPanel.svelte';
+  import HelpSheet from '$lib/HelpSheet.svelte';
+  import { faultTopic, TUNE_TOPIC } from '$lib/help.js';
   import { sheetDrag } from '$lib/sheetdrag.js';
   import { onMount } from 'svelte';
   import { updated } from '$app/state';
   import { version as loadedBuild } from '$app/environment';
 
   let showSettings = $state(false);
+  // The help center. helpTopic is the open topic, or null for the index;
+  // every "?" in the app opens the sheet straight at its own topic.
+  let showHelp = $state(false);
+  let helpTopic = $state(null);
+  function openHelp(id = null) {
+    showSettings = false;
+    detail = null;
+    helpTopic = id;
+    showHelp = true;
+  }
   let draft = $state({ ...DEFAULTS });
   let view = $state('status');
   let detail = $state(null);
@@ -599,6 +611,7 @@
   onkeydown={(e) => {
     if (e.key !== 'Escape') return;
     if (detail) detail = null;
+    else if (showHelp) showHelp = false;
     else if (showSettings) showSettings = false;
   }}
 />
@@ -661,6 +674,10 @@
       {:else}
         <span class="pill tone-dim"><i class="dot"></i>Connecting</span>
       {/if}
+      <button class="icon help-btn" type="button" onclick={() => openHelp()} aria-label="Help">
+        <svg viewBox="0 0 16 16" aria-hidden="true">{@html ICONS.help}</svg>
+        <span>Help</span>
+      </button>
       <button class="icon" type="button" onclick={openSettings} aria-label="Settings">
         <svg viewBox="0 0 16 16" aria-hidden="true">{@html ICONS.sliders}</svg>
         <span>Settings</span>
@@ -690,7 +707,12 @@
       <button onclick={openSettings}>Open settings</button>
     </div>
   {:else if $linkError}
-    <p class="banner bad">{$linkError}</p>
+    <p class="banner bad">
+      {$linkError}
+      <button type="button" class="help-text" onclick={() => openHelp('fix-cant-connect')}>
+        What to check
+      </button>
+    </p>
   {:else if $link === 'online' && !$deviceOnline}
     <p class="banner bad">
       {#if $mode === 'broker'}
@@ -701,6 +723,9 @@
         The fan stopped answering. It keeps running on its own logic either
         way — this is a reporting problem, not a fan problem.
       {/if}
+      <button type="button" class="help-text" onclick={() => openHelp('fix-offline')}>
+        What to check
+      </button>
     </p>
   {:else if $stale}
     <p class="banner warn">
@@ -718,6 +743,12 @@
         server in between either way.
       </p>
       <button class="primary setup" onclick={openSettings}>Set up connection</button>
+      <p class="sub">
+        New fan?
+        <button type="button" class="help-text" onclick={() => openHelp('setup-first')}>
+          How to set one up
+        </button>
+      </p>
     </div>
   {:else if !t}
     <div class="card empty">
@@ -730,6 +761,11 @@
           The fan is asked every 2 seconds. If nothing arrives, check the
           address in Settings.
         {/if}
+      </p>
+      <p class="sub">
+        <button type="button" class="help-text" onclick={() => openHelp('fix-cant-connect')}>
+          The app cannot reach the fan
+        </button>
       </p>
     </div>
   {:else}
@@ -772,6 +808,11 @@
                 <p class="eyebrow">Controller</p>
                 <p class="state tone-{tone}">{state}</p>
                 <p class="blurb">{stateBlurb(state, t.why)}</p>
+                {#if t.fault}
+                  <button type="button" class="help-text blurb" onclick={() => openHelp(faultTopic(t.reason))}>
+                    What does this mean?
+                  </button>
+                {/if}
                 {#if state === 'BOOST' && t.boost_left > 0}
                   <p class="blurb tone-active">{dur(t.boost_left * 60)} remaining</p>
                   <div class="boost-bar" aria-hidden="true"><i style="width: {boostPct}%"></i></div>
@@ -1150,7 +1191,19 @@
           <div class="tune-groups">
             {#each TUNE_GROUPS as group (group.title)}
               <section class="card tune-group" class:wide={group.keys.length > 2}>
-                <h3>{group.title}</h3>
+                <div class="head-row">
+                  <h3>{group.title}</h3>
+                  {#if TUNE_TOPIC[group.title]}
+                    <button
+                      type="button"
+                      class="help-link"
+                      aria-label="Help with {group.title.toLowerCase()} thresholds"
+                      onclick={() => openHelp(TUNE_TOPIC[group.title])}
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true">{@html ICONS.help}</svg>
+                    </button>
+                  {/if}
+                </div>
                 <p class="sub">{group.blurb}</p>
                 {#if group.title === 'Humidity'}
                   <div class="meter slim" aria-hidden="true">
@@ -1369,6 +1422,9 @@
                     <span class="v small-v tone-warn">Never run</span>
                   {:else if t.selftest === 'failed'}
                     <span class="v small-v tone-bad">Failed</span>
+                    <button type="button" class="help-text small-v" onclick={() => openHelp('fix-fault-selftest')}>
+                      What to do
+                    </button>
                   {:else if t.selftest === 'passed'}
                     <span class="v small-v tone-ok">Passed</span>
                   {:else if t.selftest === 'running'}
@@ -1385,6 +1441,9 @@
                   <span class="k">Fault</span>
                   {#if t.fault}
                     <span class="v small-v tone-bad">{t.reason || 'Yes'}</span>
+                    <button type="button" class="help-text small-v" onclick={() => openHelp(faultTopic(t.reason))}>
+                      What to do
+                    </button>
                   {:else}
                     <span class="v">None</span>
                   {/if}
@@ -1622,6 +1681,27 @@
         <button onclick={() => (showSettings = false)}>Cancel</button>
         <button class="primary" onclick={applySettings}>Save and reconnect</button>
       </div>
+    </div>
+  {/if}
+
+  {#if showHelp}
+    <!-- A button and not a div, for the iOS reason above the chart sheet.
+         The help sheet is the tall one, so it uses the full height the
+         phone allows rather than settling at its content. -->
+    <button
+      type="button"
+      class="scrim"
+      aria-hidden="true"
+      tabindex="-1"
+      onclick={() => (showHelp = false)}
+    ></button>
+    <div
+      class="sheet card help-sheet"
+      role="dialog"
+      aria-label="Help"
+      use:sheetDrag={() => (showHelp = false)}
+    >
+      <HelpSheet bind:topic={helpTopic} onClose={() => (showHelp = false)} />
     </div>
   {/if}
 </div>
@@ -2736,6 +2816,85 @@
   }
   .sheet.wide {
     width: min(760px, 100%);
+  }
+  /* Help holds a fixed height rather than following its content, so moving
+     from the index to a short topic does not make the sheet jump. */
+  .sheet.help-sheet {
+    width: min(560px, 100%);
+    height: 88dvh;
+  }
+  @media (min-width: 560px) {
+    .sheet.help-sheet {
+      height: min(720px, 88dvh);
+    }
+  }
+
+  /* The header is already full at phone width (brand, link pill,
+     Settings), so Help is the icon alone there. aria-label carries the
+     name, and the rail on wide screens has room for the word. */
+  @media (max-width: 559px) {
+    header button.help-btn {
+      padding: 7px 9px;
+    }
+    header button.help-btn span {
+      display: none;
+    }
+  }
+  /* On the narrowest phones Settings loses its word too: measured at 360px
+     the link pill otherwise slid under "Smartfan". Both buttons keep their
+     names through aria-label. */
+  @media (max-width: 419px) {
+    header button.icon {
+      padding: 7px 9px;
+    }
+    header button.icon span {
+      display: none;
+    }
+  }
+
+  /* The small "?" that opens help at one topic. Quiet on purpose: it sits
+     beside headings that already say what the section is. */
+  .help-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    flex: none;
+  }
+  .help-link:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .help-link svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .help-text {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--accent);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
   }
 
   /* A bar, not a toast: it must survive being ignored, because the thing
