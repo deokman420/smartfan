@@ -25,7 +25,23 @@
  *   { rows: [['term', 'meaning']] }  a two-column definition list
  *   { note: 'text' }                 a callout for the thing people get wrong
  *   { see: ['topic-id', …] }         links to related topics
+ *   { links: [{ href, label, note }] } links out of the app, opened in a
+ *                                    new tab; only to the hosts in
+ *                                    LINK_HOSTS (tests/test_help.mjs)
  */
+
+/**
+ * Where the project lives. One place, because the Home Assistant topics
+ * build several links from it, and test_help.mjs checks it against the
+ * integration's own manifest.json so a renamed repo cannot leave the help
+ * pointing at the old one.
+ */
+export const REPO_OWNER = 'deokman420';
+export const REPO_NAME = 'smartfan';
+export const REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
+
+/** The only places help links out to. */
+export const LINK_HOSTS = ['github.com', 'my.home-assistant.io', 'hacs.xyz'];
 
 /**
  * Places in the app a topic can send you to.
@@ -475,7 +491,7 @@ export const TOPICS = [
       {
         note: 'Phones and computers find **.local** addresses on the same Wi-Fi only. Away from home, or on a guest network, the address will not resolve.'
       },
-      { see: ['ha', 'fix-cant-connect'] }
+      { see: ['ha-choose', 'fix-cant-connect'] }
     ]
   },
   {
@@ -504,15 +520,105 @@ export const TOPICS = [
     ]
   },
   {
+    id: 'ha-choose',
+    section: 'setup',
+    title: 'Home Assistant: choosing how to connect',
+    summary: 'Through your MQTT broker, or with the Smartfan integration. Pick one.',
+    keywords: 'home assistant ha integration mqtt which choose compare broker',
+    blocks: [
+      {
+        p: 'Home Assistant is optional: the fan and this app work fully without it. If you use it, there are two ways to bring the fan in. Both give you its readings, controls and thresholds as entities.'
+      },
+      {
+        rows: [
+          ['Through MQTT', 'Nothing to install in Home Assistant. Needs an MQTT broker, usually the Mosquitto add-on. The fan announces itself and appears by itself.'],
+          ['Smartfan integration', 'No broker needed. Install it once (through HACS or by hand), then add the fan by its address. Home Assistant asks the fan directly every 10 seconds, and it also shows the controller’s own reason for what it is doing.']
+        ]
+      },
+      {
+        list: [
+          'Already run Mosquitto? MQTT is the simplest.',
+          'No broker, and you would rather not add one? Use the integration.'
+        ]
+      },
+      {
+        note: 'Pick one. With both, Home Assistant shows two copies of every entity for the same fan. If you switch to the integration, delete the MQTT device in Home Assistant.'
+      },
+      { see: ['ha', 'ha-integration'] }
+    ]
+  },
+  {
+    id: 'ha-integration',
+    section: 'setup',
+    title: 'Installing the Smartfan integration',
+    summary: 'Download it into Home Assistant, then add the fan by its address.',
+    keywords: 'home assistant ha integration hacs install download custom component add device setup config flow',
+    blocks: [
+      { p: '**Install it with HACS** (the Home Assistant Community Store), which also tells you when there is an update:' },
+      {
+        steps: [
+          'If you do not have HACS yet, install it first (link below).',
+          'Tap **Add to HACS** below. It opens your own Home Assistant with the Smartfan repository filled in. The first time, it asks for your Home Assistant’s address.',
+          'Tap **Download**, then restart Home Assistant when it asks.'
+        ]
+      },
+      {
+        links: [
+          { href: `https://my.home-assistant.io/redirect/hacs_repository/?owner=${REPO_OWNER}&repository=${REPO_NAME}&category=integration`, label: 'Add to HACS', note: 'Opens HACS in your Home Assistant' },
+          { href: 'https://hacs.xyz/docs/use/', label: 'Get HACS', note: 'How to install HACS itself' }
+        ]
+      },
+      {
+        p: 'If the button does not work for you, add it in HACS yourself: **HACS › ⋮ › Custom repositories**, paste the repository address below, and choose type **Integration**.'
+      },
+      {
+        p: 'Not using HACS at all? Download the project, copy its **custom_components/smartfan** folder into the **custom_components** folder of your Home Assistant configuration (create it if it is missing), and restart Home Assistant. Updates are then up to you.'
+      },
+      {
+        links: [
+          { href: `${REPO_URL}/archive/refs/heads/main.zip`, label: 'Download the project (ZIP)', note: 'For installing by hand' },
+          { href: REPO_URL, label: 'Repository', note: REPO_URL.replace('https://', '') }
+        ]
+      },
+      { p: '**Then add the fan:**' },
+      {
+        steps: [
+          'Tap **Add the fan to Home Assistant** below, or go to **Settings › Devices & services › Add integration** and search for **Smartfan**.',
+          'Enter the fan’s address without http://, for example **fan.local**, **bathroom-fan.local**, or its IP address.',
+          'Home Assistant checks it can reach the fan before adding anything. The device then appears with all its entities.'
+        ]
+      },
+      {
+        links: [
+          { href: 'https://my.home-assistant.io/redirect/config_flow_start/?domain=smartfan', label: 'Add the fan to Home Assistant', note: 'Opens the setup in your Home Assistant' }
+        ]
+      },
+      {
+        note: 'Use the fan’s **.local** name or its IP address. The fan refuses any other name, such as one your router invents (fan.lan), as a guard against malicious web pages.'
+      },
+      {
+        rows: [
+          ['“Nothing answered at that address”', 'The fan is off, on another network, or the name does not resolve from Home Assistant. Try the IP address.'],
+          ['“Firmware newer than this integration understands”', 'Update the integration in HACS.'],
+          ['Two sets of entities', 'The MQTT device is still there. Delete one of the two.']
+        ]
+      },
+      {
+        p: 'To remove it: **Settings › Devices & services › Smartfan › ⋮ › Delete**. The fan itself is untouched and carries on as before.'
+      },
+      { see: ['ha-choose', 'connect'] }
+    ]
+  },
+  {
     id: 'ha',
     section: 'setup',
-    title: 'Home Assistant and MQTT',
+    title: 'Home Assistant through MQTT',
     summary: 'Getting the fan into Home Assistant through a broker.',
     keywords: 'home assistant ha mqtt mosquitto broker add-on entities 1883 1884 websocket login account',
     go: ['settings-broker', 'settings-connection'],
     blocks: [
       {
-        p: 'A broker is optional. With one, the fan appears in Home Assistant by itself, with its readings, controls and thresholds as entities. Without one, the fan and this app still work fully.'
+        p: 'A broker is optional. With one, the fan appears in Home Assistant by itself, with its readings, controls and thresholds as entities. Without one, the fan and this app still work fully. (No broker? The Smartfan integration is the other way in.)'
       },
       {
         steps: [
@@ -532,7 +638,7 @@ export const TOPICS = [
       {
         note: 'Use a login from the add-on’s own list, not a Home Assistant user. The fan sends its password over your network unencrypted, and a Home Assistant user’s password also opens Home Assistant itself.'
       },
-      { see: ['connect'] }
+      { see: ['ha-choose', 'ha-integration', 'connect'] }
     ]
   },
   {
@@ -842,6 +948,7 @@ function haystack(t) {
     for (const s of b.steps ?? []) parts.push(s);
     for (const s of b.list ?? []) parts.push(s);
     for (const [a, c] of b.rows ?? []) parts.push(a, c);
+    for (const l of b.links ?? []) parts.push(l.label, l.note ?? '');
   }
   return parts.join(' ').replace(/\*\*/g, '').toLowerCase();
 }

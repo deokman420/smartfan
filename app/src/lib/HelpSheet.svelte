@@ -109,6 +109,21 @@
               </div>
             {/each}
           </dl>
+        {:else if b.links}
+          <!-- Out of the app, so a new tab: the app keeps its place and its
+               connection to the fan. noreferrer because the fan's address
+               is nobody else's business. -->
+          <div class="links">
+            {#each b.links as l (l.href)}
+              <a class="ext" href={l.href} target="_blank" rel="noopener noreferrer">
+                <span class="t-text">
+                  <span class="t-title">{l.label}</span>
+                  {#if l.note}<span class="t-sum">{l.note}</span>{/if}
+                </span>
+                <span class="chev" aria-hidden="true">↗</span>
+              </a>
+            {/each}
+          </div>
         {:else if b.see}
           <nav class="see" aria-label="Related topics">
             <p class="eyebrow">Related</p>
@@ -408,6 +423,29 @@
   }
   .go-arrow {
     font-weight: 400;
+  }
+  .links {
+    display: grid;
+    gap: 4px;
+  }
+  .ext {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    min-height: 44px;
+    border: 1px solid var(--accent-soft, var(--border));
+    border-radius: var(--radius);
+    background: var(--bg-card-2);
+    color: var(--text);
+    text-decoration: none;
+  }
+  .ext .t-title {
+    color: var(--accent);
+  }
+  .ext:hover {
+    background: var(--bg-card-hover);
   }
   .see {
     display: grid;

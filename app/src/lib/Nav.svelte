@@ -11,7 +11,11 @@
    */
   import { ICONS } from '$lib/icons.js';
 
-  let { items, current, onSelect, alert = null } = $props();
+  // `actions` are buttons that open something (Settings, Help) rather than
+  // switch section. They sit under the sections on desktop only: on phones
+  // the header already carries them, and a sixth and seventh tab would
+  // crowd the bottom strip.
+  let { items, current, onSelect, alert = null, actions = [] } = $props();
 </script>
 
 <nav aria-label="Sections">
@@ -30,6 +34,18 @@
       {/if}
     </button>
   {/each}
+  {#if actions.length}
+    <div class="actions">
+      {#each actions as a (a.id)}
+        <button type="button" onclick={a.onClick}>
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 16 16">{@html ICONS[a.icon]}</svg>
+          </span>
+          <span class="label">{a.label}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
 </nav>
 
 <style>
@@ -110,7 +126,19 @@
     box-shadow: 0 0 0 2px var(--bg-card);
   }
 
+  .actions {
+    display: none;
+  }
+
   @media (min-width: 960px) {
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
     nav {
       flex-direction: column;
       gap: 2px;
