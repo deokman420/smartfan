@@ -403,10 +403,118 @@ check("200/min in the dark is not enough", c.state == main.IDLE,
 
 c = build()
 tick(c, minutes(3))
-tick(c, 1, voc=30000 - 900)               # one step, then flat
+tick(c, 1, voc=30000 - 700)               # one step under VISIT_STEP_ON
 tick(c, minutes(3))
 check("a single step is not a sustained fall", c.state == main.IDLE,
       "%s" % c.state)
+
+print("\nthe step\n")
+
+check("the step threshold is the measured one",
+      (cfg.VISIT_STEP_ON, cfg.VISIT_STEP_S) == (800, 60))
+
+# 11-12 to 11-17: four light-off smells of 1047-1505 ticks in one minute,
+# each a drop and then a slow recovery, and the fan idle through every one.
+c = build()
+tick(c, minutes(3))
+tick(c, 1, voc=30000 - 1400)
+tick(c, 3, slope=5)                       # recovering, as the real ones did
+check("a 1400-tick step in the dark starts the fan",
+      c.state == main.RUN and c.odor_kind == "step",
+      "%s kind=%s" % (c.state, c.odor_kind))
+check("...against the air from before the step",
+      c.odor_ref == 30000, "%s" % c.odor_ref)
+
+c = build()
+tick(c, minutes(3))
+tick(c, minutes(1), slope=per_pass(470))  # the fastest steam seen, 11-11
+check("the fastest shower fall is not a step",
+      c.odor_ref is None, "fell %d" % (30000 - c.voc.voc))
+
+# Just after a boot the ring is empty, so the reading from 60 s ago does
+# not exist yet, and a count that started low must not read as a fall.
+c = build()
+c.vocring.clear()
+tick(c, 1, voc=30000 - 1400)
+tick(c, 5)
+check("no step before the ring reaches back VISIT_STEP_S",
+      c.odor_ref is None and c.state == main.IDLE, c.state)
+
+c = build()
+tick(c, minutes(3))
+c.voc.nox = 18000 + 600                   # NOx up and still rising: veto
+tick(c, minutes(3))
+check("the veto is on for this one", c._combustion() is True)
+tick(c, 1, voc=30000 - 1400)
+tick(c, 3)
+check("a step starts the fan past the combustion veto",
+      c.state == main.RUN and c.odor_kind == "step", c.state)
+tick(c, minutes(c.st.MIN_RUN_S / 60.0) + 5)
+check("...and the veto does not quietly end its hold",
+      c.state == main.RUN and not c._voc_quiet(),
+      "%s %r" % (c.state, c.state_reason))
+
+c = build()
+tick(c, minutes(3))
+c.voc.nox = 18000 + 600
+tick(c, minutes(3))
+tick(c, minutes(2) + 2, slope=per_pass(400))
+check("...while the backstop still answers to the veto",
+      c.state == main.IDLE and c.odor_ref is None, c.state)
+
+print("\n19 Nov: a smell late in a shower run\n")
+
+# The run starts on humidity and is still held by it, +5 %RH, when a smell
+# lands 12 minutes before the cap -- inside the post-steam window, with the
+# shower's NOx still above the veto and nudged up again by the smell.
+c = build()
+cap = c.st.MAX_RUN_S
+tick(c, minutes(3))
+c.rh = c.baseline + 20.0
+tick(c, 2)
+run_from = CLOCK[0]
+check("the shower starts the fan", c.state == main.RUN, c.state)
+c.rh = c.baseline + 5.0
+c.voc.nox = 18000 + 330
+tick(c, minutes(cap / 60.0 - 12))
+c.voc.nox = 18000 + 420
+tick(c, 1, voc=30000 - 1875)
+check("the smell opens a step episode mid-run",
+      c.odor_kind == "step", "kind=%s" % c.odor_kind)
+tick(c, minutes(14), slope=3)             # recovering, never to its reference
+check("the run outlives MAX_RUN_S while the late episode holds it",
+      c.state == main.RUN and c.fan_seconds() > cap,
+      "%s ran=%d cap=%d" % (c.state, c.fan_seconds(), cap))
+check("...and says it is the smell", "odor" in c.state_reason,
+      repr(c.state_reason))
+for _ in range(minutes(cap / 60.0)):
+    tick(c, 1, slope=3)
+    if c.state != main.RUN:
+        break
+ran_s = (CLOCK[0] - run_from) / 1000.0
+check("the episode's own cap ends it, and the run latches",
+      c.state == main.IDLE and c.maxed is True and c.odor_ref is None,
+      "%s maxed=%s ref=%s" % (c.state, c.maxed, c.odor_ref))
+check("...never past twice MAX_RUN_S", cap < ran_s <= 2 * cap,
+      "ran %d s, cap %d" % (ran_s, cap))
+
+# The same late smell, but it clears: the run ends on the room as usual.
+c = build()
+cap = c.st.MAX_RUN_S
+tick(c, minutes(3))
+c.rh = c.baseline + 20.0
+tick(c, 2)
+c.rh = c.baseline + 5.0
+tick(c, minutes(cap / 60.0 - 12))
+tick(c, 1, voc=30000 - 1875)
+tick(c, minutes(14))
+check("late episode still holding at cap + 2 min", c.state == main.RUN,
+      c.state)
+c.voc.voc = 30000 - 20                    # back to its reference
+tick(c, 2)
+check("once it clears, a run already past the cap latches",
+      c.state == main.IDLE and c.maxed is True,
+      "%s maxed=%s" % (c.state, c.maxed))
 
 c = build()
 tick(c, minutes(3))

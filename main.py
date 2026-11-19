@@ -1007,7 +1007,7 @@ class Controller:
         """
         if not getattr(self.st, "VISIT_ODOR", False):
             return self._voc_level_quiet()
-        if not self._voc_active() or self.odor_ref is None:
+        if self.odor_ref is None or not self._episode_active():
             return True
         raw = self.vocdet.raw
         if raw is None:
@@ -1101,8 +1101,10 @@ class Controller:
             elif ms_since(self.odor_since) / 1000.0 >= st.MAX_RUN_S:
                 self._end_odor("gave up after %d min" % (st.MAX_RUN_S // 60))
 
+        # _voc_usable, not _voc_active: a step may open an episode past the
+        # combustion veto, so the veto is asked inside _odor_found instead.
         if (self.odor_ref is None and getattr(st, "VISIT_ODOR", False)
-                and self._voc_active()):
+                and self._voc_usable()):
             found = self._odor_found(now, raw)
             if found is not None:
                 kind, ref = found
@@ -1122,10 +1124,17 @@ class Controller:
     def _odor_found(self, now, raw):
         """(kind, reference) if this sample starts an odor episode, else None.
 
-        The caller has already asked _voc_active(), so the combustion veto,
-        the NOx wait and an unarmed path all answer None before this runs.
+        The caller has already asked _voc_usable(). A step is judged first
+        and past every other gate (config.py, VISIT_STEP_ON, has why); the
+        visit and the backstop still answer None under the combustion veto
+        and the NOx wait.
         """
         st = self.st
+        step = self._odor_step(now, raw)
+        if step is not None:
+            return step
+        if not self._voc_active():
+            return None
         win = st.VISIT_RATE_S * 1000
         if self.visit_open:
             if self.visit_shower or self.visit_ref is None:
@@ -1154,6 +1163,53 @@ class Controller:
             return "backstop", start[1]
         return None
 
+    def _odor_step(self, now, raw):
+        """("step", reference) if the count fell VISIT_STEP_ON within
+        VISIT_STEP_S, else None. The reference is the reading from before
+        the fall. None until the ring reaches back that far, so a boot
+        cannot look like a step."""
+        bar = getattr(self.st, "VISIT_STEP_ON", 0)
+        if not bar:
+            return None
+        start = self.vocring.at(now, getattr(self.st, "VISIT_STEP_S", 60) * 1000)
+        if start is None or start[1] - raw < bar:
+            return None
+        return "step", start[1]
+
+    def _episode_active(self):
+        """_voc_active, as an open episode asks it.
+
+        A step episode answers to the sensor alone, not to the combustion
+        veto or the NOx wait: no flame makes that shape, and the veto it
+        would otherwise meet is usually a shower's NOx, which is still
+        decaying when the smell that follows it arrives. Without this the
+        episode would open and then be told, two minutes later when the
+        smell nudged NOx back up, that it had nothing to say.
+        """
+        if self.odor_kind == "step":
+            return self._voc_usable()
+        return self._voc_active()
+
+    def _odor_outlives_cap(self, ran):
+        """Does an episode that opened partway through this run hold it past
+        MAX_RUN_S?
+
+        Only when it opened before the run reached the cap, so a run can last
+        at most twice MAX_RUN_S: the episode ends itself MAX_RUN_S after it
+        opened. An episode that started the run is as old as the run and has
+        already ended by then, so an ordinary odor run caps exactly as before.
+
+        19 Nov: a shower run started 07:12, a smell arrived 08:30 with the
+        light off, and the run hit its 90-minute cap at 08:42 with the smell
+        still at +1163. The cap counts from when the shower started, so the
+        smell got twelve minutes.
+        """
+        if self.odor_ref is None or self.odor_since is None:
+            return False
+        if self._voc_quiet():
+            return False
+        return ms_since(self.odor_since) / 1000.0 > ran - self.st.MAX_RUN_S
+
     def _end_odor(self, why):
         if self.odor_ref is not None:
             print("odor: %s episode ended, %s" % (self.odor_kind, why))
@@ -1168,7 +1224,7 @@ class Controller:
                     and self.excess_voc >= self.st.VOC_RISE_ON):
                 return "odor +%d" % self.excess_voc
             return None
-        if self.odor_ref is None or not self._voc_active():
+        if self.odor_ref is None or not self._episode_active():
             return None
         return "odor %s +%d" % (self.odor_kind, self.odor_excess or 0)
 
@@ -1482,7 +1538,7 @@ class Controller:
                 and self.rpm >= cfg.MIN_RPM):
             self.fan_faults = 0
         self._refresh_run_reason(ran)
-        if ran >= self.st.MAX_RUN_S:
+        if ran >= self.st.MAX_RUN_S and not self._odor_outlives_cap(ran):
             # Latch. Without this the cap protects nothing: IDLE immediately
             # re-reads the same humidity, finds it still above RH_RISE_ON,
             # and starts another full-length run two seconds later -- for

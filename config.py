@@ -434,6 +434,26 @@ VISIT_SHOWER_DP = 1.0
 # the room with the light off, not the flat drifting; the real event's 60 s
 # rate was 894/min, cooking's 84.
 VISIT_BACKSTOP_RATE = 300
+# A step: a fall of VISIT_STEP_ON ticks or more within VISIT_STEP_S starts
+# an odor episode anywhere -- in a visit, in a shower, outside a visit, inside
+# the post-steam window and past the NOx veto. The backstop cannot see this
+# shape: the count drops in one or two samples and then RECOVERS, so it never
+# falls through both halves of VISIT_RATE_S. Every light-off smell 11-19 Nov
+# looked like that and none of them ran the fan, the 19 Nov one arriving 78
+# min into a shower run with the room still +4 %RH (blocked by the steam
+# window) and the shower's NOx still +334 (blocked by the veto):
+#
+#                          fall within 60 s   excess_rh
+#   light-off smells       1047 - 1900          -3 .. +4
+#   showers, steam alone     254 - 471          +6 .. +50
+#   anything else seen       <= 654              about 0
+#   gas hob (4 Nov)            73 /min
+#
+# 800 sits 1.7x above the fastest steam and 11x above the hob, which is why
+# a step is allowed past both of the gates that exist for those two.
+# 0 disables it.
+VISIT_STEP_ON   = 800
+VISIT_STEP_S    = 60
 # How much raw VOC history is kept in RAM for the two tests above. It must
 # cover VISIT_REF_S and VISIT_RATE_S; at 2 s samples this is 120 readings.
 VISIT_RING_S    = 240
