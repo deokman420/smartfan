@@ -195,8 +195,8 @@
         are past it — then come back here.
       </p>
       <p class="sub quiet">
-        There is no password on this API, so the button is what stands between a
-        guest on your wifi and a fan they can take off it.
+        The fan has no password, so the button hold is what stops anyone else on
+        your Wi-Fi from moving it to another network.
       </p>
     </div>
   {:else}
@@ -231,7 +231,7 @@
           {/each}
         </div>
       {:else}
-        <p class="sub">Nothing came back. The scan runs on the fan's own radio.</p>
+        <p class="sub">No networks found. The scan only sees what the fan's own radio can reach.</p>
       {/if}
     {/if}
 
@@ -244,9 +244,9 @@
     />
 
     <p class="sub">
-      The fan joins this network before it writes anything down. If it cannot, it
-      goes back to {status.ssid} and nothing is saved — so a typo costs a retry,
-      not a ladder.
+      The fan tests this network before saving it. If it cannot join, it goes
+      back to {status.ssid} and nothing is saved, so a typo just means trying
+      again.
     </p>
 
     <div class="sheet-actions">
@@ -288,9 +288,9 @@
 
   {#if !status?.open}
     <p class="sub quiet">
-      Behind the same button hold. This one cannot lock you out — the fan stays
-      on wifi and this page keeps working whatever happens — but these are the
-      credentials that reach Home Assistant.
+      Also needs the button hold. A mistake here cannot lock you out (the fan
+      stays on Wi-Fi and this page keeps working), but these credentials reach
+      Home Assistant.
     </p>
   {:else}
     <label for="b-host">Broker address</label>

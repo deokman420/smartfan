@@ -170,7 +170,7 @@
       // question the reader actually has: was the fan about to run.
       id: 'excess',
       title: 'Excess above baseline',
-      blurb: 'The number the control loop acts on, against its thresholds.',
+      blurb: 'The number the fan acts on, against its start and stop lines.',
       unit: '%',
       bands: F.fan,
       bandOn: 'Fan on',
@@ -206,7 +206,7 @@
       id: 'light',
       title: 'Light against its ambient',
       blurb:
-        'Occupancy is inferred from the room light — from the gap between the two lines, never from the height of the solid one. Daylight carries both together; the fixture opens a step between them.',
+        'The fan reacts to the gap between the two lines, not to how bright the room is. Daylight raises both together; switching the light on opens a gap.',
       unit: '%',
       bands: F.lit,
       bandOn: 'Lights on',
@@ -279,7 +279,7 @@
       id: 'odorExcess',
       title: 'Excess odor',
       blurb:
-        'The number the control loop acts on. While the start threshold reads 0 the sensor only watches — nothing here touches the fan.',
+        'The number the fan acts on. While the start threshold is 0 the sensor only watches and never starts the fan.',
       unit: 'ticks',
       bands: F.fan,
       bandOn: 'Fan on',
@@ -309,7 +309,7 @@
             id: 'noxCompare',
             title: 'Odor against NOx',
             blurb:
-              'Two pixels, opposite chemistry. Bathroom odor is reducing gases and moves the odor line alone; a gas flame makes NO₂ and moves both. The NOx line now acts as a veto rather than a trigger: past the combustion threshold the odor path stands down, so cooking in another room cannot start this fan. Humidity and the light are unaffected.',
+              'Bathroom odor moves the odor line alone; a gas flame makes NO₂ and moves both. Past the NOx threshold the fan ignores odor, so cooking in another room cannot start it. Humidity and light still work as usual.',
             unit: 'ticks',
             bands: F.fan,
             bandOn: 'Fan on',
@@ -551,13 +551,13 @@
     },
     {
       title: 'Light',
-      blurb: 'Daylight in this room reads higher than the bulb does, so the fixture is found by the jump it makes away from the learned ambient, never by a level. Light alone runs the fan for the last of these; after that the humidity has to justify it.',
+      blurb: 'Daylight can read brighter than the bulb, so the light is detected by the jump it makes above the learned ambient, not by its level. Light alone runs the fan for the light-only run; after that humidity has to justify it.',
       keys: ['LIGHT_STEP_ON', 'LIGHT_RISE_ON', 'LIGHT_RISE_OFF', 'LIGHT_ONLY_MAX_S']
     },
     {
       title: 'Odor',
       blurb:
-        'Measured in sensor ticks away from the room’s learned clean-air level, not in any unit of smell — what matters is the size of the deviation. A real event in this room reads around a hundred; quiet air wanders under forty. Set the start threshold to zero to watch the sensor without ever letting it start the fan. The last of these reads the second pixel instead: a gas flame makes NO₂ and a bathroom does not, so a large NOx rise means the smell is cooking somewhere else and the fan sits it out.',
+        'Measured in sensor ticks away from the room’s learned clean-air level. A real event typically reads around a hundred; quiet air stays under forty. Set Start at to zero to watch odor without letting it start the fan. Ignore if burning uses NOx: a gas flame makes it and a bathroom does not, so a large NOx rise means the smell is cooking somewhere else and the fan sits it out.',
       keys: ['VOC_RISE_ON', 'VOC_FALL_OFF', 'VOC_NOX_VETO']
     },
     {
@@ -689,7 +689,7 @@
         {/each}
       </div>
       <p class="sub">
-        Force on and Force off override the humidity logic until set back to
+        Force on and Force off override automatic control until set back to
         Auto.
       </p>
     </div>
@@ -735,6 +735,10 @@
         current={view}
         onSelect={(id) => (view = id)}
         alert={t.fault ? 'status' : null}
+        actions={[
+          { id: 'settings', icon: 'gear', label: 'Settings', onClick: openSettings },
+          { id: 'help', icon: 'help', label: 'Help', onClick: () => openHelp() }
+        ]}
       />
     </div>
   {/if}
@@ -1165,7 +1169,7 @@
                   <div>
                     <span class="k">Sensor</span>
                     <span class="v">{t.voc_ok ? 'Working' : 'Sensor failed'}</span>
-                    <span class="sub">gas resistance, two pixels</span>
+                    <span class="sub">measures VOC and NOx</span>
                   </div>
                 </div>
               {/if}
@@ -1226,9 +1230,8 @@
           <div class="lede">
             <h2>Thresholds</h2>
             <p class="hint">
-              The device validates every value against its own ranges and rejects
-              anything outside them. A change only counts once it comes back in
-              the next reading.
+              The fan rejects anything outside its allowed range. A change takes
+              effect once the next reading shows it.
             </p>
           </div>
           <div class="tune-groups">
@@ -1312,9 +1315,8 @@
               </button>
             </div>
             <p class="sub">
-              Puts every value on this page back to the firmware's own. The
-              connection, the units and the color scheme are this browser's and
-              are not touched.
+              Puts every value on this page back to its default. Connection and
+              appearance settings are not affected.
             </p>
           </section>
         {/if}
@@ -1323,12 +1325,10 @@
           <h2>Charts</h2>
           <p class="hint">
             {#if $mode === 'device'}
-              A week, kept by the fan itself and filled in when this app
-              connects — so a phone opening it for the first time still sees
-              what happened.
+              The last week, stored on the fan itself.
             {:else}
-              Collected while this app is open, and kept in this browser. A
-              break in the line is a period nobody recorded.
+              Recorded while this app is open and kept in this browser. A gap
+              in a line is a time the app was closed.
             {/if}
             Tap a chart, then drag across it to read any moment.
           </p>
@@ -1674,9 +1674,8 @@
 
       <h3 class="section">Appearance</h3>
       <p class="sub">
-        System follows the phone's own light or dark setting, and keeps following
-        it. Applies straight away and stays in this browser: the fan is not told
-        and does not care, so another phone can be on a different one.
+        Applies straight away and is saved in this browser only. System follows
+        the phone's own light or dark setting.
       </p>
 
       <p class="setting-label">Temperature</p>
@@ -1961,6 +1960,12 @@
       width: 100%;
       border-radius: 10px;
       padding: 9px 12px;
+    }
+    /* Once the section nav is up, Settings and Help move into it, under
+       the sections. Before that (not yet connected) the nav is absent and
+       the rail keeps them, because Settings is how you get connected. */
+    .app:has(.nav-slot) header button.icon {
+      display: none;
     }
     .nav-slot {
       grid-area: nav;
