@@ -16,6 +16,7 @@ node   tests/test_statusled.mjs      # host only, the tab icon's LED code
 python tests/test_theme.py           # host only, light / dark / system
 python tests/test_units.py           # host only, celsius / fahrenheit
 node   tests/test_dryrate.mjs        # host only, no browser at all
+node   tests/test_tabswipe.mjs      # host only, swiping between sections
 python tests/test_app.py             # the app, needs broker + device
 python tests/test_improv.py          # host only, no board needed
 python tests/test_visit.py           # host only, odor judged per visit

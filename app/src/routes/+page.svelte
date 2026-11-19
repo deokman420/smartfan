@@ -48,6 +48,7 @@
   import { faultTopic, TUNE_TOPIC, PLACES, BY_ID } from '$lib/help.js';
   import { tick } from 'svelte';
   import { sheetDrag } from '$lib/sheetdrag.js';
+  import { tabSwipe, neighbor } from '$lib/tabswipe.js';
   import { onMount } from 'svelte';
   import { updated } from '$app/state';
   import { version as loadedBuild } from '$app/environment';
@@ -139,6 +140,15 @@
     { id: 'charts', label: 'Charts', icon: 'chart' },
     { id: 'health', label: 'Health', icon: 'pulse' }
   ];
+
+  // Swipe left for the next section, right for the previous, in tab-strip
+  // order. Phones only; see tabswipe.js.
+  function swipeView(dir) {
+    const next = neighbor(VIEWS.map((v) => v.id), view, dir);
+    if (!next) return false;
+    view = next;
+    return true;
+  }
 
   // Chart definitions, shared by the grid and the detail view so the small
   // card and the expanded one can never drift into showing different
@@ -743,7 +753,13 @@
     </div>
   {/if}
 
-  <div class="main-col">
+  <div
+    class="main-col"
+    use:tabSwipe={{
+      enabled: !!t && !detail && !showSettings && !showHelp,
+      onSwipe: swipeView
+    }}
+  >
   {#if $linkError && $authFailed}
     <div class="banner bad">
       <p>{$linkError}</p>
@@ -1771,6 +1787,9 @@
     margin: 0;
     padding: 0;
     min-height: 100dvh;
+    /* clip, not hidden: the section slide-in must not open a sideways
+       scroll, and clip makes no scroll container, so sticky still works. */
+    overflow-x: clip;
   }
 
   /* Top chrome, the mirror of .nav-slot at the other edge. Sticky rather
@@ -1917,6 +1936,33 @@
     backdrop-filter: blur(16px);
     border-top: 1px solid var(--border);
     padding: 4px 6px calc(6px + env(safe-area-inset-bottom));
+  }
+
+  /* The new section slides in from the side it came from, so a swipe
+     reads as moving along the tab strip. Added by tabswipe.js. */
+  .main-col:global(.swipe-next) {
+    animation: swipe-in-next 0.2s ease-out;
+  }
+  .main-col:global(.swipe-prev) {
+    animation: swipe-in-prev 0.2s ease-out;
+  }
+  @keyframes swipe-in-next {
+    from {
+      opacity: 0.4;
+      transform: translateX(28px);
+    }
+  }
+  @keyframes swipe-in-prev {
+    from {
+      opacity: 0.4;
+      transform: translateX(-28px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .main-col:global(.swipe-next),
+    .main-col:global(.swipe-prev) {
+      animation: none;
+    }
   }
 
   @media (min-width: 960px) {
