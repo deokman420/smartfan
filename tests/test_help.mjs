@@ -173,6 +173,11 @@ says('fix-fault-stall', `After ${cfg('MAX_FAN_FAULTS')} stalls`);
 says('fix-fault-stuck', `more than ${cfg('STUCK_S')} seconds`);
 says('fix-cant-connect', `for ${minutes(cfg('NET_STALL_S'))}`);
 says('tune-odor', '0 means odor never starts the fan');
+says('tune-odor', 'the number itself is not a start threshold');
+says('tune-odor', 'A visit starts when the bathroom light comes on');
+says('fix-odor', 'Odor triggering');
+says('readings', 'new smell during a visit');
+says('charts', 'does not draw a start or stop line');
 check('VOC_RISE_ON really ships as 0', cfg('VOC_RISE_ON') === 0);
 
 // --- search ---------------------------------------------------------------

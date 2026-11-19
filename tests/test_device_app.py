@@ -209,6 +209,18 @@ def main():
                   wait_for(lambda: "BOOST" in page.locator(".wrap").inner_text(),
                            15))
 
+            # Help is a sheet on this app, not a sixth tab.
+            page.get_by_role("button", name="Help", exact=True).first.click()
+            help_dlg = page.get_by_role("dialog", name="Help")
+            check("the help sheet is reachable",
+                  help_dlg.is_visible())
+            check("help lists topics you can open",
+                  "Odor thresholds" in help_dlg.inner_text()
+                  or "Getting started" in help_dlg.inner_text()
+                  or "What Smartfan does" in help_dlg.inner_text())
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(300)
+
             # A parameter write, which the device validates and may refuse.
             page.get_by_role("button", name="Charts").first.click()
             page.wait_for_timeout(1500)
@@ -222,6 +234,38 @@ def main():
                   "%d rows backfilled of %d seeded" % (page.evaluate(
                       "JSON.parse(localStorage.getItem('smartfan.history')"
                       " || '[]').length"), seeded))
+
+            # The chart detail sheet must have the same grabber Settings
+            # uses, or sheetDrag is inert on a phone.
+            page.get_by_role("button", name="Humidity against its baseline — open detail").first.click()
+            page.get_by_role("dialog").wait_for(state="visible", timeout=8000)
+            handle = page.locator("[data-sheet-handle]").first
+            check("the chart sheet has a drag grabber on a phone",
+                  handle.count() > 0 and handle.evaluate(
+                      "el => getComputedStyle(el).display") != "none")
+            page.evaluate(
+                """() => {
+                  const el = document.querySelector('[data-sheet-handle]');
+                  const r = el.getBoundingClientRect();
+                  const x = r.left + r.width / 2;
+                  const y = r.top + r.height / 2;
+                  const fire = (type, y2, buttons) => el.dispatchEvent(
+                    new PointerEvent(type, {
+                      bubbles: true, cancelable: true, composed: true,
+                      pointerId: 1, pointerType: 'mouse', isPrimary: true,
+                      clientX: x, clientY: y2, buttons, button: 0, view: window
+                    }));
+                  fire('pointerdown', y, 1);
+                  for (let i = 1; i <= 12; i++) fire('pointermove', y + 140 * i / 12, 1);
+                  fire('pointerup', y + 140, 0);
+                }"""
+            )
+            page.wait_for_timeout(400)
+            still = page.get_by_role("dialog").count() and page.get_by_role("dialog").first.is_visible()
+            check("dragging the chart grabber closes the sheet", not still)
+            if still:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(200)
 
             page.screenshot(path=os.path.join(SHOTS, "device-mode-charts.png"),
                             full_page=True)

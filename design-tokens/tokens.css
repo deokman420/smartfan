@@ -139,9 +139,11 @@
   --warn-edge:   rgba(245, 158, 11, 0.35);
 
   /* Hairline lift for a pill sitting on the page backdrop, and the
-     scrim behind the settings sheet. */
+     scrim behind the settings and chart sheets. 0.92, not 0.72: a
+     missing backdrop-filter must still hide the page, and Firefox
+     and WebKit often advertise the filter without painting it. */
   --pill-fill: rgba(255, 255, 255, 0.02);
-  --scrim:     rgba(5, 7, 11, 0.72);
+  --scrim:     rgba(5, 7, 11, 0.92);
 
   /* The teal bloom in the top-left corner of the hero card. Lighter than
      --accent-dim: it has to sit under the gauge without tinting it. */
@@ -274,7 +276,7 @@
      which on white reads as dirt rather than depth. */
   --shadow:    0 4px 14px rgba(15, 23, 42, 0.1);
   --pill-fill: rgba(15, 23, 42, 0.03);
-  --scrim:     rgba(15, 23, 42, 0.45);
+  --scrim:     rgba(15, 23, 42, 0.72);
 
   /* The hero bloom keeps the BRIGHT brand teal: it is a light source, and
      the walked-down --accent reads as a stain over white. */

@@ -18,6 +18,7 @@
   import { mode } from '$lib/link.js';
   import { F, segments, stats, GAP_MS, offline, learning } from '$lib/history.js';
   import { clock as clockPref, fmtClock } from '$lib/units.js';
+  import { peakLabLayout } from '$lib/peaklab.js';
 
   let {
     rows = [],
@@ -310,11 +311,20 @@
     if (!best) return null;
     const st = stats(data, field);
     if (!st || st.max - st.min < (unit === 'rpm' ? 80 : 1.5)) return null;
+    const left = x(best.t) / 10;
+    const top = yPct(best.v);
+    const place = peakLabLayout(
+      left,
+      top,
+      scale.ticks.map((t) => yPct(t))
+    );
     return {
       v: best.v,
-      left: x(best.t) / 10,
-      top: yPct(best.v),
-      color: series[0].color
+      left,
+      top,
+      color: series[0].color,
+      xAlign: place.xAlign,
+      below: place.below
     };
   });
 
@@ -615,7 +625,13 @@
 
     {#if peak}
       <i class="end peak" style="left:{peak.left}%; top:{peak.top}%; background:{peak.color}"></i>
-      <span class="peaklab" style="left:{peak.left}%; top:{peak.top}%" class:below={peak.top < 16}>
+      <span
+        class="peaklab"
+        class:below={peak.below}
+        class:align-end={peak.xAlign === 'end'}
+        class:align-start={peak.xAlign === 'start'}
+        style="left:{peak.left}%; top:{peak.top}%"
+      >
         {fmtVal(peak.v)}
       </span>
     {/if}
@@ -844,6 +860,18 @@
   }
   .peaklab.below {
     transform: translate(-50%, 8px);
+  }
+  .peaklab.align-end {
+    transform: translate(8px, -16px);
+  }
+  .peaklab.align-start {
+    transform: translate(calc(-100% - 8px), -16px);
+  }
+  .peaklab.below.align-end {
+    transform: translate(8px, 8px);
+  }
+  .peaklab.below.align-start {
+    transform: translate(calc(-100% - 8px), 8px);
   }
 
   .reflab {

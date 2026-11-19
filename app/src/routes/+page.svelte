@@ -289,20 +289,13 @@
       id: 'odorExcess',
       title: 'Excess odor',
       blurb:
-        'The number the fan acts on. While the start threshold is 0 the sensor only watches and never starts the fan.',
+        'How far the raw reading is below its long-term baseline. The fan starts on a new smell during a visit, not when this line crosses a mark — see Help. If odor triggering on Thresholds is 0, nothing here starts the fan.',
       unit: 'ticks',
       bands: F.fan,
       bandOn: 'Fan on',
       bandOff: 'Fan off',
       bandStory: 'The fan ran',
       bandIdle: 'The fan stayed off',
-      refs: () =>
-        Number(cfg.VOC_RISE_ON)
-          ? [
-              { value: Number(cfg.VOC_RISE_ON), label: 'starts' },
-              { value: Number(cfg.VOC_FALL_OFF), label: 'stops' }
-            ]
-          : [],
       series: [{ field: F.vocExc, label: 'Excess', color: 'var(--green)', fill: true }]
     },
     // The discriminator, and the only chart here that answers a question
@@ -544,8 +537,20 @@
     { key: 'LIGHT_RISE_ON', label: 'Rise to start', unit: '', step: 500, hint: 'above ambient' },
     { key: 'LIGHT_RISE_OFF', label: 'Rise to stop', unit: '', step: 500, hint: 'above ambient' },
     { key: 'LIGHT_ONLY_MAX_S', label: 'Light-only run', unit: 's', step: 60, hint: 'then humidity only' },
-    { key: 'VOC_RISE_ON', label: 'Start at', unit: '', step: 10, hint: 'ticks below baseline' },
-    { key: 'VOC_FALL_OFF', label: 'Stop below', unit: '', step: 10, hint: 'ticks below baseline' },
+    {
+      key: 'VOC_RISE_ON',
+      label: 'Odor triggering',
+      unit: '',
+      step: 10,
+      hint: '0 watches only. Any other value lets a new smell start the fan — the number itself is not a start threshold'
+    },
+    {
+      key: 'VOC_FALL_OFF',
+      label: 'Stop below',
+      unit: '',
+      step: 10,
+      hint: 'ticks below the visit’s starting smell, then an odor run may end'
+    },
     { key: 'VOC_NOX_VETO', label: 'Ignore if burning', unit: '', step: 25, hint: 'ticks of NOx rise' },
     { key: 'MIN_RUN_S', label: 'Minimum run', unit: 's', step: 30, hint: 'once started' },
     { key: 'MAX_RUN_S', label: 'Maximum run', unit: 's', step: 60, hint: 'then latches off' },
@@ -567,7 +572,7 @@
     {
       title: 'Odor',
       blurb:
-        'Measured in sensor ticks away from the room’s learned clean-air level. A real event typically reads around a hundred; quiet air stays under forty. Set Start at to zero to watch odor without letting it start the fan. Ignore if burning uses NOx: a gas flame makes it and a bathroom does not, so a large NOx rise means the smell is cooking somewhere else and the fan sits it out.',
+        'The fan starts on a new smell after the light comes on, not when the long-term excess crosses a line — Help explains the visit rule. Odor triggering at 0 means the sensor only watches and never starts the fan; any other value turns that rule on, and the number itself is not a start threshold. Stop below is how close the air must get back to the visit’s starting smell before an odor run may end. Ignore if burning uses NOx: a gas flame makes it and a bathroom does not, so a large NOx rise means the smell is cooking somewhere else and the fan sits it out.',
       keys: ['VOC_RISE_ON', 'VOC_FALL_OFF', 'VOC_NOX_VETO']
     },
     {
@@ -965,7 +970,10 @@
                   <span class="k">Odor</span>
                   {#if t.voc_exc != null}
                     <span
-                      class="fact-v {vocRiseOn && t.voc_exc >= vocRiseOn
+                      class="fact-v {state === 'RUN' &&
+                      String(t.why || '')
+                        .toLowerCase()
+                        .includes('odor')
                         ? 'tone-warn'
                         : ''}"
                     >
@@ -1153,11 +1161,21 @@
                       {t.voc_exc == null ? '—' : int(t.voc_exc)}
                     </span>
                     <span class="sub">
-                      {t.voc_exc == null
-                        ? 'no baseline to judge against yet'
-                        : vocRiseOn
-                          ? `fan starts at ${int(vocRiseOn)}`
-                          : 'watching only — never starts the fan'}
+                      {#if t.voc_exc == null}
+                        no baseline to judge against yet
+                      {:else if !vocRiseOn}
+                        watching only — odor will not start the fan
+                      {:else}
+                        <button
+                          type="button"
+                          class="help-text"
+                          aria-label="Help: Odor"
+                          onclick={() => openHelp('tune-odor')}
+                        >
+                          Fan runs on a new smell after the light comes on — see
+                          Help
+                        </button>
+                      {/if}
                     </span>
                   </div>
                   <div>
@@ -1545,6 +1563,9 @@
       aria-label={detailChart.title}
       use:sheetDrag={() => (detail = null)}
     >
+      <!-- Same grabber Settings uses. sheetDrag is inert without it, and
+           the existing 560px rule hides it when this is a centered dialog. -->
+      <div class="grabber" data-sheet-handle aria-hidden="true"></div>
       <div class="detail-head">
         <div>
           <h3>{detailChart.title}</h3>
@@ -1812,16 +1833,15 @@
        the island and the brand -- the "room at the top". A few px past the
        inset clears the island; 16px stays the floor where the inset is 0. */
     padding: max(16px, calc(env(safe-area-inset-top) + 4px)) 18px 6px;
-    /* Solid under the status bar, glass below it. At 92% with the blur,
-       whatever scrolled under the clock and the island showed through as a
-       frosted smear, and WebKit softens a blurred element's top edge on top
-       of that -- "the gap looks blurry". The strip is the inset's height,
-       so it is zero-height (and this is plain glass) without one. */
+    /* Solid under the status bar and everywhere else. 92% glass still
+       left Help text readable in Firefox and WebKit, which advertise
+       backdrop-filter and then do not paint the blur. A solid --bg-card
+       is the only reliable fallback; the @supports blur below is a
+       no-op on an opaque background and does not hurt Chromium. */
     background:
       linear-gradient(var(--bg-card), var(--bg-card)) top / 100%
         env(safe-area-inset-top, 0px) no-repeat,
-      color-mix(in srgb, var(--bg-card) 92%, transparent);
-    backdrop-filter: blur(16px);
+      var(--bg-card);
     border-bottom: 1px solid var(--border);
     max-width: 760px;
     margin: 0 auto;
@@ -1932,10 +1952,23 @@
     right: 0;
     bottom: 0;
     z-index: 8;
-    background: color-mix(in srgb, var(--bg-card) 92%, transparent);
-    backdrop-filter: blur(16px);
+    background: var(--bg-card);
     border-top: 1px solid var(--border);
     padding: 4px 6px calc(6px + env(safe-area-inset-bottom));
+  }
+
+  /* Apply the frost only where the engine claims it. The backgrounds
+     above stay solid either way, so a lying @supports cannot make the
+     page readable through the chrome. */
+  @supports ((-webkit-backdrop-filter: blur(16px)) or (backdrop-filter: blur(16px))) {
+    header {
+      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(16px);
+    }
+    .nav-slot {
+      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(16px);
+    }
   }
 
   /* The new section slides in from the side it came from, so a swipe
@@ -2019,6 +2052,7 @@
       border-top: 0;
       border-right: 1px solid var(--border);
       background: var(--bg-card);
+      -webkit-backdrop-filter: none;
       backdrop-filter: none;
       padding: 6px 12px 28px;
       overflow: auto;
@@ -3001,9 +3035,15 @@
   }
   /* Help destinations. scroll-margin keeps a section from landing under
      the sticky header; the flash is global because the ids also live in
-     WifiPanel, and the class is added from script, not from markup. */
+     WifiPanel, and the class is added from script, not from markup.
+     Match the header's real height: pad (16px, or the safe-area inset
+     plus 4px) + 42px mark + 6px bottom pad + a gap. 96px plus the
+     full inset double-counted the pad on a notched phone and still
+     left a topic flush on a 390px phone when the constant was smaller. */
   :global([id^='place-']) {
-    scroll-margin-top: calc(96px + env(safe-area-inset-top));
+    scroll-margin-top: calc(
+      max(16px, env(safe-area-inset-top, 0px) + 4px) + 42px + 6px + 20px
+    );
   }
   /* Inside a sheet there is no sticky header to clear. */
   :global(.sheet [id^='place-']) {
@@ -3115,8 +3155,11 @@
   .scrim {
     position: fixed;
     inset: 0;
+    /* --scrim itself is opaque enough that a missing blur cannot leave
+       the page readable. The prefixes still apply a quiet frost in
+       Chromium; @supports is not used to lower the alpha, because
+       Firefox and WebKit report support and then skip the blur. */
     background: var(--scrim);
-    backdrop-filter: blur(6px);
     border: 0;
     z-index: 30;
     /* It is a <button>, so these undo the parts of being one that a backdrop
@@ -3126,6 +3169,12 @@
     cursor: pointer;
     padding: 0;
     -webkit-tap-highlight-color: transparent;
+  }
+  @supports ((-webkit-backdrop-filter: blur(6px)) or (backdrop-filter: blur(6px))) {
+    .scrim {
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+    }
   }
   .scrim:focus {
     outline: none;

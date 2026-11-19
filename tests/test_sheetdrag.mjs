@@ -106,7 +106,8 @@ function fakeSheet({ handleDisplay = 'block', scrollTop = 0 } = {}) {
     querySelector: (sel) => (sel === '[data-sheet-handle]' ? handle : null),
     addEventListener: (t, fn) => ((listeners[t] = fn), undefined),
     removeEventListener: (t) => (delete listeners[t], undefined),
-    setPointerCapture() {},
+    captures: 0,
+    setPointerCapture() { this.captures += 1; },
     releasePointerCapture() {}
   };
   return { node, listeners, handle };
@@ -213,6 +214,19 @@ function drag(listeners, { from = 0, to = 120, dt = 300, pointerType = 'touch',
   sheetDrag(node, () => (closed += 1));
   drag(listeners, { pointerType: 'mouse', onHandle: true });
   check('a mouse drag ON the handle is', closed === 1);
+  check('a handle drag captures the pointer on down',
+    node.captures >= 1, `captures=${node.captures}`);
+}
+
+{
+  let closed = 0;
+  const { node, listeners } = fakeSheet({ handleDisplay: 'block' });
+  // A chart sheet without a grabber used to attach sheetDrag and then
+  // do nothing: enabled() bails when querySelector finds no handle.
+  node.querySelector = () => null;
+  sheetDrag(node, () => (closed += 1));
+  drag(listeners, { pointerType: 'mouse', onHandle: true });
+  check('a sheet with no grabber does not drag-dismiss', closed === 0);
 }
 
 {

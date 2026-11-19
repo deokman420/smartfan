@@ -133,6 +133,16 @@ export function sheetDrag(node, onDismiss) {
     y0 = e.clientY;
     t0 = e.timeStamp;
     moved = false;
+    // Capture now when the gesture started on the grabber, so a mouse
+    // that leaves the 20px pill still delivers move and up. Delayed
+    // capture stays on the body-touch path, so a tap can still scroll.
+    if (onHandle) {
+      try {
+        node.setPointerCapture(id);
+      } catch {
+        /* capture is an optimization, not a requirement */
+      }
+    }
   }
 
   function move(e) {
@@ -167,7 +177,10 @@ export function sheetDrag(node, onDismiss) {
   }
 
   node.addEventListener('pointerdown', down);
-  node.addEventListener('pointermove', move);
+  // Firefox will not honour preventDefault on a passive listener, and
+  // a default-passive move can let the sheet's own scroll steal the
+  // gesture. The handle also has touch-action: none; this is the belt.
+  node.addEventListener('pointermove', move, { passive: false });
   node.addEventListener('pointerup', up);
   node.addEventListener('pointercancel', cancel);
 

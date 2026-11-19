@@ -283,7 +283,7 @@ export const TOPICS = [
           ['Temperature', 'The room temperature, from the same sensor.'],
           ['Dew point', 'The temperature at which moisture would condense on a surface. Cold walls below it are where mildew starts.'],
           ['Light', 'A raw brightness reading. The fan looks for the jump a light switch makes, not for a level, so daylight does not fool it.'],
-          ['Odor', 'How far the air has moved from its clean level, in sensor ticks. Quiet air wanders under about 40; a real event reads around 100.'],
+          ['Odor', 'How far the air has moved from its clean level, in sensor ticks. Quiet air wanders under about 40; a real event reads around 100. The fan does not start when this number crosses a line — it starts on a new smell during a visit. See Odor thresholds.'],
           ['NOx', 'A second gas reading. A gas flame makes NOx and a bathroom does not, so a big NOx rise means the smell is cooking somewhere else.'],
           ['Fan speed', 'Revolutions per minute while the fan runs. This is how the controller knows the fan is really turning.']
         ]
@@ -307,6 +307,10 @@ export const TOPICS = [
       },
       {
         p: 'Tap a chart to open it large. Gaps are times the fan was off or unreachable.'
+      },
+      {
+        p: 'The Excess odor chart is how far the raw reading is below its long-term baseline. It does not draw a start or stop line: the fan starts on a new smell during a visit, and it stops against that visit’s starting smell, not against this long-term excess.'
+
       }
     ]
   },
@@ -373,24 +377,27 @@ export const TOPICS = [
     section: 'tune',
     title: 'Odor thresholds',
     summary: 'Letting the air-quality sensor run the fan.',
-    keywords: 'odor smell voc nox veto threshold air quality sensor gas',
+    keywords: 'odor smell voc nox veto threshold air quality sensor gas visit triggering',
     go: ['tune-odor', 'readings'],
     blocks: [
       {
         p: 'Odor is measured in sensor ticks away from the room’s clean-air level. What matters is the size of the change, not an absolute smell scale. Quiet air wanders under about 40 ticks; a real event in a bathroom reads around 100.'
       },
       {
+        p: 'The fan does not start when the long-term excess crosses a line. A visit starts when the bathroom light comes on; the fan remembers how the air smelled just before that, and it runs if a new smell appears during the visit (and for a short time after the light goes out). If nobody is visiting, only a very fast drop can start it, so a slow drift in the house does not keep it on.'
+      },
+      {
         rows: [
-          ['Start at', 'Ticks of change that start the fan. **0 means odor never starts the fan**, which is the default, so you can watch the sensor before trusting it.'],
-          ['Stop below', 'The air counts as clear again once the change is back under this.'],
+          ['Odor triggering', '**0 means odor never starts the fan**, which is the default, so you can watch the sensor before trusting it. Any other value turns the visit rule on — the number itself is not a start threshold.'],
+          ['Stop below', 'Once an odor run has started, the air counts as clear again once it is back this close to the visit’s starting smell.'],
           ['Ignore if burning', 'If the NOx reading rises by this much, the smell is taken to be cooking or a gas flame elsewhere, and the fan sits it out.']
         ]
       },
       {
         steps: [
-          'Leave **Start at** on 0 for a few days and watch Odor on the Readings screen.',
-          'Note what quiet air reads, and what a real event reads.',
-          'Set **Start at** between the two (this project’s own bathroom uses 70), and **Stop below** a little above what quiet air reads.'
+          'Leave **Odor triggering** on 0 for a few days and watch Odor on the Readings screen.',
+          'Note what quiet air reads, and what a real event reads. That context is useful, but it is not a number you set as a start line.',
+          'When you are ready to let odor start the fan, set **Odor triggering** to any non-zero value, and **Stop below** a little above what quiet air reads.'
         ]
       },
       {
@@ -858,8 +865,8 @@ export const TOPICS = [
         list: [
           'Cleaning products, perfume and air freshener all register as odor. That is the sensor working.',
           'Cooking elsewhere in the house can drift in. Lowering **Ignore if burning** makes the fan sit out more of it.',
-          'If quiet air reads well above the start line, the clean-air level is off. Relearn the baseline with the room aired out.',
-          'To stop odor running the fan entirely, set its **Start at** to 0.'
+          'If quiet air is often treated as a new smell, the clean-air level may be off. Relearn the baseline with the room aired out.',
+          'To stop odor running the fan entirely, set **Odor triggering** to 0.'
         ]
       },
       { see: ['tune-odor', 'relearn'] }
