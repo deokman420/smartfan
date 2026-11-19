@@ -53,6 +53,14 @@
   box-sizing: border-box;
 }
 
+/* A test- and geometry-friendly alias for the top safe area. Real iOS
+   sets env(safe-area-inset-top); Playwright does not, so a check can
+   set --safe-area-top (59px for a Dynamic Island phone) and exercise
+   the same padding. Unset, the max() is just the env value. */
+:root {
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-top, 0px));
+}
+
 html {
   /* color-scheme is not set here any more: tokens.css declares it per scheme,
      so form controls, scrollbars and the canvas the browser paints behind the
@@ -80,6 +88,27 @@ body {
      Left and right stay here: no fixed chrome owns the side edges, and
      portrait-primary in the manifest keeps them 0 in practice anyway. */
   padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+
+/* Phone only. A fixed --bg-card plate behind the iOS status bar, so a
+   rubber-band overscroll cannot flash the page backdrop through that
+   band, and so the system scroll-edge blur (which paints over whatever
+   sits in the top safe area) has a flat header-coloured surface to
+   work on instead of the BATHROOM eyebrow. Height is 0 when the inset
+   is 0, so desktop and Playwright-without-injection are untouched.
+   819px is the project's phone/iPad split (390 vs 820). */
+@media (max-width: 819px) {
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--safe-top);
+    background: var(--bg-card);
+    pointer-events: none;
+    z-index: 10;
+  }
 }
 
 /* The fan is running, set by lib/appicon.js alongside the theme-color it

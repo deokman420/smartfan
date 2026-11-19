@@ -3,11 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0c0f16" />
+  <!-- #141820 is --bar / --bg-card, not --bg: Safari tints the status bar
+       from this, and it has to match the sticky header or iOS's scroll-edge
+       effect fades the type underneath. appicon.js rewrites it at runtime
+       from the token, including the light scheme and the fan-on tint. -->
+  <meta name="theme-color" content="#141820" />
   <meta name="description" content="Local-first control and monitoring for the Smartfan humidity-driven extractor." />
   <link rel="icon" href="%sveltekit.assets%/icon.svg" />
   <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <!-- black-translucent, not black or default. black would give an opaque
+       black bar that does not take theme-color and would drop the fan-on
+       tint that [data-fan='on'] paints through this overlay; default can
+       paint a light bar on a dark app. The type is kept out of iOS's
+       blur band by the header's safe-area padding, not by changing the
+       bar style. -->
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Smartfan" />
 

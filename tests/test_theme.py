@@ -106,6 +106,7 @@ def token(block_selector, name):
 
 DARK_BG = token(":root", "--bg")
 LIGHT_BG = token(":root[data-theme='light']", "--bg")
+LIGHT_BAR = token(":root[data-theme='light']", "--bar")
 
 
 def rgb(hex_):
@@ -217,7 +218,7 @@ with sync_playwright() as pw:
     check("choosing Light applies immediately", page.evaluate(SCHEME) == "light")
     check("choosing Light persists immediately", page.evaluate(SAVED) == "light")
     check("the status bar follows the scheme",
-          page.evaluate(BAR) == LIGHT_BG, page.evaluate(BAR))
+          page.evaluate(BAR) == LIGHT_BAR, page.evaluate(BAR))
     check("the chosen option is marked for a screen reader",
           page.locator(".modes.three button[aria-checked=true]").inner_text().strip() == "Light")
 

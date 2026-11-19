@@ -156,7 +156,7 @@ with sync_playwright() as pw:
 
     idle = page.evaluate(PROBE)
     check("starts on the shipped icon", idle["icon"].endswith("icon.svg"), idle["icon"])
-    check("starts on the shipped theme-color", idle["theme"] == "#0c0f16", idle["theme"])
+    check("starts on the shipped theme-color", idle["theme"] == "#141820", idle["theme"])
     check("no data-fan while idle", idle["fan"] is None)
 
     page.evaluate("window.__set(true)")
@@ -167,7 +167,7 @@ with sync_playwright() as pw:
     running = page.evaluate(PROBE)
     check("favicon becomes a rendered frame",
           running["icon"].startswith("data:image/png"))
-    check("theme-color goes to --bar-active", running["theme"] == "#0a2b2b",
+    check("theme-color goes to --bar-active", running["theme"] == "#113233",
           running["theme"])
     check("data-fan set for the iOS backdrop", running["fan"] == "on")
     check("backdrop strengthens its teal stop",
@@ -196,7 +196,7 @@ with sync_playwright() as pw:
     time.sleep(0.2)
     off = page.evaluate(PROBE)
     check("fan off restores the icon", off["icon"].endswith("icon.svg"))
-    check("fan off restores theme-color", off["theme"] == "#0c0f16", off["theme"])
+    check("fan off restores theme-color", off["theme"] == "#141820", off["theme"])
     check("fan off clears data-fan", off["fan"] is None)
 
     # -- the status LED ---------------------------------------------------
@@ -294,7 +294,7 @@ with sync_playwright() as pw:
     time.sleep(0.4)
     gone = page.evaluate(PROBE)
     check("teardown restores the icon", gone["icon"].endswith("icon.svg"), gone["icon"][:40])
-    check("teardown restores theme-color", gone["theme"] == "#0c0f16")
+    check("teardown restores theme-color", gone["theme"] == "#141820")
     check("teardown clears data-fan", gone["fan"] is None)
     still = page.evaluate("document.querySelector('link[rel=icon]').href")
     time.sleep(0.3)

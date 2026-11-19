@@ -1827,13 +1827,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    /* max(), not a sum. The top inset is not the height of the island: on
-       a Dynamic Island phone it already runs ~14px past the island's
-       bottom edge (62px on a 440x956 Pro Max), so adding the 16px a
-       notchless browser needs on top of it left ~30px of dead band between
-       the island and the brand -- the "room at the top". A few px past the
-       inset clears the island; 16px stays the floor where the inset is 0. */
-    padding: max(16px, calc(env(safe-area-inset-top) + 4px)) 18px 6px;
+    /* max(), not a sum. The official inset already clears the island, but
+       iOS (Safari and a black-translucent home-screen app) also paints a
+       scroll-edge blur/fade that extends a little BELOW that inset -- the
+       BATHROOM eyebrow sat in that band at rest and came into focus only
+       when the page was rubber-banded down. 12px past the inset clears
+       the band; 16px stays the floor where the inset is 0, so a notchless
+       layout does not change. --safe-top is env(safe-area-inset-top),
+       with a --safe-area-top hook for tests that Playwright cannot set. */
+    padding: max(16px, calc(var(--safe-top) + 12px)) 18px 6px;
     /* Solid under the status bar and everywhere else. 92% glass still
        left Help text readable in Firefox and WebKit, which advertise
        backdrop-filter and then do not paint the blur. A solid --bg-card
@@ -1843,13 +1845,22 @@
        text — the tiny BATHROOM eyebrow especially — into a soft glow. */
     background:
       linear-gradient(var(--bg-card), var(--bg-card)) top / 100%
-        env(safe-area-inset-top, 0px) no-repeat,
+        var(--safe-top) no-repeat,
       var(--bg-card);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     border-bottom: 1px solid var(--border);
     max-width: 760px;
     margin: 0 auto;
+  }
+
+  /* iPad (820px in the test matrix, and similarly-wide tablets) keeps the
+     earlier inset+4px pad so this change does not restyle that layout.
+     Desktop at 960px already has its own rule. */
+  @media (min-width: 820px) and (max-width: 959px) {
+    header {
+      padding: max(16px, calc(var(--safe-top) + 4px)) 18px 6px;
+    }
   }
 
   .brand {
@@ -3040,13 +3051,21 @@
      the sticky header; the flash is global because the ids also live in
      WifiPanel, and the class is added from script, not from markup.
      Match the header's real height: pad (16px, or the safe-area inset
-     plus 4px) + 42px mark + 6px bottom pad + a gap. 96px plus the
-     full inset double-counted the pad on a notched phone and still
-     left a topic flush on a 390px phone when the constant was smaller. */
+     plus 12px on a phone / 4px on an iPad) + 42px mark + 6px bottom
+     pad + a gap. 96px plus the full inset double-counted the pad on a
+     notched phone and still left a topic flush on a 390px phone when
+     the constant was smaller. */
   :global([id^='place-']) {
     scroll-margin-top: calc(
-      max(16px, env(safe-area-inset-top, 0px) + 4px) + 42px + 6px + 20px
+      max(16px, var(--safe-top) + 12px) + 42px + 6px + 20px
     );
+  }
+  @media (min-width: 820px) {
+    :global([id^='place-']) {
+      scroll-margin-top: calc(
+        max(16px, var(--safe-top) + 4px) + 42px + 6px + 20px
+      );
+    }
   }
   /* Inside a sheet there is no sticky header to clear. */
   :global(.sheet [id^='place-']) {

@@ -153,14 +153,17 @@
      src/lib/appicon.js so the phone's status bar says whether the fan is
      running without the app having to be on screen to read.
 
-     --bar is --bg exactly, which is what app.html ships in the tag. --bar-
-     active is --bg with --accent composited over it at 14 %: the same move
+     --bar is --bg-card, not --bg, and that is what app.html ships in the
+     tag. Safari tints its status bar from theme-color, and a darker page
+     colour behind a --bg-card header lets iOS's scroll-edge blur fade the
+     type that sits just under the bar (the BATHROOM eyebrow). --bar-active
+     is --bg-card with --accent composited over it at 14 %: the same move
      --backdrop already makes at 5 %, pushed far enough to be unmistakable
      as a 20px strip at the top of a phone, and still dark enough that the
-     white system glyphs on top of it stay legible (15.07:1, measured). Not
+     white system glyphs on top of it stay legible (13.74:1, measured). Not
      text tokens, so check-contrast.mjs does not police them. */
-  --bar:        #0c0f16;
-  --bar-active: #0a2b2b;
+  --bar:        #141820;
+  --bar-active: #113233;
 
   /* iOS installs run under a black-translucent status bar, which shows page
      content rather than taking a colour from us, so --bar-active cannot
@@ -297,9 +300,10 @@
               var(--bg);
 
   /* ── OS chrome ───────────────────────────────────────────────────── */
-  /* --bar is --bg, as on dark. --bar-active is --bg under the bright brand
-     teal at 18%: light enough that the phone keeps its DARK status-bar
-     glyphs, which is the whole reason it cannot simply be --accent. */
-  --bar:        #f7f9fb;
-  --bar-active: #caf2ec;
+  /* --bar is --bg-card, as on dark, so the status bar matches the header.
+     --bar-active is --bg-card under the bright brand teal at 18%: light
+     enough that the phone keeps its DARK status-bar glyphs, which is the
+     whole reason it cannot simply be --accent. */
+  --bar:        #ffffff;
+  --bar-active: #d1f7f0;
 }
