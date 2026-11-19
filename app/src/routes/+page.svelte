@@ -1816,8 +1816,9 @@
   /* Top chrome, the mirror of .nav-slot at the other edge. Sticky rather
      than part of the scroll, because this is the element that covers the
      notch: body no longer pads the top inset, so whatever sits here must,
-     and it must still be there after a scroll. Same tint and blur as the
-     nav so content passes behind both the same way. */
+     and it must still be there after a scroll. Solid --bg-card, and no
+     backdrop-filter: the fill already hides the page, and a blur on a
+     sticky header makes the header's own type soft on iOS Safari. */
   header {
     position: sticky;
     top: 0;
@@ -1836,12 +1837,16 @@
     /* Solid under the status bar and everywhere else. 92% glass still
        left Help text readable in Firefox and WebKit, which advertise
        backdrop-filter and then do not paint the blur. A solid --bg-card
-       is the only reliable fallback; the @supports blur below is a
-       no-op on an opaque background and does not hurt Chromium. */
+       is the only reliable chrome. Do not put a backdrop-filter on top
+       of it: the filter is pointless on an opaque fill, and on real iOS
+       Safari a blur on this sticky header rasterizes the header's own
+       text — the tiny BATHROOM eyebrow especially — into a soft glow. */
     background:
       linear-gradient(var(--bg-card), var(--bg-card)) top / 100%
         env(safe-area-inset-top, 0px) no-repeat,
       var(--bg-card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     border-bottom: 1px solid var(--border);
     max-width: 760px;
     margin: 0 auto;
@@ -1910,6 +1915,16 @@
     white-space: nowrap;
   }
 
+  /* The room name is 11px, not 0.68rem (10.88px of the 16px root). A
+     fractional size plus tight tracking left the uppercase mono caps
+     slightly soft even once the header blur came off. 500 is the
+     heaviest JetBrains Mono we ship, and fills the strokes without
+     leaving the teal. */
+  header .eyebrow {
+    font-size: 11px;
+    font-weight: 500;
+  }
+
   .head-right {
     display: flex;
     align-items: center;
@@ -1953,22 +1968,10 @@
     bottom: 0;
     z-index: 8;
     background: var(--bg-card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     border-top: 1px solid var(--border);
     padding: 4px 6px calc(6px + env(safe-area-inset-bottom));
-  }
-
-  /* Apply the frost only where the engine claims it. The backgrounds
-     above stay solid either way, so a lying @supports cannot make the
-     page readable through the chrome. */
-  @supports ((-webkit-backdrop-filter: blur(16px)) or (backdrop-filter: blur(16px))) {
-    header {
-      -webkit-backdrop-filter: blur(16px);
-      backdrop-filter: blur(16px);
-    }
-    .nav-slot {
-      -webkit-backdrop-filter: blur(16px);
-      backdrop-filter: blur(16px);
-    }
   }
 
   /* The new section slides in from the side it came from, so a swipe
