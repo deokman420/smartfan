@@ -2162,6 +2162,9 @@ paintLeds();
 
 /* ---- panels: every one can be shut, and reopened from the tray ---- */
 const TRAY = ['title', 'controls', 'facts', 'caveat'];
+// On a phone, or squeezed into an iframe, four panels cover the model. Open
+// on the model alone; every panel is still one tap away in the tray.
+if (innerWidth <= 600) TRAY.forEach(id => { document.getElementById(id).hidden = true; });
 function syncTray() {
   document.querySelectorAll('#tray button').forEach(b =>
     b.setAttribute('aria-pressed',
@@ -2187,6 +2190,7 @@ function fitCaveat() {
   v.style.maxHeight = Math.max(90, innerHeight - top - trayH) + 'px';
 }
 addEventListener('resize', fitCaveat);
+syncTray();
 
 /* Open with the model and nothing over it: the controls, and the tray that
    brings the prose back. Every panel is one click away and none is lost. */

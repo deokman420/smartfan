@@ -47,10 +47,15 @@
     (function () {
       try {
         var saved = localStorage.getItem('smartfan.theme');
+        // '1' only in the public demo build (scripts/build-demo.mjs),
+        // which opens dark by default; theme.js does the same.
+        var demo = '%sveltekit.env.PUBLIC_DEMO%' === '1';
         var scheme =
           saved === 'light' || saved === 'dark'
             ? saved
-            : matchMedia('(prefers-color-scheme: light)').matches
+            : demo && saved !== 'system'
+              ? 'dark'
+              : matchMedia('(prefers-color-scheme: light)').matches
               ? 'light'
               : 'dark';
         document.documentElement.dataset.theme = scheme;

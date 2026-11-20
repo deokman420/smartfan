@@ -189,7 +189,7 @@ this section. The trap is not:
 The size limit's causes were in `ota.py` (buffering each body whole) and in
 the trial boot (not feeding a watchdog `boot_check` had already armed). Both
 are fixed; `ota.py` still needs the cable when *it* changes, because it is
-the recovery path. [`TODO.md`](TODO.md) records both fixes.
+the recovery path. [`TODO.md`](https://github.com/deokman420/smartfan/blob/main/docs/TODO.md) records both fixes.
 
 The failure mode is at least safe: every failed attempt left the device healthy
 on its old code, which is the design working as intended. It is just entirely

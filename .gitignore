@@ -66,3 +66,9 @@ logistics/
 fp-info-cache
 _autosave-*
 ~*.lck
+
+# Public site, assembled by tools/build_site.py
+_site/
+.vercel-link.tmp/
+# ...except the public site's own images (tools/build_site.py needs them)
+!site/img/*.png

@@ -35,7 +35,9 @@ function load() {
   } catch {
     /* fall through */
   }
-  return 'system';
+  // The public demo opens dark, whatever the visitor's system says: it is
+  // the app's home look. Choosing System in Settings still works there.
+  return import.meta.env.VITE_DEMO === '1' ? 'dark' : 'system';
 }
 
 /** What the user chose: 'system' | 'light' | 'dark'. */

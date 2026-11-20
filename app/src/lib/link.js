@@ -25,6 +25,13 @@ import { ledCode } from '$lib/statusled.js';
 
 const SETTINGS_KEY = 'smartfan.settings';
 
+/**
+ * The public demo build (npm run build:demo). A compile-time constant, so in
+ * the ordinary build the demo branch below is dead code and the demo
+ * transport and its fixture never reach the fan's flash.
+ */
+export const DEMO = import.meta.env.VITE_DEMO === '1';
+
 /** Where the page itself came from, which is the best guess we have. */
 function servedByDevice() {
   if (typeof location === 'undefined') return false;
@@ -90,7 +97,7 @@ export const settings = writable(loadSettings());
  * benefit of the device serving its own app, and asking anyway would throw
  * it away.
  */
-export const configured = writable(hadSaved || servedByDevice());
+export const configured = writable(DEMO || hadSaved || servedByDevice());
 
 /**
  * What may be written to localStorage. The broker password is kept only
@@ -195,6 +202,10 @@ function getSettings() {
 }
 
 async function build(mode) {
+  if (DEMO) {
+    const { create } = await import('$lib/transport/demo.js');
+    return create(getSettings, sink);
+  }
   if (mode === 'broker') {
     const { create } = await import('$lib/transport/mqtt.js');
     return create(getSettings, sink);
