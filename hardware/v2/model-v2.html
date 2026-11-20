@@ -1350,6 +1350,28 @@ controls.minDistance = 120;
 controls.maxDistance = 2200;
 controls.target.set(0, 60, 0);
 
+/* The views below were framed on a wide screen. A fixed vertical field of
+   view on a portrait phone keeps the height and loses the width, so the
+   assembly ran off both edges. Narrower than 11:10, widen the view to keep
+   that horizontal span -- up to 62 degrees, past which the perspective bends --
+   and stand the camera back by whatever is still missing. Fog and the zoom
+   limit move back with it, or the model would sit in the haze. */
+const REF_ASPECT = 1.1, BASE_FOV = 38, MAX_FOV = 62;
+let reach = 1;
+function fitCamera() {
+  const a = innerWidth / innerHeight;
+  const need = Math.tan(BASE_FOV * Math.PI / 360) * Math.max(1, REF_ASPECT / a);
+  const fov = Math.min(MAX_FOV, 2 * Math.atan(need) * 180 / Math.PI);
+  reach = need / Math.tan(fov * Math.PI / 360);
+  camera.aspect = a;
+  camera.fov = fov;
+  camera.updateProjectionMatrix();
+  scene.fog.near = 900 * reach;
+  scene.fog.far = 2400 * reach;
+  controls.maxDistance = 2200 * reach;
+}
+fitCamera();
+
 scene.add(new THREE.HemisphereLight(0x8fa6b8, 0x1d262c, 0.72));
 const key = new THREE.DirectionalLight(0xffffff, 0.95);
 key.position.set(420, 620, 380);
@@ -2091,12 +2113,14 @@ function go(name, instant) {
   const v = VIEWS[name];
   document.querySelectorAll('#views button').forEach(b =>
     b.setAttribute('aria-pressed', b.dataset.view === name ? 'true' : 'false'));
+  const tgt = new V(...v.tgt);
+  const pos = new V(...v.pos).sub(tgt).multiplyScalar(reach).add(tgt);
   if (instant) {
-    camera.position.set(...v.pos);
-    controls.target.set(...v.tgt);
+    camera.position.copy(pos);
+    controls.target.copy(tgt);
     return;
   }
-  anim = { t: 0, from: camera.position.clone(), to: new V(...v.pos),
+  anim = { t: 0, from: camera.position.clone(), to: pos,
            fromT: controls.target.clone(), toT: new V(...v.tgt) };
 }
 document.getElementById('views').addEventListener('click', e => {
@@ -2274,8 +2298,7 @@ document.getElementById('shot').addEventListener('click', () => {
 });
 
 addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
+  fitCamera();
   renderer.setSize(innerWidth, innerHeight);
 });
 
