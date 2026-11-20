@@ -134,6 +134,9 @@
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
   }
   .note { font-size: 14px; color: var(--dim); margin-top: 12px; }
+  .v2-board { margin-bottom: 40px; }
+  .v2-board figure { margin: 0; }
+  .v2-board h3, .v2-housing { font-size: 21px; margin: 0 0 10px; }
   ul.ticks { list-style: none; padding: 0; margin: 0 0 24px; }
   ul.ticks li { padding-left: 26px; position: relative; margin: 6px 0; }
   ul.ticks li::before { content: ""; position: absolute; left: 4px; top: 0.62em; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
@@ -170,7 +173,7 @@
   <nav>
     <a href="demo/">Demo</a>
     <a href="kb/">Docs</a>
-    <a class="wide" href="#model">3D model</a>
+    <a class="wide" href="#model">V2</a>
     <a href="https://github.com/deokman420/smartfan">GitHub</a>
   </nav>
 </header>
@@ -277,14 +280,37 @@
 </section>
 
 <section id="model">
-  <h2>The next board, in 3D</h2>
-  <p class="sub">V2 moves the fan into the ceiling: a 120 mm fan cartridge, a duct collar and a filter,
-    all 3D printed. Drag to orbit and scroll to zoom. V2 is designed but not built yet.</p>
+  <h2>V2: a real board and a ceiling housing</h2>
+  <p class="sub">V2 moves Smartfan off the breadboard and into the ceiling, with a 120 mm fan and
+    mains power. It is designed but not built yet. Nothing about V2 has been tested.</p>
+  <div class="split top-align v2-board">
+    <figure>
+      <img src="img/v2-board.webp" alt="A render of the V2 circuit board: a Pico 2 W in sockets, a green mains screw terminal, a MOSFET, resistors, and connectors for the fan and the grille" loading="lazy" width="1400" height="972">
+      <figcaption>The V2 board, rendered from the KiCad files. It hasn't been made yet. KiCad has no
+        3D model for the power supply, so it shows only as its outline (PS1).</figcaption>
+    </figure>
+    <div>
+      <h3>The board</h3>
+      <ul class="ticks">
+        <li>A Pico 2 W in sockets, so it lifts out</li>
+        <li>120 V lands in a screw terminal and feeds a 12 V Mean Well supply, then a 5 V regulator for the Pico</li>
+        <li>A MOSFET switches a 12 V Noctua fan, and the fan's speed signal comes back to the Pico</li>
+        <li>Humidity and light sensors, a button and two lights sit on the grille. The odor sensor adds onto the same cable later</li>
+        <li>Mains copper stays 6.4 mm from everything else, and the design rules check it</li>
+      </ul>
+      <div class="buttons">
+        <a class="btn" href="https://github.com/deokman420/smartfan/tree/main/hardware/v2">KiCad files and Gerbers</a>
+      </div>
+    </div>
+  </div>
+  <h3 class="v2-housing">The housing, in 3D</h3>
+  <p class="sub">A fan cartridge, a duct collar, a filter and a grille, all 3D printed.
+    Drag to orbit and scroll to zoom.</p>
   <div class="stage" id="stage">
     <img src="img/model.png" alt="The V2 ceiling assembly" loading="lazy">
     <button type="button" id="load3d">Load the 3D model</button>
   </div>
-  <p class="note">About 600 kB. Or open the <a href="model/">assembly</a> or the
+  <p class="note">About 700 kB. Or open the <a href="model/">assembly</a> or the
     <a href="parts/">printed-parts viewer</a> full screen.</p>
 </section>
 
@@ -325,7 +351,7 @@
 
 </div>
 <script>
-  // The model page is ~600 kB with three.js inlined, so it loads only on request.
+  // The model page is ~700 kB with three.js inlined, so it loads only on request.
   document.getElementById('load3d').addEventListener('click', function () {
     var f = document.createElement('iframe');
     f.src = 'model/';
