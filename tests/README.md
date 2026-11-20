@@ -26,6 +26,7 @@ python tests/test_device.py [COM5]   # hardware, needs the Pico attached
 python tests/test_device_http.py     # hardware, over WiFi, needs it on the network
 python tests/test_ha.py              # integration, needs HA + device online
 python tests/test_ui.py [--headed]   # browser, needs HA reachable
+python tests/test_site.py [--live]   # the public site, needs a build in _site/
 ```
 
 Run them in that order. `test_device.py` stops `main.py` to drive the pins, so
@@ -314,6 +315,37 @@ section still screenshots beautifully — it is just missing a third of the
 controls. Rename a heading in `tools/build_dashboard.py` and this suite fails
 until the rename is deliberate. Screenshots land in `tests/screenshots/`
 (gitignored) for eyeballing after a change.
+
+**`test_site.py` — 39 checks, 61 with `--live`.** The public site at
+smartfan.phbeks.com, run against the build in `_site/` (`python
+tools/build_site.py` first), so it tests what `vercel deploy` would upload.
+Run it before every deploy, and with `--live` after one.
+
+- **Leaks.** `_site/` is built next to `secrets.py`, `.env` and `ota.key`.
+  The suite looks for those files, and for their actual values in every
+  output file. It reports the key name, never the value. Values that also
+  appear in `secrets.example.py` are public defaults and are skipped.
+- **Links.** Every local `href` and `src` resolves, landing-page anchors have
+  targets, and every `github.com/deokman420/smartfan/{tree,blob}/main/...`
+  link names a path that exists in the repo.
+- **Facts.** The landing page's numbers are read back from their sources: a
+  week of history (`HISTORY_DAYS`), four days of demo data (the fixture), the
+  3D model's size, and the 6.4 mm mains gap (`generate.py`). Change a source
+  and the suite fails until the page agrees. It also requires V2 to be
+  described as unbuilt and its board as a render.
+- **Images.** Each one has alt text, and its declared width and height match
+  the real image. A stale pair after swapping a picture squashes it.
+- **Browser.** No sideways scroll at 390, 820 and 1280 px, every image loads,
+  no console errors or failed requests, the 3D model loads on request, and
+  the demo, docs and both viewers come up clean.
+- **`--live`** repeats the browser pass on the real site. It also checks that
+  the deployed landing page is byte-identical to the build, and that the
+  latest GitHub release matches `manifest.json`, because HACS installs only
+  releases.
+
+It was checked by breaking the built page on purpose: a wrong image path, a
+stale image height, a wrong download size and a British spelling each fail it.
+Its first run found "centre" in the V2 model page.
 
 **`test_app.py` — 42 checks.** The app, served from `app/build` so it
 tests the artifact that would actually be deployed, against the live broker

@@ -216,7 +216,7 @@ label.sw input { accent-color: var(--accent-dk); }
     <dt>Void depth</dt><dd>152 mm</dd>
     <dt>Grille + filter</dt><dd>24 mm, in the room</dd>
     <dt>Fan cartridge</dt><dd>38 mm</dd>
-    <dt>Duct centreline</dt><dd>97 mm</dd>
+    <dt>Duct centerline</dt><dd>97 mm</dd>
     <dt>Stack, total</dt><dd class="warn">147 of 152</dd>
     <dt>Spigot proud</dt><dd>50.8 mm · 2 in</dd>
     <dt>Electronics box</dt><dd>119.5 × 94 × 34</dd>
@@ -240,7 +240,7 @@ label.sw input { accent-color: var(--accent-dk); }
 <div class="hud panel" id="caveat">
   <button class="x" data-close="caveat" aria-label="Close">×</button>
   <h2>Three things this model asserts that the plan did not</h2>
-  <p><b>The turn, and the shroud that would soften it.</b> The fan blows <b>+Y</b> and the duct leaves <b>+Z</b>: every cubic foot turns ninety degrees inside 107 mm of headroom, and in the bare box it does that by hitting the lid and finding the hole sideways. Switch <b>Airflow</b> on and the corners show it — two slow eddies going nowhere that the fan is still paying for. <b>Turning shroud</b> draws the fix: a printed elbow standing on the cartridge top. Its size is decided rather than chosen. The bend's centre of curvature is fixed by the two axes it joins, so the outer wall tops out at <b>y = 147</b> and the inner wall at <b>47</b> for any radius — the height always works — but the inlet sits at <em>97 − R</em> and cannot drop below the cartridge at 44. That pins <b>R ≈ 53 mm, R/D 0.53</b>: a tight elbow, because a good one (R/D ≥ 1) would have to start inside the fan. A plenum turn costs roughly <b>1.2–1.5 velocity heads</b> and an R/D 0.5 elbow about <b>0.7</b>, so the part buys back over half of one: <b>0.013 in w.g.</b> at 50 CFM, <b>0.05</b> at the iPPC-3000's 100 CFM — 8 to 17 per cent of that fan's whole budget, for one printed part. Printed, not steel, for the reason the collar and cartridge are: it is not the fire barrier, the box is. All of it sits above the cartridge, so service from below is unchanged. These streamlines are sketched, not solved — no CFD was run.</p>
+  <p><b>The turn, and the shroud that would soften it.</b> The fan blows <b>+Y</b> and the duct leaves <b>+Z</b>: every cubic foot turns ninety degrees inside 107 mm of headroom, and in the bare box it does that by hitting the lid and finding the hole sideways. Switch <b>Airflow</b> on and the corners show it — two slow eddies going nowhere that the fan is still paying for. <b>Turning shroud</b> draws the fix: a printed elbow standing on the cartridge top. Its size is decided rather than chosen. The bend's center of curvature is fixed by the two axes it joins, so the outer wall tops out at <b>y = 147</b> and the inner wall at <b>47</b> for any radius — the height always works — but the inlet sits at <em>97 − R</em> and cannot drop below the cartridge at 44. That pins <b>R ≈ 53 mm, R/D 0.53</b>: a tight elbow, because a good one (R/D ≥ 1) would have to start inside the fan. A plenum turn costs roughly <b>1.2–1.5 velocity heads</b> and an R/D 0.5 elbow about <b>0.7</b>, so the part buys back over half of one: <b>0.013 in w.g.</b> at 50 CFM, <b>0.05</b> at the iPPC-3000's 100 CFM — 8 to 17 per cent of that fan's whole budget, for one printed part. Printed, not steel, for the reason the collar and cartridge are: it is not the fire barrier, the box is. All of it sits above the cartridge, so service from below is unchanged. These streamlines are sketched, not solved — no CFD was run.</p>
   <p><b>The filter.</b> The plan said no lint filter until this model asked for one, and the reason it said so is arithmetic: the iPPC-2000 has <b>0.155 in w.g.</b> of static pressure in total, and the easy-duct case already spends 0.10 of it for about 20 CFM. A clean filter costs roughly 0.02–0.05 in, and a loaded one costs more — which on this fan is most or all of the remaining margin. <b>If the filter stays, the fan should become the iPPC-3000</b>: same 120 × 25 pocket, same 105 mm screws, same 12 V, 0.30 in w.g. and 110 CFM free air. It is louder (43.5 dBA against 29.7) and that is the trade. The three notes have been updated to match this model rather than the other way round.</p>
   <p><b>Sensors in the grille.</b> This one the plan was already asking for — room air, room light, out of the extract path. The button and both LEDs are on that same face. The button cable leaves the grille through a cable fitting, then enters the 1590BB through a second one. The sensor cable has its own fitting on the box. The grille comes off, so each cable ends in a plug.</p>
   <p><b>The duct runs down the bay, and that is forced.</b> A 100 mm duct cannot cross a joist. On a 2×6 — 140 mm deep — the largest hole allowed is about a third of the depth, roughly 46 mm, and it has to stay clear of the edges; a 100 mm hole would take the joist with it. Nor can the duct pass over the joists, because they are 140 mm of a 152 mm void. So the spigot leaves along the bay, parallel to the joists, and the fan is oriented to suit. The bonus is that it satisfies the straight-run rule for free: the bay gives far more than the 100–200 mm of settling length a bend wants.</p>
@@ -1320,7 +1320,7 @@ label.sw input { accent-color: var(--accent-dk); }
                  filter pad         -18 ..  -4
      ceiling      ---- 0 ----
      void        fan cartridge        6 ..  44
-                 duct bore           47 .. 147   (centreline 97)
+                 duct bore           47 .. 147   (centerline 97)
                  clear over it      147 .. 152   = 5 mm
 
    The filter is on the room side of the ceiling line on purpose.
@@ -1455,7 +1455,7 @@ const FANX = 0, FANZ = 0;            /* the air path sits on the void's axis */
 const GRILLE_W = 210;                /* the visible plate in the room */
 const FIL_Y0 = -18, FIL_H = 14;      /* filter pad, room side of the ceiling */
 const CART_Y0 = 6, CART_H = 38;      /* fan cartridge: 25 mm fan + frame */
-const DUCT_R = 50, DUCT_Y = 97;      /* bore centreline */
+const DUCT_R = 50, DUCT_Y = 97;      /* bore centerline */
 const BOXW = 150;                    /* the air box, square in plan */
 const BOX_Z1 = FANZ + BOXW / 2;      /* its downstream wall, on the bay axis */
 const SPIGOT = 50.8;                 /* 2 in proud of that wall, as specified */
@@ -1495,7 +1495,7 @@ const grille = new THREE.Group();
 world.add(grille);
 (function buildGrille() {
   const y = -21;
-  /* face plate with a slotted centre */
+  /* face plate with a slotted center */
   box(GRILLE_W, 6, GRILLE_W, M.grille, FANX, y, FANZ, grille);
   for (let i = -4; i <= 4; i++)
     box(GRILLE_W - 40, 2.5, 7, M.blk, FANX, y - 3.6, FANZ + i * 16, grille, false);
@@ -1643,7 +1643,7 @@ ductGroup.add(flex);
 /* ============================================================
    The framing, and how the box hangs off it.
 
-   2x6 joists at 16 in on centre: 38 mm thick, 140 mm deep, and
+   2x6 joists at 16 in on center: 38 mm thick, 140 mm deep, and
    368 mm of clear bay between them. The air box is 150 mm wide,
    so it does not span the bay and cannot screw to both joists --
    which is why every retrofit fan on the market hangs off a pair
@@ -1934,9 +1934,9 @@ function stepFlow(set, dt) {
    chosen -- which is worth writing down.
 
    A 90 degree bend from +Y to +Z whose outflow axis is the duct
-   centreline (y = 97) and whose inflow axis is the fan centreline
-   (z = 0) has its centre of curvature at (z = R, y = 97 - R) for a
-   centreline radius R. The outer wall then tops out at y = 147 and
+   centerline (y = 97) and whose inflow axis is the fan centerline
+   (z = 0) has its center of curvature at (z = R, y = 97 - R) for a
+   centerline radius R. The outer wall then tops out at y = 147 and
    the inner wall bottoms at y = 47 whatever R is -- the same 100 mm
    the bore already occupies, so the height always works. What does
    not scale is the inlet: it sits at y = 97 - R, and it cannot be
