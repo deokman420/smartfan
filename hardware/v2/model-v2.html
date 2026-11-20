@@ -2187,8 +2187,9 @@ paintLeds();
 /* ---- panels: every one can be shut, and reopened from the tray ---- */
 const TRAY = ['title', 'controls', 'facts', 'caveat'];
 // On a phone, or squeezed into an iframe, four panels cover the model. Open
-// on the model alone; every panel is still one tap away in the tray.
-if (innerWidth <= 600) TRAY.forEach(id => { document.getElementById(id).hidden = true; });
+// on the model alone; every panel is still one tap away in the tray. A phone
+// on its side is wide but short, and the controls panel alone fills it.
+if (innerWidth <= 600 || innerHeight <= 500) TRAY.forEach(id => { document.getElementById(id).hidden = true; });
 function syncTray() {
   document.querySelectorAll('#tray button').forEach(b =>
     b.setAttribute('aria-pressed',

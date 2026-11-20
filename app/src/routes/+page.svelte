@@ -2330,7 +2330,9 @@
   .facts {
     grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* Fan, light, odor and fault: four across, or two by two on a phone
+       too narrow for four. Three columns left fault alone on a second row. */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0;
     margin-top: 8px;
     padding-top: 12px;
@@ -2346,6 +2348,16 @@
   .fact + .fact {
     padding-left: 14px;
     border-left: 1px solid var(--border);
+  }
+  @media (max-width: 420px) {
+    .facts {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      row-gap: 12px;
+    }
+    .fact:nth-child(odd) {
+      padding-left: 0;
+      border-left: 0;
+    }
   }
   .fact-v {
     font-size: 1.02rem;
