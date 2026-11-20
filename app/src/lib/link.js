@@ -30,7 +30,10 @@ const SETTINGS_KEY = 'smartfan.settings';
  * the ordinary build the demo branch below is dead code and the demo
  * transport and its fixture never reach the fan's flash.
  */
-export const DEMO = import.meta.env.VITE_DEMO === '1';
+// typeof guard: the node tests import this file directly, outside Vite,
+// where import.meta.env does not exist.
+export const DEMO =
+  typeof import.meta.env !== 'undefined' && import.meta.env.VITE_DEMO === '1';
 
 /** Where the page itself came from, which is the best guess we have. */
 function servedByDevice() {
