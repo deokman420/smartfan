@@ -35,6 +35,13 @@ canvas { display: block; touch-action: none; }
 #facts .k { color: var(--ink-dim); display: inline-block; min-width: 92px; }
 
 #ctl { top: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; }
+/* Phones: the title across the top, the part picker across the bottom, and
+   the sizes card dropped -- side by side they cover each other and the part. */
+@media (max-width: 600px) {
+  #title { top: 12px; left: 12px; right: 12px; max-width: none; }
+  #ctl { top: auto; bottom: 12px; left: 12px; right: 12px; }
+  #facts { display: none; }
+}
 .row { display: flex; gap: 6px; align-items: center; }
 button { font-family: var(--cond); font-size: 12px; letter-spacing: .02em;
          background: var(--raised); color: var(--ink-mid); border: 1px solid var(--line);

@@ -13,7 +13,8 @@
     command,
     setParam,
     mode,
-    DEFAULTS
+    DEFAULTS,
+    DEMO
   } from '$lib/link.js';
   import { theme, setTheme } from '$lib/theme.js';
   import {
@@ -721,7 +722,11 @@
       </div>
     </div>
     <div class="head-right">
-      {#if $link === 'online' && $deviceOnline && !$stale}
+      {#if DEMO && $link === 'online'}
+        <!-- The demo build only. On phones this is the whole demo notice:
+             the bar in +layout.svelte would sit under the status bar. -->
+        <a class="pill tone-ok demo-pill" href="../" title="A simulated fan. Back to smartfan.phbeks.com"><i class="dot"></i>Demo</a>
+      {:else if $link === 'online' && $deviceOnline && !$stale}
         <span class="pill tone-ok"><i class="dot"></i>Live</span>
       {:else if $link === 'online' && $stale}
         <span class="pill tone-warn"><i class="dot"></i>No update</span>
@@ -1931,6 +1936,10 @@
      slightly soft even once the header blur came off. 500 is the
      heaviest JetBrains Mono we ship, and fills the strokes without
      leaving the teal. */
+  .demo-pill {
+    text-decoration: none;
+  }
+
   header .eyebrow {
     font-size: 11px;
     font-weight: 500;

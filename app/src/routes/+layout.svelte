@@ -1,7 +1,7 @@
 <script>
   import '../app.css';
   import { onMount, onDestroy } from 'svelte';
-  import { connect, disconnect, configured, fanRunning, statusLed } from '$lib/link.js';
+  import { connect, disconnect, configured, fanRunning, statusLed, DEMO } from '$lib/link.js';
   import { watchAppIcon } from '$lib/appicon.js';
   import { startTheme } from '$lib/theme.js';
   import { get } from 'svelte/store';
@@ -44,4 +44,42 @@
   });
 </script>
 
+{#if DEMO}
+  <div class="demo-bar" role="note">
+    <span><strong>Demo.</strong> Real data from a real fan, simulated in your browser. Nothing here controls hardware.</span>
+    <a href="../">smartfan.phbeks.com</a>
+  </div>
+{/if}
+
 {@render children()}
+
+<style>
+  /* Wide layouts only. Below 960px the header is sticky under the status
+     bar, and a bar above it would sit behind the Dynamic Island; the
+     header's Demo pill carries the notice there instead. */
+  .demo-bar {
+    display: none;
+  }
+  @media (min-width: 960px) {
+    .demo-bar {
+      display: flex;
+    }
+  }
+  .demo-bar {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    justify-content: center;
+    align-items: baseline;
+    padding: 6px 16px;
+    font: 13px/1.4 var(--font);
+    color: var(--text);
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--border);
+    text-align: center;
+  }
+  .demo-bar a {
+    color: var(--accent);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+</style>

@@ -1,0 +1,66 @@
+site_name: Smartfan
+site_description: A bathroom fan controller on a Raspberry Pi Pico 2 W
+site_url: https://smartfan.phbeks.com/kb/
+repo_url: https://github.com/deokman420/smartfan
+repo_name: deokman420/smartfan
+edit_uri: edit/main/docs/
+copyright: Made by <a href="https://phbeks.com">phbeks.com</a>
+
+docs_dir: docs
+site_dir: _site/kb
+
+# Internal planning notes stay in the repo but out of the site.
+exclude_docs: |
+  phase-*-plan.md
+  history-seam-fix.md
+  TODO.md
+  dev/
+
+theme:
+  name: material
+  logo: assets/icon.svg
+  favicon: assets/icon.svg
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.action.edit
+    - search.suggest
+  # Dark first, and no media queries: the site opens dark whatever the
+  # visitor's system says, like the landing page and the demo. The toggle
+  # still switches, and Material remembers the choice.
+  palette:
+    - scheme: slate
+      primary: teal
+      accent: teal
+      toggle: { icon: material/weather-sunny, name: Light mode }
+    - scheme: default
+      primary: teal
+      accent: teal
+      toggle: { icon: material/weather-night, name: Dark mode }
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.superfences
+  - pymdownx.details
+
+nav:
+  - Home: index.md
+  - Build:
+      - Build your own: build.md
+      - Set up a unit: setup.md
+  - Software:
+      - Networking and Home Assistant: networking.md
+      - Updating over the air: ota.md
+  - How it works:
+      - States and control logic: how-it-works.md
+      - Odor sensing with the SGP41: sgp41-odor-sensing.md
+      - Daylight is brighter than the bulb: daylight-is-brighter-than-the-bulb.md
+  - Reference:
+      - Files in the repo: files.md
+      - Roadmap: roadmap.md
+  # Root-relative, so they work on any host (vercel.app now, phbeks.com later).
+  - Live demo: /demo/
+  - Home page: /
