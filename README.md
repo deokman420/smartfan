@@ -10,6 +10,10 @@
   actually dry, and then stops. Open source, on a Raspberry Pi Pico 2 W.
 </p>
 
+https://github.com/user-attachments/assets/ac6792f2-4697-47a9-bf49-5d41668e7b6c
+
+<p align="center">If the video does not play here, the same walkthrough is in the <a href="https://phbeks.com/blog/smartfan-launch.html">launch write-up</a>.</p>
+
 <p align="center">
   <a href="https://smartfan.phbeks.com"><b>Website</b></a> ·
   <a href="https://smartfan.phbeks.com/demo/"><b>Live demo</b></a> ·
